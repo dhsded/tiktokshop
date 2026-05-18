@@ -1,0 +1,78 @@
+{
+  "name": "gerador-tiktok-shop",
+  "productName": "Gerador TikTok Shop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Gerador de Propagandas para TikTok Shop com IA",
+  "main": "dist-electron/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "electron:preview": "electron-vite preview",
+    "electron:pack": "npm run build && electron-builder --dir",
+    "electron:dist": "npm run build && electron-builder",
+    "preview": "vite preview",
+    "clean": "rm -rf dist dist-electron out",
+    "lint": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.tiktokshop.gerador",
+    "productName": "Gerador TikTok Shop",
+    "copyright": "Copyright © 2025",
+    "icon": "resources/icon.png",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gerador TikTok Shop",
+      "installerIcon": "resources/icon.png",
+      "uninstallerIcon": "resources/icon.png",
+      "installerHeaderIcon": "resources/icon.png"
+    }
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-easy-crop": "^5.5.7",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.4.21",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  }
+}
