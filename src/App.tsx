@@ -1126,11 +1126,11 @@ Retorne em estrutura JSON:
                                       <Upload className="w-3 h-3 rotate-180" />
                                     </button>
                                     <button 
-                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração: ${scene.narration}`)} 
+                                      onClick={() => copyText(`${scene.veoPrompt}\n\nFala (DIGEN): ${scene.digenPrompt}\n\nNarração: ${scene.narration}`)} 
                                       className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1.5"
-                                      title="Copiar Prompt VEO + Narração"
+                                      title="Copiar Prompt VEO + Fala (DIGEN) + Narração"
                                     >
-                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Narração</span>
+                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Fala & Narração</span>
                                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                     </button>
                                   </div>
@@ -1138,18 +1138,18 @@ Retorne em estrutura JSON:
                                 <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
                                   "{scene.veoPrompt}"
                                 </p>
-                              </div>
+                                </div>
 
                               {/* 3. Digital Avatar (DIGEN) */}
                               <div className="space-y-2 group/card bg-black/10 hover:bg-purple-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-purple-500/20 transition-all">
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração: ${scene.narration}`)} 
+                                    onClick={() => copyText(`${scene.digenPrompt}\n\nVídeo (VEO): ${scene.veoPrompt}\n\nNarração: ${scene.narration}`)} 
                                     className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1.5"
-                                    title="Copiar Prompt DIGEN + Narração"
+                                    title="Copiar Prompt DIGEN + Vídeo (VEO) + Narração"
                                   >
-                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Narração</span>
+                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Vídeo & Narração</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
