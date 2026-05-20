@@ -14,7 +14,7 @@ function createWindow(): void {
     title: 'Gerador TikTok Shop',
     backgroundColor: '#0a0a0b',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,

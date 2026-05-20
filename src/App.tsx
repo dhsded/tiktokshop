@@ -43,6 +43,7 @@ interface GeneratedScene {
   id: string;
   imageName: string;
   duration: string;
+  imagePrompt: string;
   veoPrompt: string;
   digenPrompt: string;
   narration: string;
@@ -161,6 +162,14 @@ export default function App() {
 
       const croppedFile = new File([croppedBlob], `cropped_${Date.now()}.jpg`, { type: 'image/jpeg' });
       const croppedPreview = URL.createObjectURL(croppedFile);
+
+      // Trigger automatic download of the cropped image
+      const link = document.createElement('a');
+      link.href = croppedPreview;
+      link.download = `cropped_${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
       if (imageToCrop.type === 'collection') {
         setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, file: croppedFile, preview: croppedPreview } : img));
@@ -379,6 +388,7 @@ REGRAS OBRIGATÓRIAS:
 5. As roupas, cenário da modelo e o produto original devem ser mantidos intactos.
 6. A narração em PT-BR deve ser persuasiva e vendedora.
 7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural.
+8. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena, incluindo a modelo (mantendo as características e roupas das imagens enviadas) e/ou o produto, de forma que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática exata daquela cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem de referência. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
 {
@@ -387,6 +397,7 @@ Retorne em estrutura JSON:
     { 
       "imageName": "Nome exato do arquivo", 
       "duration": "${duration}", 
+      "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
       "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
       "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
       "narration": "Narração em PT-BR...", 
@@ -410,12 +421,13 @@ Retorne em estrutura JSON:
                   properties: {
                     imageName: { type: Type.STRING },
                     duration: { type: Type.STRING },
+                    imagePrompt: { type: Type.STRING },
                     veoPrompt: { type: Type.STRING },
                     digenPrompt: { type: Type.STRING },
                     narration: { type: Type.STRING },
                     description: { type: Type.STRING }
                   },
-                  required: ["imageName", "duration", "veoPrompt", "digenPrompt", "narration", "description"]
+                  required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
                 }
               }
             },
@@ -480,6 +492,7 @@ REGRAS OBRIGATÓRIAS:
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
 5. A narração deve ser em PT-BR, persuasiva e sincronizada com a ação daquela imagem específica.
+6. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena, incluindo a modelo (mantendo as características e roupas das imagens enviadas) no cenário da campanha, de forma que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática da cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
 {
@@ -488,6 +501,7 @@ Retorne em estrutura JSON:
     { 
       "imageName": "Nome exato do arquivo", 
       "duration": "${duration}", 
+      "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
       "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
       "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
       "narration": "Narração em PT-BR...", 
@@ -511,12 +525,13 @@ Retorne em estrutura JSON:
                   properties: {
                     imageName: { type: Type.STRING },
                     duration: { type: Type.STRING },
+                    imagePrompt: { type: Type.STRING },
                     veoPrompt: { type: Type.STRING },
                     digenPrompt: { type: Type.STRING },
                     narration: { type: Type.STRING },
                     description: { type: Type.STRING }
                   },
-                  required: ["imageName", "duration", "veoPrompt", "digenPrompt", "narration", "description"]
+                  required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
                 }
               }
             },
@@ -557,7 +572,7 @@ Retorne em estrutura JSON:
   };
 
   const copyScene = (scene: GeneratedScene) => {
-    const text = `Scene: ${scene.imageName}\nDuration: ${scene.duration}\nVEO: ${scene.veoPrompt}\nDIGEN: ${scene.digenPrompt}\nNarration: ${scene.narration}`;
+    const text = `Scene: ${scene.imageName}\nDuration: ${scene.duration}\nNano Banana 2 (Still Image): ${scene.imagePrompt}\nVEO: ${scene.veoPrompt}\nDIGEN: ${scene.digenPrompt}\nNarration: ${scene.narration}`;
     copyText(text);
   };
 
@@ -1067,14 +1082,32 @@ Retorne em estrutura JSON:
                                 className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
                                 title="Copiar bloco desta cena"
                               >
-                                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="space-y-2">
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                              {/* 1. Still Image (Nano Banana 2 / Imagen) */}
+                              <div className="space-y-2 group/card bg-black/10 hover:bg-amber-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-amber-500/20 transition-all">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400 font-display">Prompt VEO (Inglês)</h4>
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-amber-400 font-display">1. Imagem (Nano Banana 2)</h4>
+                                  <button 
+                                    onClick={() => copyText(scene.imagePrompt)} 
+                                    className="text-white/20 hover:text-amber-400 transition-colors flex items-center gap-1"
+                                    title="Copiar Prompt de Imagem"
+                                  >
+                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
+                                  "{scene.imagePrompt}"
+                                </p>
+                              </div>
+
+                              {/* 2. Video Animation (VEO) */}
+                              <div className="space-y-2 group/card bg-black/10 hover:bg-blue-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-blue-500/20 transition-all">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400 font-display">2. Animação (VEO)</h4>
                                   <div className="flex gap-2">
                                     <button 
                                       onClick={() => {
@@ -1088,37 +1121,37 @@ Retorne em estrutura JSON:
                                         }
                                       }} 
                                       className="text-white/20 hover:text-orange-400 transition-colors flex items-center gap-1"
-                                      title="Baixar Imagem"
+                                      title="Baixar Imagem de Referência"
                                     >
                                       <Upload className="w-3 h-3 rotate-180" />
                                     </button>
                                     <button 
-                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração: ${scene.narration}`)} 
+                                      onClick={() => copyText(scene.veoPrompt)} 
                                       className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1"
-                                      title="Copiar Prompt + Narração"
+                                      title="Copiar Prompt VEO"
                                     >
-                                      <span className="text-[10px] font-bold">+ Narração</span>
                                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                     </button>
                                   </div>
                                 </div>
-                                <p className="text-sm text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden">
+                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
                                   "{scene.veoPrompt}"
                                 </p>
                               </div>
-                              <div className="space-y-2">
+
+                              {/* 3. Digital Avatar (DIGEN) */}
+                              <div className="space-y-2 group/card bg-black/10 hover:bg-purple-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-purple-500/20 transition-all">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">Prompt DIGEN (Inglês)</h4>
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração: ${scene.narration}`)} 
+                                    onClick={() => copyText(scene.digenPrompt)} 
                                     className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1"
-                                    title="Copiar Prompt + Narração"
+                                    title="Copiar Prompt DIGEN"
                                   >
-                                    <span className="text-[10px] font-bold">+ Narração</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
-                                <p className="text-sm text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden">
+                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
                                   "{scene.digenPrompt}"
                                 </p>
                               </div>

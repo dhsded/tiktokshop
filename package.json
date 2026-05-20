@@ -4,7 +4,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Gerador de Propagandas para TikTok Shop com IA",
-  "main": "dist-electron/main/index.js",
+  "main": "out/main/index.js",
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
