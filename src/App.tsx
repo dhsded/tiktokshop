@@ -1048,7 +1048,7 @@ Retorne em estrutura JSON:
                         transition={{ delay: i * 0.1 }}
                         className="group bg-white/5 rounded-[2.5rem] p-8 border border-white/10 hover:bg-white/[0.07] transition-colors"
                       >
-                        <div className="flex flex-col md:flex-row gap-8">
+                        <div className="flex flex-col md:flex-row items-start gap-8">
                           {/* Image preview in Scene */}
                           <div className="w-full md:w-48 aspect-square rounded-3xl overflow-hidden shadow-2xl bg-black border border-white/5 flex-shrink-0 relative">
                             {(images.find(img => img.name === scene.imageName) || 
@@ -1086,7 +1086,7 @@ Retorne em estrutura JSON:
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 gap-4">
                               {/* 1. Still Image (Nano Banana 2 / Imagen) */}
                               <div className="space-y-2 group/card bg-black/10 hover:bg-amber-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-amber-500/20 transition-all">
                                 <div className="flex items-center justify-between">
