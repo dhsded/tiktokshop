@@ -1126,10 +1126,11 @@ Retorne em estrutura JSON:
                                       <Upload className="w-3 h-3 rotate-180" />
                                     </button>
                                     <button 
-                                      onClick={() => copyText(scene.veoPrompt)} 
-                                      className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1"
-                                      title="Copiar Prompt VEO"
+                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração: ${scene.narration}`)} 
+                                      className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1.5"
+                                      title="Copiar Prompt VEO + Narração"
                                     >
+                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Narração</span>
                                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                     </button>
                                   </div>
@@ -1144,10 +1145,11 @@ Retorne em estrutura JSON:
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(scene.digenPrompt)} 
-                                    className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1"
-                                    title="Copiar Prompt DIGEN"
+                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração: ${scene.narration}`)} 
+                                    className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1.5"
+                                    title="Copiar Prompt DIGEN + Narração"
                                   >
+                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Narração</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
