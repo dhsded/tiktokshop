@@ -490,9 +490,10 @@ REGRAS OBRIGATÓRIAS:
 3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
-6. A narração em PT-BR deve ser persuasiva, vendedora e adequada ao público do TikTok.
+6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. A narração é o texto falado em voz alta para o público brasileiro do TikTok. Se escrever em inglês, será considerado um erro grave.
 7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
-8. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena de acordo com o estilo selecionado (POV ou Apresentador) para que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática exata daquela cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem de referência. Não inclua texto explicativo, apenas a descrição visual em inglês.
+8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
+9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
 {
@@ -601,8 +602,9 @@ REGRAS OBRIGATÓRIAS:
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
-5. A narração deve ser em PT-BR, persuasiva e sincronizada com a ação daquela imagem específica.
-6. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena, incluindo a modelo (mantendo as características e roupas das imagens enviadas) no cenário da campanha, de forma que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática da cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
+5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. A narração é o texto falado em voz alta para o público brasileiro do TikTok.
+6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
+7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
 {
@@ -1287,11 +1289,11 @@ Retorne em estrutura JSON:
                                       <Upload className="w-3 h-3 rotate-180" />
                                     </button>
                                     <button 
-                                      onClick={() => copyText(`${scene.veoPrompt}\n\nFala (DIGEN): ${scene.digenPrompt}\n\nNarração: ${scene.narration}`)} 
+                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
                                       className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1.5"
-                                      title="Copiar Prompt VEO + Fala (DIGEN) + Narração"
+                                      title="Copiar Prompt VEO + Narração"
                                     >
-                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Fala & Narração</span>
+                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Narração</span>
                                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                     </button>
                                   </div>
@@ -1306,11 +1308,11 @@ Retorne em estrutura JSON:
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(`${scene.digenPrompt}\n\nVídeo (VEO): ${scene.veoPrompt}\n\nNarração: ${scene.narration}`)} 
+                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
                                     className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1.5"
-                                    title="Copiar Prompt DIGEN + Vídeo (VEO) + Narração"
+                                    title="Copiar Prompt DIGEN + Narração"
                                   >
-                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Vídeo & Narração</span>
+                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Narração</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
@@ -1387,7 +1389,7 @@ Retorne em estrutura JSON:
           <p className="text-[10px] text-white/20 uppercase tracking-[0.2em]">Desenvolvido para Marketing de Varejo Moderno</p>
           <div className="flex gap-4">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] text-white/40 font-mono italic">GEMINI-3-FLASH-ACTIVE</span>
+            <span className="text-[10px] text-white/40 font-mono italic">GEMINI-2.5-FLASH-ACTIVE</span>
           </div>
         </div>
       </footer>
