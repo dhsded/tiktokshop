@@ -216,49 +216,82 @@ export default function App() {
     return process.env.GEMINI_API_KEY;
   };
 
-  const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI) => Promise<T>): Promise<T> => {
-    let attempts = 0;
-    const maxAttempts = Math.max(apiKeys.length, 1);
-    let lastError: any = null;
+  // Modelo primário + fallbacks (na ordem de prioridade)
+  const GEMINI_MODEL_CHAIN = [
+    "gemini-2.5-flash",   // Modelo primário (mais recente e estável)
+    "gemini-1.5-flash",   // Primeiro fallback
+    "gemini-1.5-pro",     // Segundo fallback
+  ];
+
+  const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI, model: string) => Promise<T>): Promise<T> => {
+    // Captura as chaves no momento da chamada (evita problema de React state assíncrono)
+    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
     
-    while (attempts < maxAttempts) {
-      const key = getGeminiKey();
-      if (!key) {
-        throw new Error("Nenhuma chave de API do Gemini configurada.");
-      }
+    if (keysToTry.length === 0) {
+      throw new Error("Nenhuma chave de API do Gemini configurada. Carregue um arquivo .txt com suas chaves.");
+    }
+
+    let lastError: any = null;
+
+    // Loop externo: percorre cada chave disponível
+    for (let keyIdx = 0; keyIdx < keysToTry.length; keyIdx++) {
+      const key = keysToTry[keyIdx];
       
-      try {
-        const ai = new GoogleGenAI({ apiKey: key });
-        return await apiCall(ai);
-      } catch (error: any) {
-        lastError = error;
-        
-        // Coleta de detalhes do erro de forma extremamente robusta
-        const errorMsg = error?.message || "";
-        const errorStatus = error?.status || "";
-        const errorDetails = typeof error === 'object' ? JSON.stringify(error) : "";
-        const errorStr = `${errorMsg} ${errorStatus} ${errorDetails} ${String(error)}`.toLowerCase();
-        
-        const isKeyError = errorStr.includes("api key expired") || 
-                           errorStr.includes("api key not valid") || 
-                           errorStr.includes("api_key_invalid") ||
-                           errorStr.includes("key expired") ||
-                           errorStr.includes("invalid api key") ||
-                           (errorStr.includes("invalid_argument") && errorStr.includes("key"));
-                           
-        if (isKeyError && apiKeys.length > 1) {
-          const expiredKeyIndex = (currentKeyIndex - 1 + apiKeys.length) % apiKeys.length;
-          console.warn(`Chave expirada ou inválida detectada no índice ${expiredKeyIndex}. Removendo chave da rotação.`);
+      // Loop interno: percorre a cadeia de modelos (primário → fallbacks)
+      for (const model of GEMINI_MODEL_CHAIN) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: key });
+          console.log(`Tentando chave ${keyIdx + 1}/${keysToTry.length} com modelo: ${model}`);
+          return await apiCall(ai, model);
+        } catch (error: any) {
+          lastError = error;
           
-          setApiKeys(prev => prev.filter((_, idx) => idx !== expiredKeyIndex));
-          setCurrentKeyIndex(prev => prev > 0 ? prev - 1 : 0);
-          attempts++;
-          continue;
+          const errorMsg = error?.message || "";
+          const errorStatus = error?.status || "";
+          const errorDetails = typeof error === 'object' ? JSON.stringify(error) : "";
+          const errorStr = `${errorMsg} ${errorStatus} ${errorDetails} ${String(error)}`.toLowerCase();
+          
+          // Erros de chave: pular para a próxima chave imediatamente
+          const isKeyError = errorStr.includes("api key expired") || 
+                             errorStr.includes("api key not valid") || 
+                             errorStr.includes("api_key_invalid") ||
+                             errorStr.includes("key expired") ||
+                             errorStr.includes("invalid api key") ||
+                             (errorStr.includes("invalid_argument") && errorStr.includes("key"));
+          
+          if (isKeyError) {
+            console.warn(`Chave ${keyIdx + 1} expirada ou inválida. Tentando próxima chave...`);
+            break; // Sai do loop de modelos, vai para a próxima chave
+          }
+          
+          // Erros de modelo (indisponível, sobrecarregado): tenta o próximo modelo
+          const isModelError = errorStr.includes("model not found") ||
+                               errorStr.includes("not found") ||
+                               errorStr.includes("model_not_found") ||
+                               errorStr.includes("unsupported") ||
+                               errorStr.includes("overloaded") ||
+                               errorStr.includes("503") ||
+                               errorStr.includes("unavailable") ||
+                               errorStr.includes("resource_exhausted") ||
+                               errorStr.includes("quota");
+          
+          if (isModelError) {
+            console.warn(`Modelo ${model} indisponível. Tentando próximo modelo...`);
+            continue; // Tenta o próximo modelo na cadeia
+          }
+          
+          // Outros erros: lança imediatamente (erro de lógica, timeout, etc.)
+          throw error;
         }
-        throw error;
       }
     }
-    throw lastError || new Error("Todas as chaves de API carregadas falharam ou expiraram.");
+    
+    // Monta mensagem de erro amigável
+    const lastMsg = (lastError?.message || String(lastError) || "").toLowerCase();
+    if (lastMsg.includes("key expired") || lastMsg.includes("api key") || lastMsg.includes("invalid_argument")) {
+      throw new Error(`Todas as ${keysToTry.length} chave(s) de API estão expiradas ou inválidas.\nRenove suas chaves em: https://aistudio.google.com/apikey`);
+    }
+    throw lastError || new Error("Todos os modelos e chaves falharam. Verifique sua conexão e chaves de API.");
   };
 
   const autoSequence = async () => {
@@ -272,9 +305,9 @@ export default function App() {
         name: img.name
       }));
 
-      const response = await executeGeminiCall(async (ai) => {
+      const response = await executeGeminiCall(async (ai, model) => {
         return await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: model,
           contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
 Nomes das imagens: ${JSON.stringify(imageListData)}.
 Retorne um array JSON indicando a sequência ideal baseada no nome/descrição das imagens para um fluxo narrativo fluido.
@@ -478,9 +511,9 @@ Retorne em estrutura JSON:
 }`
       });
 
-      const response = await executeGeminiCall(async (ai) => {
+      const response = await executeGeminiCall(async (ai, model) => {
         return await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: model,
           contents: {
             role: "user",
             parts: parts
@@ -523,7 +556,8 @@ Retorne em estrutura JSON:
         console.log('Geração cancelada pelo usuário');
       } else {
         console.error("Erro ao gerar roteiro de produto:", error);
-        alert("Erro ao gerar o roteiro: " + (error.message || error));
+        const msg = error?.message || String(error);
+        alert("Erro ao gerar o roteiro:\n\n" + msg);
       }
     } finally {
       setIsGenerating(false);
@@ -549,9 +583,9 @@ Retorne em estrutura JSON:
         };
       }));
 
-      const response = await executeGeminiCall(async (ai) => {
+      const response = await executeGeminiCall(async (ai, model) => {
         return await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: model,
           contents: {
             role: "user",
             parts: [
@@ -626,7 +660,8 @@ Retorne em estrutura JSON:
         console.log('Geração cancelada pelo usuário');
       } else {
         console.error("Erro ao gerar roteiro:", error);
-        alert("Erro ao gerar o roteiro: " + (error.message || error));
+        const msg = error?.message || String(error);
+        alert("Erro ao gerar o roteiro:\n\n" + msg);
       }
     } finally {
       setIsGenerating(false);
