@@ -25,8 +25,7 @@
       "output": "dist-installer"
     },
     "files": [
-      "dist-electron/**/*",
-      "dist/**/*",
+      "out/**/*",
       "resources/**/*"
     ],
     "win": {
@@ -34,19 +33,21 @@
         {
           "target": "nsis",
           "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
         }
       ],
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.png",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Gerador TikTok Shop",
-      "installerIcon": "resources/icon.png",
-      "uninstallerIcon": "resources/icon.png",
-      "installerHeaderIcon": "resources/icon.png"
+      "shortcutName": "Gerador TikTok Shop"
     }
   },
   "dependencies": {
