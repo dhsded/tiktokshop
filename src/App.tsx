@@ -216,13 +216,55 @@ export default function App() {
     return process.env.GEMINI_API_KEY;
   };
 
+  const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI) => Promise<T>): Promise<T> => {
+    let attempts = 0;
+    const maxAttempts = Math.max(apiKeys.length, 1);
+    let lastError: any = null;
+    
+    while (attempts < maxAttempts) {
+      const key = getGeminiKey();
+      if (!key) {
+        throw new Error("Nenhuma chave de API do Gemini configurada.");
+      }
+      
+      try {
+        const ai = new GoogleGenAI({ apiKey: key });
+        return await apiCall(ai);
+      } catch (error: any) {
+        lastError = error;
+        
+        // Coleta de detalhes do erro de forma extremamente robusta
+        const errorMsg = error?.message || "";
+        const errorStatus = error?.status || "";
+        const errorDetails = typeof error === 'object' ? JSON.stringify(error) : "";
+        const errorStr = `${errorMsg} ${errorStatus} ${errorDetails} ${String(error)}`.toLowerCase();
+        
+        const isKeyError = errorStr.includes("api key expired") || 
+                           errorStr.includes("api key not valid") || 
+                           errorStr.includes("api_key_invalid") ||
+                           errorStr.includes("key expired") ||
+                           errorStr.includes("invalid api key") ||
+                           (errorStr.includes("invalid_argument") && errorStr.includes("key"));
+                           
+        if (isKeyError && apiKeys.length > 1) {
+          const expiredKeyIndex = (currentKeyIndex - 1 + apiKeys.length) % apiKeys.length;
+          console.warn(`Chave expirada ou inválida detectada no índice ${expiredKeyIndex}. Removendo chave da rotação.`);
+          
+          setApiKeys(prev => prev.filter((_, idx) => idx !== expiredKeyIndex));
+          setCurrentKeyIndex(prev => prev > 0 ? prev - 1 : 0);
+          attempts++;
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError || new Error("Todas as chaves de API carregadas falharam ou expiraram.");
+  };
+
   const autoSequence = async () => {
     if (images.length < 2) return;
     setIsSequencing(true);
     try {
-      const key = getGeminiKey();
-      if (!key) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey: key });
       const finalTheme = customTheme || theme;
 
       const imageListData = images.map((img, idx) => ({
@@ -230,20 +272,22 @@ export default function App() {
         name: img.name
       }));
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
+      const response = await executeGeminiCall(async (ai) => {
+        return await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
 Nomes das imagens: ${JSON.stringify(imageListData)}.
 Retorne um array JSON indicando a sequência ideal baseada no nome/descrição das imagens para um fluxo narrativo fluido.
 Exemplo: [2, 0, 1].
 Retorne APENAS o array JSON.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.INTEGER }
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: { type: Type.INTEGER }
+            }
           }
-        }
+        });
       });
 
       const newOrder = JSON.parse(response.text || '[]') as number[];
@@ -364,10 +408,6 @@ Retorne APENAS o array JSON.`,
     abortControllerRef.current = new AbortController();
 
     try {
-      const key = getGeminiKey();
-      if (!key) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey: key });
-      
       const parts: any[] = [];
       
       if (modelImage) {
@@ -438,38 +478,40 @@ Retorne em estrutura JSON:
 }`
       });
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          role: "user",
-          parts: parts
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              campaignTitle: { type: Type.STRING },
-              scenes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    imageName: { type: Type.STRING },
-                    duration: { type: Type.STRING },
-                    imagePrompt: { type: Type.STRING },
-                    veoPrompt: { type: Type.STRING },
-                    digenPrompt: { type: Type.STRING },
-                    narration: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                  },
-                  required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+      const response = await executeGeminiCall(async (ai) => {
+        return await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: {
+            role: "user",
+            parts: parts
+          },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                campaignTitle: { type: Type.STRING },
+                scenes: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      imageName: { type: Type.STRING },
+                      duration: { type: Type.STRING },
+                      imagePrompt: { type: Type.STRING },
+                      veoPrompt: { type: Type.STRING },
+                      digenPrompt: { type: Type.STRING },
+                      narration: { type: Type.STRING },
+                      description: { type: Type.STRING }
+                    },
+                    required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+                  }
                 }
-              }
-            },
-            required: ["campaignTitle", "scenes"]
+              },
+              required: ["campaignTitle", "scenes"]
+            }
           }
-        }
+        });
       });
 
       if (abortControllerRef.current?.signal.aborted) return;
@@ -495,10 +537,6 @@ Retorne em estrutura JSON:
     abortControllerRef.current = new AbortController();
 
     try {
-      const key = getGeminiKey();
-      if (!key) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey: key });
-      
       const finalTheme = customTheme || theme;
 
       const imageParts = await Promise.all(images.map(async (img) => {
@@ -511,14 +549,15 @@ Retorne em estrutura JSON:
         };
       }));
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          role: "user",
-          parts: [
-            ...imageParts,
-            {
-              text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
+      const response = await executeGeminiCall(async (ai) => {
+        return await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: {
+            role: "user",
+            parts: [
+              ...imageParts,
+              {
+                text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
 Tema: ${finalTheme}
 Duração de cada cena: ${duration}
 Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
@@ -546,35 +585,36 @@ Retorne em estrutura JSON:
     }
   ]
 }`
-            }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              campaignTitle: { type: Type.STRING },
-              scenes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    imageName: { type: Type.STRING },
-                    duration: { type: Type.STRING },
-                    imagePrompt: { type: Type.STRING },
-                    veoPrompt: { type: Type.STRING },
-                    digenPrompt: { type: Type.STRING },
-                    narration: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                  },
-                  required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
-                }
               }
-            },
-            required: ["campaignTitle", "scenes"]
+            ]
+          },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                campaignTitle: { type: Type.STRING },
+                scenes: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      imageName: { type: Type.STRING },
+                      duration: { type: Type.STRING },
+                      imagePrompt: { type: Type.STRING },
+                      veoPrompt: { type: Type.STRING },
+                      digenPrompt: { type: Type.STRING },
+                      narration: { type: Type.STRING },
+                      description: { type: Type.STRING }
+                    },
+                    required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+                  }
+                }
+              },
+              required: ["campaignTitle", "scenes"]
+            }
           }
-        }
+        });
       });
 
       if (abortControllerRef.current?.signal.aborted) return;
@@ -586,6 +626,7 @@ Retorne em estrutura JSON:
         console.log('Geração cancelada pelo usuário');
       } else {
         console.error("Erro ao gerar roteiro:", error);
+        alert("Erro ao gerar o roteiro: " + (error.message || error));
       }
     } finally {
       setIsGenerating(false);
