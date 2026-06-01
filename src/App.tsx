@@ -25,9 +25,14 @@ import {
   Package,
   Key,
   Crop,
-  Volume2
+  Volume2,
+  FileText,
+  Download,
+  Layers,
+  Camera
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
+import { jsPDF } from 'jspdf';
 
 type TabMode = 'collection' | 'product';
 
@@ -54,6 +59,14 @@ interface GeneratedScene {
 interface ScriptResponse {
   campaignTitle: string;
   scenes: GeneratedScene[];
+}
+
+interface GeneratedAngle {
+  angleName: string;
+  imagePrompt: string;
+  veoPrompt: string;
+  digenPrompt: string;
+  narration: string;
 }
 
 // --- Constants ---
@@ -110,6 +123,11 @@ export default function App() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isCropping, setIsCropping] = useState(false);
+
+  // Ângulos do Produto
+  const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
+  const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
+  const [numAngles, setNumAngles] = useState(4);
 
   // --- Handlers ---
 
@@ -698,6 +716,258 @@ Retorne em estrutura JSON:
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // --- Gerar Ângulos do Produto ---
+
+  const generateProductAngles = async () => {
+    if (productImages.length === 0) {
+      alert('Por favor, envie pelo menos uma foto de produto.');
+      return;
+    }
+    setIsGeneratingAngles(true);
+    try {
+      const productParts = await Promise.all(productImages.map(async (img) => {
+        const base64 = await fileToBase64(img.file);
+        return { inlineData: { mimeType: img.file.type, data: base64.split(',')[1] } };
+      }));
+
+      const textPart = {
+        text: `Você é um especialista em fotografia de produto e marketing digital para TikTok Shop.
+
+Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variações de prompts para mostrar o produto em ângulos e perspectivas diferentes.
+
+PRODUTO(S): ${productImages.map(p => p.name).join(', ')}
+DURAÇÃO: ${duration}
+GÊNERO DA VOZ: ${voiceGender === 'female' ? 'FEMININO' : 'MASCULINO'}
+
+REGRAS ABSOLUTAS — NUNCA VIOLE:
+1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
+2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
+3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
+4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÊS.
+5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês.
+6. No início dos campos veoPrompt e digenPrompt, inclua o nome do arquivo entre colchetes.
+
+Angulos a variar (escolha os mais relevantes para o produto):
+- Vista frontal (Front view straight on)
+- Vista traseira (Back view)
+- Vista lateral direita/esquerda (Side profile)
+- Vista em 45° diagonal (Three-quarter view)
+- Close-up de detalhes (Detail macro close-up)
+- Vista superior (Top-down flat lay)
+- Perspectiva dinâmica (Low angle dynamic view)
+- Produto em contexto de uso (Lifestyle in-use shot)`
+      };
+
+      const response = await executeGeminiCall(async (ai, model) => {
+        return await ai.models.generateContent({
+          model: model,
+          contents: { role: 'user', parts: [...productParts, textPart] },
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                angles: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      angleName: { type: Type.STRING },
+                      imagePrompt: { type: Type.STRING },
+                      veoPrompt: { type: Type.STRING },
+                      digenPrompt: { type: Type.STRING },
+                      narration: { type: Type.STRING },
+                    },
+                    required: ['angleName', 'imagePrompt', 'veoPrompt', 'digenPrompt', 'narration']
+                  }
+                }
+              },
+              required: ['angles']
+            }
+          }
+        });
+      });
+
+      const parsed = JSON.parse(response.text || '{}') as { angles: GeneratedAngle[] };
+      setGeneratedAngles(parsed.angles || []);
+    } catch (error: any) {
+      console.error('Erro ao gerar ângulos:', error);
+      alert('Erro ao gerar ângulos:\n\n' + (error?.message || String(error)));
+    } finally {
+      setIsGeneratingAngles(false);
+    }
+  };
+
+  // --- Exportar Prompts ---
+
+  const downloadBlob = (content: string, filename: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const buildExportContent = () => {
+    const lines: string[] = [];
+    if (generatedScript) {
+      lines.push(`ROTEIRO: ${generatedScript.campaignTitle}`);
+      lines.push('='.repeat(60));
+      generatedScript.scenes.forEach((scene, i) => {
+        lines.push(`\nCENA ${i + 1} • ${scene.duration} • ${scene.imageName}`);
+        lines.push('-'.repeat(40));
+        lines.push(`\n[IMAGEM — Nano Banana 2]\n${scene.imagePrompt}`);
+        lines.push(`\n[VEO — Animação]\n${scene.veoPrompt}`);
+        lines.push(`\n[DIGEN — Fala]\n${scene.digenPrompt}`);
+        lines.push(`\n[NARRAÇÃO PT-BR]\n${scene.narration}`);
+        lines.push(`\n[CONTEXTO]\n${scene.description}`);
+        lines.push('\n' + '='.repeat(60));
+      });
+    }
+    if (generatedAngles && generatedAngles.length > 0) {
+      lines.push(`\n\nÂNGULOS DO PRODUTO`);
+      lines.push('='.repeat(60));
+      generatedAngles.forEach((angle, i) => {
+        lines.push(`\nÂNGULO ${i + 1}: ${angle.angleName}`);
+        lines.push('-'.repeat(40));
+        lines.push(`\n[IMAGEM — Nano Banana 2]\n${angle.imagePrompt}`);
+        lines.push(`\n[VEO — Animação]\n${angle.veoPrompt}`);
+        lines.push(`\n[DIGEN — Fala]\n${angle.digenPrompt}`);
+        lines.push(`\n[NARRAÇÃO PT-BR]\n${angle.narration}`);
+        lines.push('\n' + '='.repeat(60));
+      });
+    }
+    return lines.join('\n');
+  };
+
+  const exportAsTxt = () => {
+    const content = buildExportContent();
+    const title = (generatedScript?.campaignTitle || 'roteiro').replace(/[^a-zA-Z0-9]/g, '_');
+    downloadBlob(content, `${title}.txt`, 'text/plain;charset=utf-8');
+  };
+
+  const exportAsDoc = () => {
+    if (!generatedScript) return;
+    const title = generatedScript.campaignTitle;
+    const buildSectionHtml = (label: string, color: string, content: string) =>
+      `<p style="font-weight:bold;font-size:9pt;color:${color};text-transform:uppercase;margin:8px 0 2px">${label}</p>
+       <div style="background:#f5f5f5;padding:8px 10px;border-left:3px solid ${color};margin-bottom:10px;font-size:10pt">${content}</div>`;
+
+    const scenesHtml = generatedScript.scenes.map((scene, i) => `
+      <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Cena ${i + 1} &bull; ${scene.duration} &bull; ${scene.imageName}</h2>
+      ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', scene.imagePrompt)}
+      ${buildSectionHtml('VEO — Animação', '#2563eb', scene.veoPrompt)}
+      ${buildSectionHtml('DIGEN — Fala', '#7c3aed', scene.digenPrompt)}
+      <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+      <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${scene.narration}</div>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+    `).join('');
+
+    const anglesHtml = (generatedAngles && generatedAngles.length > 0) ? `
+      <h1 style="font-size:18pt;color:#E65C00;margin-top:24px">Ângulos do Produto</h1>
+      ${generatedAngles.map((angle, i) => `
+        <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Ângulo ${i + 1}: ${angle.angleName}</h2>
+        ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', angle.imagePrompt)}
+        ${buildSectionHtml('VEO — Animação', '#2563eb', angle.veoPrompt)}
+        ${buildSectionHtml('DIGEN — Fala', '#7c3aed', angle.digenPrompt)}
+        <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+        <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;font-style:italic;font-size:11pt">${angle.narration}</div>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+      `).join('')}
+    ` : '';
+
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
+      <head><meta charset="utf-8"><title>${title}</title></head>
+      <body style="font-family:Calibri,Arial,sans-serif;max-width:800px;margin:auto;padding:20px">
+        <h1 style="font-size:22pt;color:#E65C00">${title}</h1>
+        <hr style="border:none;border-top:2px solid #E65C00;margin-bottom:24px"/>
+        ${scenesHtml}
+        ${anglesHtml}
+      </body></html>`;
+
+    const filename = title.replace(/[^a-zA-Z0-9]/g, '_');
+    downloadBlob(html, `${filename}.doc`, 'application/msword');
+  };
+
+  const exportAsPdf = () => {
+    if (!generatedScript) return;
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 18;
+    const maxW = pageW - margin * 2;
+    let y = margin;
+
+    const checkPage = (needed: number) => {
+      if (y + needed > pageH - margin) { doc.addPage(); y = margin; }
+    };
+
+    const addLabel = (text: string, r: number, g: number, b: number) => {
+      checkPage(8);
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(r, g, b);
+      doc.text(text.toUpperCase(), margin, y); y += 5;
+    };
+
+    const addBody = (text: string) => {
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 60, 60);
+      const lines = doc.splitTextToSize(text, maxW);
+      checkPage(lines.length * 4.5);
+      doc.text(lines, margin, y); y += lines.length * 4.5 + 4;
+    };
+
+    const addDivider = () => {
+      checkPage(6);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, y, pageW - margin, y); y += 6;
+    };
+
+    // Title
+    doc.setFontSize(20); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
+    const titleLines = doc.splitTextToSize(generatedScript.campaignTitle, maxW);
+    doc.text(titleLines, margin, y); y += titleLines.length * 8 + 4;
+    doc.setDrawColor(230, 92, 0); doc.line(margin, y, pageW - margin, y); y += 8;
+
+    generatedScript.scenes.forEach((scene, i) => {
+      checkPage(20);
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+      doc.text(`Cena ${i + 1}  •  ${scene.duration}  •  ${scene.imageName}`, margin, y); y += 7;
+      addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(scene.imagePrompt);
+      addLabel('VEO — Animação', 37, 99, 235); addBody(scene.veoPrompt);
+      addLabel('DIGEN — Fala', 124, 58, 237); addBody(scene.digenPrompt);
+      addLabel('Narração PT-BR', 234, 88, 12);
+      doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
+      const nlines = doc.splitTextToSize(scene.narration, maxW);
+      checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
+      addDivider();
+    });
+
+    if (generatedAngles && generatedAngles.length > 0) {
+      checkPage(20);
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
+      doc.text('ÂNGULOS DO PRODUTO', margin, y); y += 10;
+      generatedAngles.forEach((angle, i) => {
+        checkPage(20);
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+        doc.text(`Ângulo ${i + 1}: ${angle.angleName}`, margin, y); y += 7;
+        addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(angle.imagePrompt);
+        addLabel('VEO — Animação', 37, 99, 235); addBody(angle.veoPrompt);
+        addLabel('DIGEN — Fala', 124, 58, 237); addBody(angle.digenPrompt);
+        addLabel('Narração PT-BR', 234, 88, 12);
+        doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
+        const nlines = doc.splitTextToSize(angle.narration, maxW);
+        checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
+        addDivider();
+      });
+    }
+
+    const filename = generatedScript.campaignTitle.replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`${filename}.pdf`);
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-white font-sans selection:bg-orange-500/30">
       {/* Decorative background */}
@@ -1081,7 +1351,7 @@ Retorne em estrutura JSON:
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                  <div className="space-y-6 pt-6 border-t border-white/5">
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <User className="w-3 h-3 text-orange-400" />
@@ -1091,16 +1361,16 @@ Retorne em estrutura JSON:
                         <button
                           type="button"
                           onClick={() => setVideoStyle('standard')}
-                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
                           Apresentador
                         </button>
                         <button
                           type="button"
                           onClick={() => setVideoStyle('pov')}
-                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
-                          POV (Apenas Mãos)
+                          POV (Mãos)
                         </button>
                       </div>
                     </div>
@@ -1108,24 +1378,57 @@ Retorne em estrutura JSON:
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <Volume2 className="w-3 h-3 text-purple-400" />
-                        Gênero da Voz/Narrador
+                        Gênero da Voz / Narrador
                       </label>
                       <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                         <button
                           type="button"
                           onClick={() => setVoiceGender('female')}
-                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
                           Feminino
                         </button>
                         <button
                           type="button"
                           onClick={() => setVoiceGender('male')}
-                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
                           Masculino
                         </button>
                       </div>
+                    </div>
+
+                    {/* Ângulos do Produto */}
+                    <div className="space-y-3 pt-4 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Camera className="w-3 h-3 text-teal-400" />
+                          Ângulos do Produto
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-white/30">Quantidade:</span>
+                          <select
+                            value={numAngles}
+                            onChange={(e) => setNumAngles(Number(e.target.value))}
+                            className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                          >
+                            {[2,3,4,5,6,7,8].map(n => <option key={n} value={n} className="bg-[#1a1a1c]">{n}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <button
+                        disabled={productImages.length === 0 || isGeneratingAngles}
+                        onClick={generateProductAngles}
+                        className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl border font-bold text-sm transition-all ${
+                          productImages.length > 0 && !isGeneratingAngles
+                            ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 hover:bg-teal-500/20 active:scale-[0.98]'
+                            : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                        }`}
+                      >
+                        {isGeneratingAngles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                        {isGeneratingAngles ? 'Gerando Ângulos...' : `Gerar ${numAngles} Ângulos do Produto`}
+                      </button>
+                      <p className="text-[10px] text-white/25 text-center">Gera prompts de imagem, VEO e DIGEN para cada ângulo, mantendo o produto 100% original</p>
                     </div>
                   </div>
                 </section>
@@ -1188,18 +1491,32 @@ Retorne em estrutura JSON:
                   exit={{ opacity: 0, x: -20 }}
                   className="space-y-8"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs uppercase tracking-[0.3em] text-orange-500 font-bold mb-2">Roteiro Gerado</h3>
-                      <h2 className="text-3xl font-bold font-display">{generatedScript.campaignTitle}</h2>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-xs uppercase tracking-[0.3em] text-orange-500 font-bold mb-2">Roteiro Gerado</h3>
+                        <h2 className="text-3xl font-bold font-display">{generatedScript.campaignTitle}</h2>
+                      </div>
+                      <button 
+                        onClick={copyToClipboard}
+                        className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-2xl hover:bg-white hover:text-black transition-all"
+                      >
+                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        <span className="text-xs font-bold uppercase tracking-widest">{copied ? 'Copiado' : 'JSON'}</span>
+                      </button>
                     </div>
-                    <button 
-                      onClick={copyToClipboard}
-                      className="flex items-center gap-2 px-6 py-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white hover:text-black transition-all"
-                    >
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span className="text-xs font-bold uppercase tracking-widest">{copied ? 'Copiado' : 'Copiar JSON'}</span>
-                    </button>
+                    {/* Export buttons */}
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={exportAsTxt} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
+                        <FileText className="w-3.5 h-3.5" />.TXT
+                      </button>
+                      <button onClick={exportAsDoc} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
+                        <FileText className="w-3.5 h-3.5" />.DOC
+                      </button>
+                      <button onClick={exportAsPdf} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
+                        <Download className="w-3.5 h-3.5" />.PDF
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -1342,10 +1659,92 @@ Retorne em estrutura JSON:
                     ))}
                   </div>
 
+                  {/* Ângulos do Produto */}
+                  {generatedAngles && generatedAngles.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-6"
+                    >
+                      <div className="flex items-center gap-3 pt-4">
+                        <Layers className="w-5 h-5 text-teal-400" />
+                        <h3 className="text-xl font-bold font-display">Ângulos do Produto</h3>
+                        <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full">{generatedAngles.length} variações</span>
+                      </div>
+                      <p className="text-xs text-white/30">Produto mantido 100% original — apenas o ângulo da câmera varia</p>
+                      {generatedAngles.map((angle, i) => (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.08 }}
+                          className="bg-teal-500/[0.03] rounded-[2rem] p-6 border border-teal-500/10 hover:border-teal-500/20 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-3">
+                              <span className="w-8 h-8 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-xs font-bold text-teal-400">{i + 1}</span>
+                              <span className="font-bold text-white">{angle.angleName}</span>
+                            </div>
+                            <button
+                              onClick={() => copyText(`${angle.imagePrompt}\n\nVEO:\n${angle.veoPrompt}\n\nDIGEN:\n${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)}
+                              className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
+                              title="Copiar tudo deste ângulo"
+                            >
+                              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-4">
+                            <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-amber-400">Imagem (Nano Banana 2)</h4>
+                                <button onClick={() => copyText(angle.imagePrompt)} className="text-white/20 hover:text-amber-400 transition-colors">
+                                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                              </div>
+                              <p className="text-xs text-white/70 leading-relaxed italic">&quot;{angle.imagePrompt}&quot;</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400">VEO</h4>
+                                  <button onClick={() => copyText(`${angle.veoPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1">
+                                    <span className="text-[9px] font-bold text-blue-400/70">+ Narr.</span>
+                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                                <p className="text-xs text-white/60 leading-relaxed italic">&quot;{angle.veoPrompt}&quot;</p>
+                              </div>
+                              <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400">DIGEN</h4>
+                                  <button onClick={() => copyText(`${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1">
+                                    <span className="text-[9px] font-bold text-purple-400/70">+ Narr.</span>
+                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                                <p className="text-xs text-white/60 leading-relaxed italic">&quot;{angle.digenPrompt}&quot;</p>
+                              </div>
+                            </div>
+                            <div className="bg-teal-500/5 p-4 rounded-2xl border border-teal-500/10">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-teal-400">Narração (PT-BR)</h4>
+                                <button onClick={() => copyText(angle.narration)} className="text-white/20 hover:text-teal-400 transition-colors">
+                                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                              </div>
+                              <p className="text-sm font-medium text-white/90">{angle.narration}</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  )}
+
                   <button 
                     onClick={() => {
                       if(confirm("Deseja iniciar um novo projeto? Todas as configurações e roteiros atuais serão perdidos.")) {
                         setGeneratedScript(null);
+                        setGeneratedAngles(null);
                         setImages([]);
                         setModelImage(null);
                         setProductImages([]);
