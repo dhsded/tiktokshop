@@ -24,7 +24,8 @@ import {
   User,
   Package,
   Key,
-  Crop
+  Crop,
+  Volume2
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -85,6 +86,8 @@ export default function App() {
   const [modelImage, setModelImage] = useState<SceneImage | null>(null);
   const [productImages, setProductImages] = useState<SceneImage[]>([]);
   const [numScenes, setNumScenes] = useState(3);
+  const [videoStyle, setVideoStyle] = useState<'standard' | 'pov'>('standard');
+  const [voiceGender, setVoiceGender] = useState<'female' | 'male'>('female');
   const modelInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
 
@@ -348,7 +351,15 @@ Retorne APENAS o array JSON.`,
   };
 
   const generateProductScript = async () => {
-    if (!modelImage || productImages.length === 0) return;
+    if (videoStyle === 'standard' && !modelImage) {
+      alert("Por favor, envie uma imagem de modelo/apresentador para o estilo Apresentador Padrão.");
+      return;
+    }
+    if (productImages.length === 0) {
+      alert("Por favor, envie pelo menos uma foto de produto.");
+      return;
+    }
+    
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
 
@@ -357,45 +368,65 @@ Retorne APENAS o array JSON.`,
       if (!key) throw new Error("API Key missing");
       const ai = new GoogleGenAI({ apiKey: key });
       
-      const modelBase64 = await fileToBase64(modelImage.file);
+      const parts: any[] = [];
+      
+      if (modelImage) {
+        const modelBase64 = await fileToBase64(modelImage.file);
+        parts.push({ inlineData: { mimeType: modelImage.file.type, data: modelBase64.split(',')[1] } });
+      }
+      
       const productParts = await Promise.all(productImages.map(async (img) => {
         const base64 = await fileToBase64(img.file);
         return { inlineData: { mimeType: img.file.type, data: base64.split(',')[1] } };
       }));
+      parts.push(...productParts);
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: modelImage.file.type, data: modelBase64.split(',')[1] } },
-            ...productParts,
-            {
-              text: `Gere um roteiro narrativo e prompts de animação focados na apresentação de um produto.
+      const styleInstruction = videoStyle === 'pov' 
+        ? `ESTILO DO VÍDEO: POV (APENAS MÃOS / PRIMEIRA PESSOA)
+- O apresentador/modelo NÃO deve aparecer de corpo inteiro ou mostrar o rosto. Apenas suas mãos (de acordo com o gênero e produto) devem aparecer manipulando, segurando, demonstrando, tocando ou usando o produto.
+- No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), NUNCA inclua descrições do rosto ou corpo do modelo. Descreva um close-up extremo ou macro focado apenas nas mãos (femininas ou masculinas conforme o produto) segurando e demonstrando o produto com extremo realismo e qualidade.
+- No campo 'veoPrompt' (Animação VEO), descreva movimentos de câmera focados nas ações das mãos: girando o produto, aplicando, mostrando texturas, detalhes e close-ups das mãos em ação.
+- No campo 'digenPrompt' (DIGEN), descreva uma narração em off (voiceover) apropriada para acompanhar a demonstração do produto, sem movimentos labiais do avatar (pois é POV).`
+        : `ESTILO DO VÍDEO: APRESENTADOR PADRÃO (VISÍVEL NO VÍDEO)
+- O apresentador/modelo aparece na cena interagindo e apresentando o produto.
+- O campo 'imageName' deve indicar qual referência usar principalmente na cena (use "${modelImage?.name || ''}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
+- No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), descreva a modelo apresentando e interagindo com o produto de forma fotorrealista e natural.`;
+
+      const voiceInstruction = `GÊNERO DA VOZ / NARRADOR:
+A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
+- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+
+      parts.push({
+        text: `Gere um roteiro narrativo e prompts de animação focados na apresentação de um produto.
 Imagens fornecidas: 
-1. Modelo/Apresentador(a) (${modelImage.name})
-2. Fotos do Produto (${productImages.map(p => p.name).join(', ')})
+1. Modelo/Apresentador(a): ${modelImage ? modelImage.name : "Nenhuma (Vídeo em POV)"}
+2. Fotos do Produto: ${productImages.map(p => p.name).join(', ')}
 
 Duração de cada cena: ${duration}
 Número de cenas a gerar: ${numScenes}
 Observações específicas: ${observations || "INSTRUÇÃO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefício ou característica visível do produto para usar no roteiro e narração."}
 
+${styleInstruction}
+
+${voiceInstruction}
+
 REGRAS OBRIGATÓRIAS:
-1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto pela modelo. Varie as fotos do produto nas cenas se houver mais de uma.
-2. O campo 'imageName' deve indicar qual referência usar principalmente na cena (use "${modelImage.name}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
-3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes.
-4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas.
-5. As roupas, cenário da modelo e o produto original devem ser mantidos intactos.
-6. A narração em PT-BR deve ser persuasiva e vendedora.
-7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural.
-8. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena, incluindo a modelo (mantendo as características e roupas das imagens enviadas) e/ou o produto, de forma que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática exata daquela cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem de referência. Não inclua texto explicativo, apenas a descrição visual em inglês.
+1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
+2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena.
+3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
+4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
+5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
+6. A narração em PT-BR deve ser persuasiva, vendedora e adequada ao público do TikTok.
+7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
+8. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt' para gerar uma imagem estática (still image) representativa da cena. Esse prompt descreve visualmente a cena de acordo com o estilo selecionado (POV ou Apresentador) para que uma IA de imagem (Nano Banana 2/Imagen) possa gerar a imagem estática exata daquela cena. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem de referência. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
 {
   "campaignTitle": "Nome da Campanha",
   "scenes": [
     { 
-      "imageName": "Nome exato do arquivo", 
+      "imageName": "Nome exato do arquivo de referência", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
       "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
@@ -405,8 +436,13 @@ Retorne em estrutura JSON:
     }
   ]
 }`
-            }
-          ]
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          role: "user",
+          parts: parts
         },
         config: {
           responseMimeType: "application/json",
@@ -445,6 +481,7 @@ Retorne em estrutura JSON:
         console.log('Geração cancelada pelo usuário');
       } else {
         console.error("Erro ao gerar roteiro de produto:", error);
+        alert("Erro ao gerar o roteiro: " + (error.message || error));
       }
     } finally {
       setIsGenerating(false);
@@ -965,6 +1002,54 @@ Retorne em estrutura JSON:
                       </div>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                    <div className="space-y-3">
+                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                        <User className="w-3 h-3 text-orange-400" />
+                        Estilo do Vídeo
+                      </label>
+                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => setVideoStyle('standard')}
+                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Apresentador
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVideoStyle('pov')}
+                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          POV (Apenas Mãos)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                        <Volume2 className="w-3 h-3 text-purple-400" />
+                        Gênero da Voz/Narrador
+                      </label>
+                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => setVoiceGender('female')}
+                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Feminino
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceGender('male')}
+                          className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Masculino
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </section>
               </>
             )}
@@ -999,10 +1084,10 @@ Retorne em estrutura JSON:
                 </div>
               ) : (
                 <button
-                  disabled={activeTab === 'collection' ? (images.length === 0 || isGenerating) : (!modelImage || productImages.length === 0 || isGenerating)}
+                  disabled={activeTab === 'collection' ? (images.length === 0 || isGenerating) : (((videoStyle === 'standard' ? !modelImage : false) || productImages.length === 0) || isGenerating)}
                   onClick={activeTab === 'collection' ? generateScript : generateProductScript}
                   className={`group relative w-full overflow-hidden rounded-3xl py-6 transition-all font-bold tracking-tight text-lg ${
-                    (activeTab === 'collection' ? images.length > 0 : (modelImage && productImages.length > 0))
+                    (activeTab === 'collection' ? images.length > 0 : ((videoStyle === 'standard' ? modelImage : true) && productImages.length > 0))
                     ? 'bg-white text-black active:scale-[0.98]' : 'bg-white/5 text-white/20 cursor-not-allowed'
                   }`}
                 >
