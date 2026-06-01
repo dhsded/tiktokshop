@@ -274,7 +274,7 @@ export default function App() {
 
       const response = await executeGeminiCall(async (ai) => {
         return await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.5-flash",
           contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
 Nomes das imagens: ${JSON.stringify(imageListData)}.
 Retorne um array JSON indicando a sequência ideal baseada no nome/descrição das imagens para um fluxo narrativo fluido.
@@ -480,7 +480,7 @@ Retorne em estrutura JSON:
 
       const response = await executeGeminiCall(async (ai) => {
         return await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.5-flash",
           contents: {
             role: "user",
             parts: parts
@@ -551,7 +551,7 @@ Retorne em estrutura JSON:
 
       const response = await executeGeminiCall(async (ai) => {
         return await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.5-flash",
           contents: {
             role: "user",
             parts: [
