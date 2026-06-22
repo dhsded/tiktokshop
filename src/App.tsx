@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useRef, useCallback, ChangeEvent, DragEvent } from 'react';
+import React, { useState, useRef, useCallback, useEffect, ChangeEvent, DragEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper, { Point, Area } from 'react-easy-crop';
 import { 
@@ -29,10 +29,22 @@ import {
   FileText,
   Download,
   Layers,
-  Camera
+  Camera,
+  Globe
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
+
+declare global {
+  interface Window {
+    electronAPI: {
+      platform: string;
+      openInjectorWindow: (data: any) => void;
+      injectorReady: () => void;
+      onLoadPrompts: (callback: (data: any) => void) => () => void;
+    };
+  }
+}
 
 type TabMode = 'collection' | 'product';
 
@@ -84,6 +96,19 @@ const THEMES = [
 ];
 
 export default function App() {
+  const [isInjectorWindow, setIsInjectorWindow] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('window') === 'injector' || window.location.hash === '#injector') {
+      setIsInjectorWindow(true);
+    }
+  }, []);
+
+  if (isInjectorWindow) {
+    return <PromptInjector />;
+  }
+
   const [activeTab, setActiveTab] = useState<TabMode>('collection');
   
   // Tab 1: Collection
@@ -1516,6 +1541,18 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <button onClick={exportAsPdf} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
                         <Download className="w-3.5 h-3.5" />.PDF
                       </button>
+                      <button 
+                        onClick={() => {
+                          if (window.electronAPI) {
+                            window.electronAPI.openInjectorWindow({ generatedScript, generatedAngles });
+                          } else {
+                            alert("Disponível apenas rodando no Electron.");
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Injetar Prompts (Digen/Flow)
+                      </button>
                     </div>
                   </div>
 
@@ -1860,6 +1897,430 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function PromptInjector() {
+  const [prompts, setPrompts] = useState<{
+    generatedScript: ScriptResponse | null;
+    generatedAngles: GeneratedAngle[] | null;
+  } | null>(null);
+  
+  const [url, setUrl] = useState('https://digen.ai/explore');
+  const [inputValue, setInputValue] = useState('https://digen.ai/explore');
+  const [activeTab, setActiveTab] = useState<'scenes' | 'angles'>('scenes');
+  const [selectedItemIndex, setSelectedItemIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const webviewRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (window.electronAPI) {
+      const unsubscribe = window.electronAPI.onLoadPrompts((data) => {
+        setPrompts(data);
+        if (!data.generatedScript?.scenes?.length && data.generatedAngles?.length) {
+          setActiveTab('angles');
+        }
+      });
+      window.electronAPI.injectorReady();
+      return unsubscribe;
+    }
+  }, []);
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const handleStartLoad = () => setIsLoading(true);
+    const handleStopLoad = () => setIsLoading(false);
+    const handleNavigate = (e: any) => {
+      setUrl(e.url);
+      setInputValue(e.url);
+    };
+
+    webview.addEventListener('did-start-loading', handleStartLoad);
+    webview.addEventListener('did-stop-loading', handleStopLoad);
+    webview.addEventListener('did-navigate', handleNavigate);
+    webview.addEventListener('did-navigate-in-page', handleNavigate);
+
+    return () => {
+      webview.removeEventListener('did-start-loading', handleStartLoad);
+      webview.removeEventListener('did-stop-loading', handleStopLoad);
+      webview.removeEventListener('did-navigate', handleNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleNavigate);
+    };
+  }, [prompts]);
+
+  const goBack = () => {
+    if (webviewRef.current && webviewRef.current.canGoBack()) {
+      webviewRef.current.goBack();
+    }
+  };
+
+  const goForward = () => {
+    if (webviewRef.current && webviewRef.current.canGoForward()) {
+      webviewRef.current.goForward();
+    }
+  };
+
+  const reload = () => {
+    if (webviewRef.current) {
+      webviewRef.current.reload();
+    }
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    let targetUrl = inputValue.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    setUrl(targetUrl);
+    setInputValue(targetUrl);
+  };
+
+  const injectText = (text: string) => {
+    if (!webviewRef.current) return;
+    
+    const escapedText = JSON.stringify(text);
+    
+    const script = `
+      (function() {
+        const el = document.activeElement;
+        if (!el) return false;
+        
+        let target = el;
+        if (target.tagName === 'IFRAME') {
+          try {
+            target = target.contentDocument.activeElement || target.contentDocument.body;
+          } catch (e) {}
+        }
+        
+        if (target.isContentEditable) {
+          target.focus();
+          target.innerText = ${escapedText};
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        } else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          target.focus();
+          const start = target.selectionStart || 0;
+          const end = target.selectionEnd || 0;
+          const val = target.value || '';
+          
+          target.value = val.slice(0, start) + ${escapedText} + val.slice(end);
+          
+          const newPos = start + ${escapedText}.length;
+          target.setSelectionRange(newPos, newPos);
+          
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          const tracker = target._valueTracker;
+          if (tracker) {
+            tracker.setValue(val);
+          }
+          return true;
+        }
+        return false;
+      })()
+    `;
+    
+    webviewRef.current.executeJavaScript(script)
+      .then((success: boolean) => {
+        if (!success) {
+          navigator.clipboard.writeText(text);
+          alert("Nenhum campo de texto focado encontrado na página. Copiado para a área de transferência!");
+        }
+      })
+      .catch((err: any) => {
+        console.error("Erro na injeção:", err);
+        navigator.clipboard.writeText(text);
+        alert("Copiado para área de transferência (Injeção falhou).");
+      });
+  };
+
+  const scenes = prompts?.generatedScript?.scenes || [];
+  const angles = prompts?.generatedAngles || [];
+  const currentItem = activeTab === 'scenes' ? scenes[selectedItemIndex] : angles[selectedItemIndex];
+
+  return (
+    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none">
+      {/* PAINEL ESQUERDO: CONTROLES E PROMPTS */}
+      <div className="w-[420px] h-full border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex flex-col flex-shrink-0 overflow-hidden">
+        
+        {/* Topo do Painel */}
+        <div className="p-5 border-b border-zinc-800 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-teal-500 flex items-center justify-center shadow-lg shadow-orange-500/10 flex-shrink-0">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="font-bold font-display text-base bg-gradient-to-r from-orange-400 to-teal-400 bg-clip-text text-transparent">Injetor de Prompts</h1>
+            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Digen & Google Labs Flow</p>
+          </div>
+        </div>
+
+        {/* Abas */}
+        <div className="p-3 border-b border-zinc-800 bg-zinc-900/20 flex gap-2 flex-shrink-0">
+          <button
+            onClick={() => { setActiveTab('scenes'); setSelectedItemIndex(0); }}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'scenes'
+                ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Cenas ({scenes.length})
+          </button>
+          <button
+            onClick={() => { setActiveTab('angles'); setSelectedItemIndex(0); }}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'angles'
+                ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            Ângulos ({angles.length})
+          </button>
+        </div>
+
+        {/* Lista de Itens */}
+        <div className="flex-shrink-0 overflow-y-auto p-4 space-y-2 border-b border-zinc-800 max-h-[30vh]">
+          {activeTab === 'scenes' ? (
+            scenes.length === 0 ? (
+              <div className="text-center py-6 text-zinc-500 text-xs">Nenhuma cena gerada.</div>
+            ) : (
+              scenes.map((scene, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedItemIndex(i)}
+                  className={`w-full text-left p-3 rounded-xl transition-all border ${
+                    selectedItemIndex === i
+                      ? 'bg-orange-500/10 border-orange-500/30 text-white'
+                      : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs">Cena {i + 1}</span>
+                    <span className="text-[10px] text-zinc-500 font-semibold">{scene.duration}</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 truncate">{scene.description || 'Sem descrição'}</p>
+                </button>
+              ))
+            )
+          ) : (
+            angles.length === 0 ? (
+              <div className="text-center py-6 text-zinc-500 text-xs">Nenhum ângulo gerado.</div>
+            ) : (
+              angles.map((angle, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedItemIndex(i)}
+                  className={`w-full text-left p-3 rounded-xl transition-all border ${
+                    selectedItemIndex === i
+                      ? 'bg-teal-500/10 border-teal-500/30 text-white'
+                      : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
+                  }`}
+                >
+                  <span className="font-bold text-xs block mb-1">{angle.angleName}</span>
+                  <p className="text-[11px] text-zinc-400 truncate">{angle.imagePrompt}</p>
+                </button>
+              ))
+            )
+          )}
+        </div>
+
+        {/* Detalhes do Item Selecionado & Prompts */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {currentItem ? (
+            <>
+              <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80">
+                <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mb-1">Foco Selecionado</h4>
+                <p className="font-bold text-sm text-white">
+                  {activeTab === 'scenes' ? `Cena ${selectedItemIndex + 1}` : (currentItem as GeneratedAngle).angleName}
+                </p>
+                {activeTab === 'scenes' && (currentItem as GeneratedScene).description && (
+                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
+                    {(currentItem as GeneratedScene).description}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {/* 1. Prompt VEO */}
+                {currentItem.veoPrompt && (
+                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-orange-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                      {currentItem.veoPrompt}
+                    </div>
+                    <button
+                      onClick={() => injectText(currentItem.veoPrompt)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
+                    >
+                      Injetar VEO
+                    </button>
+                  </div>
+                )}
+
+                {/* 2. Prompt DIGEN */}
+                {currentItem.digenPrompt && (
+                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5" /> Prompt DIGEN (Avatar)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                      {currentItem.digenPrompt}
+                    </div>
+                    <button
+                      onClick={() => injectText(currentItem.digenPrompt)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/10 transition-all hover:scale-[1.02]"
+                    >
+                      Injetar DIGEN
+                    </button>
+                  </div>
+                )}
+
+                {/* 3. Prompt de Imagem */}
+                {currentItem.imagePrompt && (
+                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <ImageIcon className="w-3.5 h-3.5" /> Prompt de Imagem
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                      {currentItem.imagePrompt}
+                    </div>
+                    <button
+                      onClick={() => injectText(currentItem.imagePrompt)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
+                    >
+                      Injetar Imagem
+                    </button>
+                  </div>
+                )}
+
+                {/* 4. Narração */}
+                {currentItem.narration && (
+                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5" /> Narração (Falas)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                      {currentItem.narration}
+                    </div>
+                    <button
+                      onClick={() => injectText(currentItem.narration)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-xs font-bold shadow-md shadow-yellow-600/10 transition-all hover:scale-[1.02]"
+                    >
+                      Injetar Narração
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-500 text-xs py-10">
+              Nenhuma cena ou ângulo selecionado.
+            </div>
+          )}
+        </div>
+
+        {/* Dica / Rodapé */}
+        <div className="p-4 bg-zinc-950/80 border-t border-zinc-800 text-[10px] text-zinc-400 leading-relaxed flex-shrink-0">
+          💡 <strong>Dica:</strong> Primeiro, clique no campo de entrada de texto no site à direita. Depois, clique em um botão de injeção acima para colar o prompt diretamente lá.
+        </div>
+      </div>
+
+      {/* PAINEL DIREITO: NAVEGADOR WEB */}
+      <div className="flex-1 h-full flex flex-col overflow-hidden bg-black">
+        
+        {/* Barra de Navegação do Navegador */}
+        <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center gap-2.5 flex-shrink-0">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={goBack}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              title="Voltar"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goForward}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              title="Avançar"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={reload}
+              className={`p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors ${isLoading ? 'animate-spin text-orange-400' : ''}`}
+              title="Recarregar"
+            >
+              <RefreshCcw className="w-4 h-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleUrlSubmit} className="flex-1">
+            <div className="relative flex items-center">
+              <Globe className="w-4 h-4 text-zinc-500 absolute left-3" />
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-zinc-700/80 rounded-xl py-1.5 pl-9 pr-4 text-xs text-zinc-300 focus:outline-none transition-all placeholder-zinc-700"
+                placeholder="Digite o endereço URL do site..."
+              />
+            </div>
+          </form>
+
+          {/* Atalhos Rápidos */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setUrl('https://digen.ai/explore'); setInputValue('https://digen.ai/explore'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                url.includes('digen.ai')
+                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+              }`}
+            >
+              Digen
+            </button>
+            <button
+              onClick={() => { setUrl('https://labs.google/fx/pt/tools/flow'); setInputValue('https://labs.google/fx/pt/tools/flow'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                url.includes('labs.google')
+                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+              }`}
+            >
+              Google Flow
+            </button>
+          </div>
+        </div>
+
+        {/* Webview Área */}
+        <div className="flex-1 relative bg-black">
+          {/* @ts-ignore */}
+          <webview
+            ref={webviewRef}
+            src={url}
+            className="w-full h-full"
+            style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
