@@ -2316,6 +2316,7 @@ function PromptInjector() {
           <webview
             ref={webviewRef}
             src={url}
+            partition="persist:injector-session"
             className="w-full h-full"
             style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
           />
