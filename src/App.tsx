@@ -30,7 +30,9 @@ import {
   Download,
   Layers,
   Camera,
-  Globe
+  Globe,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -108,6 +110,21 @@ export default function App() {
   if (isInjectorWindow) {
     return <PromptInjector />;
   }
+
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
+    if (savedTheme) {
+      setThemeMode(savedTheme);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = themeMode === 'dark' ? 'light' : 'dark';
+    setThemeMode(nextTheme);
+    localStorage.setItem('app-theme', nextTheme);
+  };
 
   const [activeTab, setActiveTab] = useState<TabMode>('collection');
   
@@ -994,7 +1011,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0b] text-white font-sans selection:bg-orange-500/30">
+    <div className={`min-h-screen ${themeMode} bg-[#0a0a0b] text-white font-sans selection:bg-orange-500/30`}>
       {/* Decorative background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-orange-500/5 blur-[120px] rounded-full" />
@@ -1033,13 +1050,22 @@ Angulos a variar (escolha os mais relevantes para o produto):
             </div>
 
             <div className="flex flex-col items-start md:items-end gap-2">
-              <button 
-                onClick={() => keysFileInputRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-medium"
-              >
-                <Key className="w-4 h-4" />
-                {apiKeys.length > 0 ? `${apiKeys.length} Chaves Carregadas` : 'Carregar Chaves (.txt)'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleTheme}
+                  className="p-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white flex items-center justify-center"
+                  title="Alternar Tema Claro/Escuro"
+                >
+                  {themeMode === 'dark' ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-blue-500" />}
+                </button>
+                <button 
+                  onClick={() => keysFileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold uppercase tracking-wider"
+                >
+                  <Key className="w-4 h-4" />
+                  {apiKeys.length > 0 ? `${apiKeys.length} Chaves` : 'Chaves (.txt)'}
+                </button>
+              </div>
               <input 
                 type="file" 
                 ref={keysFileInputRef}
@@ -1913,6 +1939,27 @@ function PromptInjector() {
   const [selectedItemIndex, setSelectedItemIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const webviewRef = useRef<any>(null);
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
+    if (savedTheme) {
+      setThemeMode(savedTheme);
+    }
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'app-theme' && (e.newValue === 'dark' || e.newValue === 'light')) {
+        setThemeMode(e.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = themeMode === 'dark' ? 'light' : 'dark';
+    setThemeMode(nextTheme);
+    localStorage.setItem('app-theme', nextTheme);
+  };
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -2045,7 +2092,7 @@ function PromptInjector() {
   const currentItem = activeTab === 'scenes' ? scenes[selectedItemIndex] : angles[selectedItemIndex];
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none">
+    <div className={`h-screen w-screen ${themeMode} bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none`}>
       {/* PAINEL ESQUERDO: CONTROLES E PROMPTS */}
       <div className="w-[420px] h-full border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex flex-col flex-shrink-0 overflow-hidden">
         
@@ -2287,6 +2334,13 @@ function PromptInjector() {
 
           {/* Atalhos Rápidos */}
           <div className="flex gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 bg-zinc-950 border border-zinc-800 rounded-xl hover:text-white hover:border-zinc-700 transition-all text-zinc-400 flex items-center justify-center flex-shrink-0"
+              title="Alternar Tema Claro/Escuro"
+            >
+              {themeMode === 'dark' ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-blue-500" />}
+            </button>
             <button
               onClick={() => { setUrl('https://digen.ai/explore'); setInputValue('https://digen.ai/explore'); }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${

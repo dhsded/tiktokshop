@@ -5,3 +5,161 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;
 }
+
+:root {
+  --bg-primary: #0a0a0b;
+  --bg-secondary: #121214;
+  --bg-card: rgba(255, 255, 255, 0.05);
+  --border-primary: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-tertiary: rgba(255, 255, 255, 0.4);
+}
+
+.light {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #e2e8f0;
+  --border-primary: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  color-scheme: light;
+}
+
+/* Regras de Remapeamento do Tema Claro */
+.light.min-h-screen, .light .min-h-screen,
+.light.h-screen, .light .h-screen {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.light .bg-white\/5 {
+  background-color: var(--bg-card) !important;
+}
+.light .border-white\/10 {
+  border-color: var(--border-primary) !important;
+}
+.light .text-white {
+  color: var(--text-primary) !important;
+}
+.light .text-white\/60 {
+  color: var(--text-secondary) !important;
+}
+.light .text-white\/50 {
+  color: var(--text-secondary) !important;
+}
+.light .text-white\/40 {
+  color: var(--text-tertiary) !important;
+}
+.light .text-white\/30 {
+  color: var(--text-tertiary) !important;
+}
+.light select option {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+.light input, .light textarea, .light select {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
+}
+.light .bg-zinc-950 {
+  background-color: var(--bg-primary) !important;
+}
+.light .bg-zinc-900 {
+  background-color: var(--bg-secondary) !important;
+}
+.light .bg-zinc-900\/60 {
+  background-color: var(--bg-secondary) !important;
+}
+.light .bg-zinc-900\/20 {
+  background-color: var(--bg-card) !important;
+}
+.light .border-zinc-800 {
+  border-color: var(--border-primary) !important;
+}
+.light .text-zinc-100 {
+  color: var(--text-primary) !important;
+}
+.light .text-zinc-300 {
+  color: var(--text-secondary) !important;
+}
+.light .text-zinc-400 {
+  color: var(--text-tertiary) !important;
+}
+.light .bg-zinc-950\/60 {
+  background-color: var(--bg-card) !important;
+}
+.light .bg-zinc-900\/80 {
+  background-color: var(--bg-card) !important;
+}
+.light .border-zinc-850 {
+  border-color: var(--border-primary) !important;
+}
+.light .bg-zinc-800 {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+.light .hover\:bg-zinc-800\/40:hover {
+  background-color: var(--bg-card) !important;
+}
+.light .bg-\[\#1a1a1c\] {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+.light .bg-teal-500\/\[0\.03\] {
+  background-color: rgba(20, 184, 166, 0.05) !important;
+}
+.light .border-teal-500\/10 {
+  border-color: rgba(20, 184, 166, 0.2) !important;
+}
+.light .hover\:border-teal-500\/20:hover {
+  border-color: rgba(20, 184, 166, 0.4) !important;
+}
+.light .bg-teal-500\/5 {
+  background-color: rgba(20, 184, 166, 0.08) !important;
+}
+.light .bg-zinc-950\/80 {
+  background-color: var(--bg-card) !important;
+}
+.light .text-orange-500 {
+  color: #ea580c !important; /* Laranja ligeiramente mais escuro no modo claro para dar contraste */
+}
+.light .text-orange-400 {
+  color: #ea580c !important;
+}
+.light .text-teal-400 {
+  color: #0d9488 !important;
+}
+.light .bg-orange-500\/5 {
+  background-color: rgba(249, 115, 22, 0.08) !important;
+}
+.light .bg-blue-500\/5 {
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+.light .bg-white\/10 {
+  background-color: var(--bg-card) !important;
+}
+.light .bg-white\/80 {
+  background-color: var(--bg-secondary) !important;
+}
+.light .hover\:bg-white\/10:hover {
+  background-color: var(--bg-card) !important;
+}
+.light .hover\:bg-white\/5:hover {
+  background-color: var(--bg-card) !important;
+}
+.light .shadow-\[0_0_50px_rgba\(249\,115\,22\,0\.15\)\] {
+  shadow: 0 4px 20px rgba(249, 115, 22, 0.1) !important;
+}
+.light .bg-zinc-805 {
+  background-color: var(--bg-card) !important;
+}
+.light .bg-zinc-800 {
+  background-color: var(--bg-card) !important;
+}
+.light .border-zinc-700 {
+  border-color: var(--border-primary) !important;
+}
+
