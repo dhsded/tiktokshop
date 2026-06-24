@@ -24,13 +24,13 @@
   /* Tema Escuro - Cores de melhor contraste e brilho */
   --tw-white: #ffffff;
   --tw-zinc-50: #ffffff;
-  --tw-zinc-100: #f4f4f5;
-  --tw-zinc-200: #e2e8f0;
-  --tw-zinc-300: #cbd5e1;
-  --tw-zinc-400: #94a3b8; /* Labels visíveis */
-  --tw-zinc-500: #64748b; /* Descrições visíveis */
-  --tw-zinc-600: #475569;
-  --tw-zinc-700: #334155;
+  --tw-zinc-100: #ffffff;
+  --tw-zinc-200: #f4f4f5;
+  --tw-zinc-300: #e2e8f0;
+  --tw-zinc-400: #cbd5e1; /* Labels agora super claros e legíveis */
+  --tw-zinc-500: #94a3b8; /* Descrições agora com excelente contraste */
+  --tw-zinc-600: #64748b;
+  --tw-zinc-700: #475569;
   --tw-zinc-800: #1e293b;
   --tw-zinc-900: #0f172a;
   --tw-zinc-950: #09090b;
@@ -40,23 +40,23 @@
   --bg-card: rgba(255, 255, 255, 0.05);
   --border-primary: rgba(255, 255, 255, 0.1);
   --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-tertiary: rgba(255, 255, 255, 0.5);
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  --text-tertiary: rgba(255, 255, 255, 0.7);
 }
 
 /* Melhorar contraste e brilho de textos com opacidades de branco no modo Dark (padrão) */
-:root .text-white\/90 { color: rgba(255, 255, 255, 0.95) !important; }
-:root .text-white\/80 { color: rgba(255, 255, 255, 0.9) !important; }
-:root .text-white\/75 { color: rgba(255, 255, 255, 0.85) !important; }
-:root .text-white\/70 { color: rgba(255, 255, 255, 0.8) !important; }
-:root .text-white\/60 { color: rgba(255, 255, 255, 0.75) !important; }
-:root .text-white\/50 { color: rgba(255, 255, 255, 0.7) !important; }
-:root .text-white\/45 { color: rgba(255, 255, 255, 0.65) !important; }
-:root .text-white\/40 { color: rgba(255, 255, 255, 0.65) !important; }
-:root .text-white\/30 { color: rgba(255, 255, 255, 0.55) !important; }
-:root .text-white\/25 { color: rgba(255, 255, 255, 0.5) !important; }
-:root .text-white\/20 { color: rgba(255, 255, 255, 0.45) !important; }
-:root .text-white\/10 { color: rgba(255, 255, 255, 0.3) !important; }
+:root .text-white\/90, .dark .text-white\/90 { color: rgba(255, 255, 255, 0.98) !important; }
+:root .text-white\/80, .dark .text-white\/80 { color: rgba(255, 255, 255, 0.95) !important; }
+:root .text-white\/75, .dark .text-white\/75 { color: rgba(255, 255, 255, 0.92) !important; }
+:root .text-white\/70, .dark .text-white\/70 { color: rgba(255, 255, 255, 0.88) !important; }
+:root .text-white\/60, .dark .text-white\/60 { color: rgba(255, 255, 255, 0.85) !important; }
+:root .text-white\/50, .dark .text-white\/50 { color: rgba(255, 255, 255, 0.80) !important; }
+:root .text-white\/45, .dark .text-white\/45 { color: rgba(255, 255, 255, 0.78) !important; }
+:root .text-white\/40, .dark .text-white\/40 { color: rgba(255, 255, 255, 0.78) !important; }
+:root .text-white\/30, .dark .text-white\/30 { color: rgba(255, 255, 255, 0.70) !important; }
+:root .text-white\/25, .dark .text-white\/25 { color: rgba(255, 255, 255, 0.65) !important; }
+:root .text-white\/20, .dark .text-white\/20 { color: rgba(255, 255, 255, 0.60) !important; }
+:root .text-white\/10, .dark .text-white\/10 { color: rgba(255, 255, 255, 0.45) !important; }
 
 .light {
   /* Tema Claro - Cores Invertidas */
