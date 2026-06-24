@@ -78,6 +78,42 @@
   color: var(--text-primary) !important;
 }
 
+/* Título Principal - Remover Gradiente Transparente no Modo Claro */
+.light header h1, 
+.light h1 {
+  background-image: none !important;
+  background-clip: unset !important;
+  -webkit-background-clip: unset !important;
+  color: #0f172a !important;
+  text-fill-color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+}
+
+/* Mapeamento explícito de todas as opacidades de texto branco do Tailwind */
+.light .text-white {
+  color: #0f172a !important;
+}
+.light .text-white\/90 { color: #0f172a !important; }
+.light .text-white\/80 { color: #1e293b !important; }
+.light .text-white\/75 { color: #1e293b !important; }
+.light .text-white\/70 { color: #334155 !important; }
+.light .text-white\/60 { color: #334155 !important; }
+.light .text-white\/50 { color: #475569 !important; }
+.light .text-white\/45 { color: #475569 !important; }
+.light .text-white\/40 { color: #64748b !important; }
+.light .text-white\/30 { color: #64748b !important; }
+.light .text-white\/25 { color: #94a3b8 !important; }
+.light .text-white\/20 { color: #94a3b8 !important; }
+.light .text-white\/10 { color: #cbd5e1 !important; }
+
+/* Mapeamento dos tons de zinco e cinza para textos */
+.light .text-zinc-50 { color: #0f172a !important; }
+.light .text-zinc-100 { color: #0f172a !important; }
+.light .text-zinc-200 { color: #1e293b !important; }
+.light .text-zinc-300 { color: #334155 !important; }
+.light .text-zinc-400 { color: #475569 !important; }
+.light .text-zinc-500 { color: #64748b !important; }
+
 .light .bg-white\/5 {
   background-color: var(--bg-card) !important;
 }
@@ -85,7 +121,7 @@
   border-color: var(--border-primary) !important;
 }
 
-/* Contraste dos botões coloridos ativos com fundo laranja, roxo e verde */
+/* Manter o texto e ícones brancos absolutos sobre botões laranjas, roxos ou verdes ativos */
 .light .bg-orange-500,
 .light .bg-purple-600,
 .light .bg-orange-600,
@@ -99,7 +135,6 @@
 .light .bg-emerald-600 *,
 .light .bg-teal-600 * {
   color: #ffffff !important;
-  --tw-white: #ffffff !important; /* Força branco absoluto para elementos filhos */
 }
 
 /* Botões ativos que usam bg-white text-black */
@@ -113,9 +148,10 @@
 
 /* Controles de opção ativos (ex: durações da cena, estilo de vídeo inativo) */
 .light .bg-white\/10 {
-  background-color: #e2e8f0 !important;
+  background-color: #cbd5e1 !important;
 }
-.light .bg-white\/10 * {
+.light .bg-white\/10 *,
+.light .bg-white\/10 button {
   color: #0f172a !important;
 }
 .light .bg-white\/80 {
