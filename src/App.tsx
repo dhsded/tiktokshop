@@ -1011,7 +1011,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
   };
 
   return (
-    <div className={`min-h-screen ${themeMode} bg-[#0a0a0b] text-white font-sans selection:bg-orange-500/30`}>
+    <div className={`min-h-screen ${themeMode} bg-zinc-950 text-zinc-100 font-sans selection:bg-orange-500/30`}>
       {/* Decorative background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-orange-500/5 blur-[120px] rounded-full" />
