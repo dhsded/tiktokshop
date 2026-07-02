@@ -98,19 +98,17 @@ const THEMES = [
 ];
 
 export default function App() {
-  const [isInjectorWindow, setIsInjectorWindow] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('window') === 'injector' || window.location.hash === '#injector') {
-      setIsInjectorWindow(true);
-    }
-  }, []);
+  const params = new URLSearchParams(window.location.search);
+  const isInjectorWindow = params.get('window') === 'injector' || window.location.hash === '#injector';
 
   if (isInjectorWindow) {
     return <PromptInjector />;
   }
 
+  return <MainApp />;
+}
+
+function MainApp() {
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
 
   useEffect(() => {
@@ -142,7 +140,7 @@ export default function App() {
   const [productImages, setProductImages] = useState<SceneImage[]>([]);
   const [numScenes, setNumScenes] = useState(3);
   const [videoStyle, setVideoStyle] = useState<'standard' | 'pov'>('standard');
-  const [voiceGender, setVoiceGender] = useState<'female' | 'male'>('female');
+  const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'none'>('female');
   const modelInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
 
@@ -525,7 +523,13 @@ Retorne APENAS o array JSON.`,
 - O campo 'imageName' deve indicar qual referência usar principalmente na cena (use "${modelImage?.name || ''}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
 - No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), descreva a modelo apresentando e interagindo com o produto de forma fotorrealista e natural.`;
 
-      const voiceInstruction = `GÊNERO DA VOZ / NARRADOR:
+      const voiceInstruction = voiceGender === 'none'
+        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
+- O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
+- O foco é 100% visual: mostrar o produto de vários ângulos, destacando detalhes, qualidade e texturas com uma música de fundo instrumental.
+- No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Conheça a qualidade do...]').
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting product details').`
+        : `GÊNERO DA VOZ / NARRADOR:
 A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
 - Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
 - No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
@@ -550,7 +554,7 @@ REGRAS OBRIGATÓRIAS:
 3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
-6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. A narração é o texto falado em voz alta para o público brasileiro do TikTok. Se escrever em inglês, será considerado um erro grave.
+6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
 7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
 8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
 9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
@@ -634,6 +638,17 @@ Retorne em estrutura JSON:
     try {
       const finalTheme = customTheme || theme;
 
+      const voiceInstruction = voiceGender === 'none'
+        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
+- O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
+- O foco é 100% visual: mostrar a coleção sob vários ângulos, destacando detalhes e tecidos com música de fundo instrumental.
+- No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Coleção de verão exclusiva...]').
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting clothing details').`
+        : `GÊNERO DA VOZ / NARRADOR:
+A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
+- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+
       const imageParts = await Promise.all(images.map(async (img) => {
         const base64 = await fileToBase64(img.file);
         return {
@@ -657,12 +672,14 @@ Tema: ${finalTheme}
 Duração de cada cena: ${duration}
 Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
 
+${voiceInstruction}
+
 REGRAS OBRIGATÓRIAS:
 1. O NOME ORIGINAL DO ARQUIVO de cada imagem DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_look_01.jpg] Cinematic camera movement..."
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
-5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. A narração é o texto falado em voz alta para o público brasileiro do TikTok.
+5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
 6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
 7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
@@ -758,8 +775,6 @@ Retorne em estrutura JSON:
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- Gerar Ângulos do Produto ---
-
   const generateProductAngles = async () => {
     if (productImages.length === 0) {
       alert('Por favor, envie pelo menos uma foto de produto.');
@@ -779,15 +794,16 @@ Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variaç
 
 PRODUTO(S): ${productImages.map(p => p.name).join(', ')}
 DURAÇÃO: ${duration}
-GÊNERO DA VOZ: ${voiceGender === 'female' ? 'FEMININO' : 'MASCULINO'}
+GÊNERO DA VOZ: ${voiceGender === 'none' ? 'SEM NARRAÇÃO (SEM FALA)' : (voiceGender === 'female' ? 'FEMININO' : 'MASCULINO')}
 
 REGRAS ABSOLUTAS — NUNCA VIOLE:
 1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
 2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
 4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÊS.
-5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês.
+5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[Música instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
 6. No início dos campos veoPrompt e digenPrompt, inclua o nome do arquivo entre colchetes.
+7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
 
 Angulos a variar (escolha os mais relevantes para o produto):
 - Vista frontal (Front view straight on)
@@ -1257,6 +1273,36 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-3 pt-4 border-t border-white/5">
+                    <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                      <Volume2 className="w-3 h-3 text-purple-400" />
+                      Gênero da Voz / Narrador
+                    </label>
+                    <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setVoiceGender('female')}
+                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        Feminino
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceGender('male')}
+                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        Masculino
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceGender('none')}
+                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        Sem Narração
+                      </button>
+                    </div>
+                  </div>
                 </section>
               </>
             ) : (
@@ -1431,7 +1477,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <Volume2 className="w-3 h-3 text-purple-400" />
                         Gênero da Voz / Narrador
                       </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setVoiceGender('female')}
@@ -1445,6 +1491,13 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
                           Masculino
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceGender('none')}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Sem Narração
                         </button>
                       </div>
                     </div>
