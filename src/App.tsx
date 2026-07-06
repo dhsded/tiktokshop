@@ -32,7 +32,8 @@ import {
   Camera,
   Globe,
   Sun,
-  Moon
+  Moon,
+  AlertTriangle
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -168,6 +169,7 @@ function MainApp() {
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
   const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
   const [numAngles, setNumAngles] = useState(4);
+  const [validationAlert, setValidationAlert] = useState<{ title: string; message: string } | null>(null);
 
   // --- Handlers ---
 
@@ -259,7 +261,12 @@ function MainApp() {
       const keys = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
       setApiKeys(keys);
       setCurrentKeyIndex(0);
-      if(keys.length > 0) alert(`${keys.length} chaves carregadas com sucesso!`);
+      if(keys.length > 0) {
+        setValidationAlert({
+          title: "Chaves Carregadas",
+          message: `${keys.length} chaves de API carregadas com sucesso!`
+        });
+      }
     };
     reader.readAsText(file);
     if (keysFileInputRef.current) keysFileInputRef.current.value = '';
@@ -486,12 +493,33 @@ Retorne APENAS o array JSON.`,
   };
 
   const generateProductScript = async () => {
-    if (videoStyle === 'standard' && !modelImage) {
-      alert("Por favor, envie uma imagem de modelo/apresentador para o estilo Apresentador Padrão.");
+    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    if (keysToTry.length === 0) {
+      setValidationAlert({
+        title: "Chave de API Faltando",
+        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+      });
       return;
     }
     if (productImages.length === 0) {
-      alert("Por favor, envie pelo menos uma foto de produto.");
+      setValidationAlert({
+        title: "Fotos do Produto Faltando",
+        message: "Por favor, adicione pelo menos uma foto do produto na seção 'Produto (Várias Fotos)' para que possamos gerar o roteiro do seu produto."
+      });
+      return;
+    }
+    if (videoStyle === 'standard' && !modelImage) {
+      setValidationAlert({
+        title: "Modelo/Apresentador Faltando",
+        message: "Você selecionou o estilo de vídeo 'Apresentador', que exige uma imagem de referência do apresentador. Por favor, envie uma foto na seção 'Modelo / Apresentador(a)' ou altere o estilo do vídeo para 'POV (Mãos)'."
+      });
+      return;
+    }
+    if (!numScenes || numScenes <= 0) {
+      setValidationAlert({
+        title: "Número de Cenas Inválido",
+        message: "Por favor, insira um número válido de cenas (mínimo 1) para o roteiro do seu produto."
+      });
       return;
     }
     
@@ -622,7 +650,10 @@ Retorne em estrutura JSON:
       } else {
         console.error("Erro ao gerar roteiro de produto:", error);
         const msg = error?.message || String(error);
-        alert("Erro ao gerar o roteiro:\n\n" + msg);
+        setValidationAlert({
+          title: "Erro na Geração",
+          message: msg
+        });
       }
     } finally {
       setIsGenerating(false);
@@ -631,7 +662,21 @@ Retorne em estrutura JSON:
   };
 
   const generateScript = async () => {
-    if (images.length === 0) return;
+    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    if (keysToTry.length === 0) {
+      setValidationAlert({
+        title: "Chave de API Faltando",
+        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+      });
+      return;
+    }
+    if (images.length === 0) {
+      setValidationAlert({
+        title: "Fotos de Look Faltando",
+        message: "Por favor, envie pelo menos uma foto de look na seção 'Imagens da Coleção' para que possamos gerar o roteiro da coleção."
+      });
+      return;
+    }
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
 
@@ -740,7 +785,10 @@ Retorne em estrutura JSON:
       } else {
         console.error("Erro ao gerar roteiro:", error);
         const msg = error?.message || String(error);
-        alert("Erro ao gerar o roteiro:\n\n" + msg);
+        setValidationAlert({
+          title: "Erro na Geração",
+          message: msg
+        });
       }
     } finally {
       setIsGenerating(false);
@@ -776,8 +824,19 @@ Retorne em estrutura JSON:
   };
 
   const generateProductAngles = async () => {
+    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    if (keysToTry.length === 0) {
+      setValidationAlert({
+        title: "Chave de API Faltando",
+        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+      });
+      return;
+    }
     if (productImages.length === 0) {
-      alert('Por favor, envie pelo menos uma foto de produto.');
+      setValidationAlert({
+        title: "Fotos do Produto Faltando",
+        message: "Por favor, adicione pelo menos uma foto do produto na seção 'Produto (Várias Fotos)' para gerar as variações de ângulos."
+      });
       return;
     }
     setIsGeneratingAngles(true);
@@ -850,7 +909,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
       setGeneratedAngles(parsed.angles || []);
     } catch (error: any) {
       console.error('Erro ao gerar ângulos:', error);
-      alert('Erro ao gerar ângulos:\n\n' + (error?.message || String(error)));
+      setValidationAlert({
+        title: "Erro na Geração de Ângulos",
+        message: "Ocorreu um erro ao gerar as variações de ângulos:\n" + (error?.message || String(error))
+      });
     } finally {
       setIsGeneratingAngles(false);
     }
@@ -1502,38 +1564,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
 
-                    {/* Ângulos do Produto */}
-                    <div className="space-y-3 pt-4 border-t border-white/5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                          <Camera className="w-3 h-3 text-teal-400" />
-                          Ângulos do Produto
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-white/30">Quantidade:</span>
-                          <select
-                            value={numAngles}
-                            onChange={(e) => setNumAngles(Number(e.target.value))}
-                            className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
-                          >
-                            {[2,3,4,5,6,7,8].map(n => <option key={n} value={n} className="bg-[#1a1a1c]">{n}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <button
-                        disabled={productImages.length === 0 || isGeneratingAngles}
-                        onClick={generateProductAngles}
-                        className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl border font-bold text-sm transition-all ${
-                          productImages.length > 0 && !isGeneratingAngles
-                            ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 hover:bg-teal-500/20 active:scale-[0.98]'
-                            : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
-                        }`}
-                      >
-                        {isGeneratingAngles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
-                        {isGeneratingAngles ? 'Gerando Ângulos...' : `Gerar ${numAngles} Ângulos do Produto`}
-                      </button>
-                      <p className="text-[10px] text-white/25 text-center">Gera prompts de imagem, VEO e DIGEN para cada ângulo, mantendo o produto 100% original</p>
-                    </div>
+
                   </div>
                 </section>
               </>
@@ -1569,12 +1600,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 </div>
               ) : (
                 <button
-                  disabled={activeTab === 'collection' ? (images.length === 0 || isGenerating) : (((videoStyle === 'standard' ? !modelImage : false) || productImages.length === 0) || isGenerating)}
+                  disabled={isGenerating}
                   onClick={activeTab === 'collection' ? generateScript : generateProductScript}
-                  className={`group relative w-full overflow-hidden rounded-3xl py-6 transition-all font-bold tracking-tight text-lg ${
-                    (activeTab === 'collection' ? images.length > 0 : ((videoStyle === 'standard' ? modelImage : true) && productImages.length > 0))
-                    ? 'bg-white text-black active:scale-[0.98]' : 'bg-white/5 text-white/20 cursor-not-allowed'
-                  }`}
+                  className="group relative w-full overflow-hidden rounded-3xl py-6 transition-all font-bold tracking-tight text-lg bg-white text-black active:scale-[0.98]"
                 >
                   <div className="absolute inset-0 bg-gradient-to-tr from-orange-400 to-white opacity-0 group-hover:opacity-20 transition-opacity" />
                   <span className="relative flex items-center justify-center gap-3 font-display">
@@ -1625,7 +1653,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           if (window.electronAPI) {
                             window.electronAPI.openInjectorWindow({ generatedScript, generatedAngles });
                           } else {
-                            alert("Disponível apenas rodando no Electron.");
+                            setValidationAlert({
+                              title: "Recurso Exclusivo",
+                              message: "Esta funcionalidade de injeção automática está disponível apenas rodando no aplicativo Electron."
+                            });
                           }
                         }}
                         className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
@@ -1774,6 +1805,48 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </motion.div>
                     ))}
                   </div>
+
+                  {/* Product Angles Generator (Only shown in final generation) */}
+                  {activeTab === 'product' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-teal-500/[0.03] border border-teal-500/10 rounded-[2.5rem] p-8 space-y-6 mt-8"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <Camera className="w-5 h-5 text-teal-400" />
+                          <h3 className="text-xl font-bold font-display text-white">Ângulos Adicionais do Produto</h3>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 self-start sm:self-auto">
+                          <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Quantidade:</span>
+                          <select
+                            value={numAngles}
+                            onChange={(e) => setNumAngles(Number(e.target.value))}
+                            className="bg-transparent text-xs text-white focus:outline-none cursor-pointer font-bold font-mono"
+                          >
+                            {[2,3,4,5,6,7,8].map(n => <option key={n} value={n} className="bg-[#1a1a1c]">{n}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <p className="text-xs text-white/50 leading-relaxed">
+                        Gere variações de prompts em ângulos alternativos (close-ups, perfil, flat lay, etc.) para o seu produto, garantindo consistência total de cor e design.
+                      </p>
+                      
+                      {isGeneratingAngles ? (
+                        <div className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/5 border border-teal-500/10 text-teal-400/60 font-bold text-sm">
+                          <Loader2 className="w-5 h-5 animate-spin" /> Gerando {numAngles} Ângulos...
+                        </div>
+                      ) : (
+                        <button
+                          onClick={generateProductAngles}
+                          className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 hover:text-white transition-all active:scale-[0.98] font-bold text-sm tracking-wide uppercase"
+                        >
+                          <Layers className="w-4 h-4" /> Gerar {numAngles} Ângulos do Produto
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
 
                   {/* Ângulos do Produto */}
                   {generatedAngles && generatedAngles.length > 0 && (
@@ -1974,6 +2047,55 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Validation Alert Dialog */}
+      <AnimatePresence>
+        {validationAlert && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setValidationAlert(null)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-md"
+            />
+            
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative bg-[#161618] border border-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl text-center space-y-6 overflow-hidden"
+            >
+              {/* Top Accent Gradient Line */}
+              <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-600" />
+              
+              {/* Alert Icon */}
+              <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold font-display text-white tracking-tight">
+                  {validationAlert.title}
+                </h3>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  {validationAlert.message}
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setValidationAlert(null)}
+                className="w-full py-4 rounded-2xl bg-orange-500 hover:bg-orange-600 active:scale-[0.98] transition-all text-white font-bold text-sm tracking-wide uppercase shadow-[0_0_20px_rgba(249,115,22,0.25)]"
+              >
+                Entendi, vou corrigir
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
