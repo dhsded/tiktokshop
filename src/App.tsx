@@ -2165,15 +2165,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
       {/* Modal de Histórico de Versões */}
       <AnimatePresence>
-        {showChangelog && (() => {
-          const isDark = themeMode === 'dark';
-          return (
+        {showChangelog && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/30'}`}
+              style={{ backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.25)' }}
+              className="absolute inset-0 backdrop-blur-sm"
               onClick={() => setShowChangelog(false)}
             />
             <motion.div
@@ -2181,28 +2180,41 @@ Angulos a variar (escolha os mais relevantes para o produto):
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className={`relative z-10 w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border ${
-                isDark
-                  ? 'bg-[#111113] border-white/10 shadow-black/50'
-                  : 'bg-white border-zinc-200 shadow-zinc-300/50'
-              }`}
+              style={{
+                backgroundColor: themeMode === 'dark' ? '#111113' : '#ffffff',
+                borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7',
+                color: themeMode === 'dark' ? '#fafafa' : '#18181b',
+              }}
+              className="relative z-10 w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border"
             >
               {/* Header do modal */}
-              <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
+              <div
+                className="flex items-center justify-between px-6 py-4 border-b"
+                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f4f4f5' }}
+              >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-xl border ${isDark ? 'bg-orange-500/10 border-orange-500/20' : 'bg-orange-50 border-orange-200'}`}>
-                    <History className="w-5 h-5 text-orange-500" />
+                  <div
+                    className="p-2 rounded-xl border"
+                    style={{
+                      backgroundColor: themeMode === 'dark' ? 'rgba(249,115,22,0.1)' : '#fff7ed',
+                      borderColor: themeMode === 'dark' ? 'rgba(249,115,22,0.2)' : '#fdba74',
+                    }}
+                  >
+                    <History className="w-5 h-5" style={{ color: '#f97316' }} />
                   </div>
                   <div>
-                    <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Histórico de Versões</h2>
-                    <p className={`text-xs ${isDark ? 'text-white/40' : 'text-zinc-400'}`}>Gerador TikTok Shop</p>
+                    <h2 className="text-lg font-bold" style={{ color: themeMode === 'dark' ? '#ffffff' : '#18181b' }}>
+                      Histórico de Versões
+                    </h2>
+                    <p className="text-xs" style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.4)' : '#a1a1aa' }}>
+                      Gerador TikTok Shop
+                    </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowChangelog(false)}
-                  className={`p-2 rounded-xl transition-colors text-lg ${
-                    isDark ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700'
-                  }`}
+                  className="p-2 rounded-xl transition-colors text-lg"
+                  style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.4)' : '#a1a1aa' }}
                 >
                   ✕
                 </button>
@@ -2213,41 +2225,58 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 {VERSION_HISTORY.map((entry, idx) => (
                   <div key={entry.version} className="relative">
                     {idx < VERSION_HISTORY.length - 1 && (
-                      <div className={`absolute left-[11px] top-[32px] bottom-[-24px] w-px ${isDark ? 'bg-white/10' : 'bg-zinc-200'}`} />
+                      <div
+                        className="absolute left-[11px] top-[32px] bottom-[-24px] w-px"
+                        style={{ backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7' }}
+                      />
                     )}
                     <div className="flex items-start gap-4">
-                      <div className={`mt-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 ${
-                        idx === 0
-                          ? 'border-orange-500 bg-orange-500/20'
-                          : isDark ? 'border-white/20 bg-white/5' : 'border-zinc-300 bg-zinc-100'
-                      }`}>
-                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-orange-400' : isDark ? 'bg-white/30' : 'bg-zinc-400'}`} />
+                      <div
+                        className="mt-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: idx === 0 ? '#f97316' : (themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : '#d4d4d8'),
+                          backgroundColor: idx === 0 ? 'rgba(249,115,22,0.2)' : (themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f4f4f5'),
+                        }}
+                      >
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: idx === 0 ? '#fb923c' : (themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : '#a1a1aa') }}
+                        />
                       </div>
                       <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full border ${
-                            idx === 0
-                              ? 'bg-orange-500/10 border-orange-500/30 text-orange-500'
-                              : isDark ? 'bg-white/5 border-white/10 text-white/60' : 'bg-zinc-100 border-zinc-200 text-zinc-500'
-                          }`}>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span
+                            className="text-sm font-bold px-2.5 py-0.5 rounded-full border"
+                            style={{
+                              backgroundColor: idx === 0 ? 'rgba(249,115,22,0.1)' : (themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f4f4f5'),
+                              borderColor: idx === 0 ? 'rgba(249,115,22,0.3)' : (themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7'),
+                              color: idx === 0 ? '#f97316' : (themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : '#71717a'),
+                            }}
+                          >
                             v{entry.version}
                           </span>
-                          <span className={`text-xs ${isDark ? 'text-white/30' : 'text-zinc-400'}`}>{entry.date}</span>
+                          <span className="text-xs" style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : '#a1a1aa' }}>
+                            {entry.date}
+                          </span>
                           {idx === 0 && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 uppercase tracking-wider">
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider"
+                              style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#10b981' }}
+                            >
                               Atual
                             </span>
                           )}
                         </div>
-                        <h3 className={`text-base font-semibold ${
-                          idx === 0 ? (isDark ? 'text-white' : 'text-zinc-900') : (isDark ? 'text-white/60' : 'text-zinc-500')
-                        }`}>
+                        <h3
+                          className="text-base font-semibold"
+                          style={{ color: idx === 0 ? (themeMode === 'dark' ? '#ffffff' : '#18181b') : (themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : '#71717a') }}
+                        >
                           {entry.title}
                         </h3>
                         <ul className="space-y-1.5">
                           {entry.changes.map((change, ci) => (
-                            <li key={ci} className={`flex items-start gap-2 text-sm ${isDark ? 'text-white/50' : 'text-zinc-600'}`}>
-                              <span className={`mt-1 shrink-0 ${change.startsWith('Novo:') ? 'text-emerald-500' : change.startsWith('Fix:') ? 'text-amber-500' : isDark ? 'text-white/30' : 'text-zinc-400'}`}>
+                            <li key={ci} className="flex items-start gap-2 text-sm" style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : '#52525b' }}>
+                              <span className="mt-1 shrink-0" style={{ color: change.startsWith('Novo:') ? '#10b981' : change.startsWith('Fix:') ? '#f59e0b' : (themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : '#a1a1aa') }}>
                                 {change.startsWith('Novo:') ? '✦' : change.startsWith('Fix:') ? '🔧' : '•'}
                               </span>
                               <span>{change}</span>
@@ -2261,23 +2290,28 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </div>
 
               {/* Footer */}
-              <div className={`px-6 py-3 border-t flex items-center justify-between ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
-                <span className={`text-xs ${isDark ? 'text-white/20' : 'text-zinc-400'}`}>{VERSION_HISTORY.length} versões</span>
+              <div
+                className="px-6 py-3 border-t flex items-center justify-between"
+                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f4f4f5' }}
+              >
+                <span className="text-xs" style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : '#a1a1aa' }}>
+                  {VERSION_HISTORY.length} versões
+                </span>
                 <button
                   onClick={() => setShowChangelog(false)}
-                  className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-                    isDark
-                      ? 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white'
-                      : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-                  }`}
+                  className="px-4 py-2 rounded-xl border text-sm font-medium transition-colors"
+                  style={{
+                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f4f4f5',
+                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7',
+                    color: themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : '#52525b',
+                  }}
                 >
                   Fechar
                 </button>
               </div>
             </motion.div>
           </div>
-          );
-        })()}
+        )}
       </AnimatePresence>
     </div>
   );
