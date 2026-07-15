@@ -163,6 +163,55 @@ ipcMain.on('spy-write-results', (_event, data: any) => {
   }
 });
 
+// Salvar assets do projeto estruturado diretamente em Downloads/TikTok Shop/produtoN/
+ipcMain.handle('save-project-assets', async (_event, payload: any) => {
+  const fs = require('fs');
+  const path = require('path');
+  
+  try {
+    const { projectIndex, campaignTitle, txtContent, htmlContent, pdfBase64, images } = payload;
+    const downloadsPath = app.getPath('downloads');
+    const folderName = `produto${projectIndex || 1}`;
+    const targetDir = path.join(downloadsPath, 'TikTok Shop', folderName);
+    
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    
+    const cleanTitle = (campaignTitle || 'roteiro').replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // 1. Salvar Roteiro em TXT
+    fs.writeFileSync(path.join(targetDir, `${cleanTitle}.txt`), txtContent, 'utf-8');
+    
+    // 2. Salvar Documento em DOC (HTML formatado)
+    fs.writeFileSync(path.join(targetDir, `${cleanTitle}.doc`), htmlContent, 'utf-8');
+    
+    // 3. Salvar PDF (se fornecido)
+    if (pdfBase64) {
+      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+      fs.writeFileSync(path.join(targetDir, `${cleanTitle}.pdf`), pdfBuffer);
+    }
+    
+    // 4. Salvar Imagens de referência (se fornecidas)
+    if (images && images.length > 0) {
+      const imgDir = path.join(targetDir, 'imagens_referencia');
+      if (!fs.existsSync(imgDir)) {
+        fs.mkdirSync(imgDir, { recursive: true });
+      }
+      for (const img of images) {
+        if (img.base64) {
+          const imgBuffer = Buffer.from(img.base64, 'base64');
+          fs.writeFileSync(path.join(imgDir, img.name), imgBuffer);
+        }
+      }
+    }
+    
+    return { success: true, path: targetDir };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
 // ============================================================
 // App Lifecycle
 // ============================================================

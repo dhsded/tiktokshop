@@ -34,7 +34,8 @@ import {
   Sun,
   Moon,
   AlertTriangle,
-  History
+  History,
+  Save
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -107,6 +108,7 @@ declare global {
       spyReady: () => void;
       onSpyData: (callback: (data: any) => void) => () => void;
       writeSpyScanResults: (data: any) => void;
+      saveProjectAssets: (payload: any) => Promise<{ success: boolean; path?: string; error?: string }>;
     };
   }
 }
@@ -120,6 +122,13 @@ interface SceneImage {
   file: File;
   preview: string;
   name: string;
+  cropState?: {
+    crop: Point;
+    zoom: number;
+    aspect?: number;
+    cropSize?: { width: number; height: number };
+    croppedAreaPixels: Area;
+  };
 }
 
 interface GeneratedScene {
@@ -233,6 +242,36 @@ function MainApp() {
   const [isCropping, setIsCropping] = useState(false);
   const [cropAspect, setCropAspect] = useState<number | undefined>(undefined); // undefined = livre
 
+  // Custom Crop Dimensions (Livre)
+  const [cropWidth, setCropWidth] = useState(300);
+  const [cropHeight, setCropHeight] = useState(300);
+
+  // Fila de Produtos (Multi-Project Queue)
+  interface ProjectItem {
+    id: string;
+    name: string;
+    type: TabMode;
+    images: SceneImage[];
+    modelImage: SceneImage | null;
+    productImages: SceneImage[];
+    theme: string;
+    customTheme: string;
+    numScenes: number;
+    videoStyle: 'standard' | 'pov';
+    voiceGender: 'female' | 'male' | 'none';
+    observations: string;
+    duration: string;
+    generatedScript: ScriptResponse | null;
+    generatedAngles: GeneratedAngle[] | null;
+    status: 'pending' | 'done';
+    projectIndex: number;
+  }
+
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectCounter, setProjectCounter] = useState(1);
+  const [showQueue, setShowQueue] = useState(false);
+
   // Ângulos do Produto
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
   const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
@@ -285,38 +324,316 @@ function MainApp() {
 
   const saveCrop = async () => {
     if (!imageToCrop || !croppedAreaPixels) return;
-    setIsCropping(true);
 
+    const cropState = {
+      crop,
+      zoom,
+      aspect: cropAspect,
+      cropSize: cropAspect === undefined ? { width: cropWidth, height: cropHeight } : undefined,
+      croppedAreaPixels
+    };
+
+    if (imageToCrop.type === 'collection') {
+      setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+    } else if (imageToCrop.type === 'model') {
+      setModelImage(prev => prev ? { ...prev, cropState } : null);
+    } else if (imageToCrop.type === 'product') {
+      setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+    }
+
+    setImageToCrop(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCropWidth(300);
+    setCropHeight(300);
+  };
+
+  const downloadCroppedImage = async (img: SceneImage) => {
+    if (!img.cropState) return;
     try {
-      const croppedBlob = await getCroppedImg(imageToCrop.preview, croppedAreaPixels);
+      const croppedBlob = await getCroppedImg(img.preview, img.cropState.croppedAreaPixels);
       if (!croppedBlob) throw new Error("Failed to crop image");
-
-      const croppedFile = new File([croppedBlob], `cropped_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const croppedFile = new File([croppedBlob], `cropped_${img.name}`, { type: 'image/jpeg' });
       const croppedPreview = URL.createObjectURL(croppedFile);
-
-      // Trigger automatic download of the cropped image
       const link = document.createElement('a');
       link.href = croppedPreview;
-      link.download = `cropped_${Date.now()}.jpg`;
+      link.download = `cropped_${img.name}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(croppedPreview), 100);
+    } catch (err) {
+      console.error("Error downloading cropped image:", err);
+    }
+  };
 
-      if (imageToCrop.type === 'collection') {
-        setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, file: croppedFile, preview: croppedPreview } : img));
-      } else if (imageToCrop.type === 'model') {
-        setModelImage(prev => prev ? { ...prev, file: croppedFile, preview: croppedPreview } : null);
-      } else if (imageToCrop.type === 'product') {
-        setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, file: croppedFile, preview: croppedPreview } : img));
+  const saveProjectToFolder = async (customProjectIndex?: number) => {
+    if (!generatedScript) return;
+    
+    let pIndex = customProjectIndex;
+    if (pIndex === undefined) {
+      if (activeProjectId) {
+        const proj = projects.find(p => p.id === activeProjectId);
+        pIndex = proj ? proj.projectIndex : projectCounter;
+      } else {
+        pIndex = projectCounter;
+      }
+    }
+
+    try {
+      const txtContent = buildExportContent();
+
+      const buildSectionHtml = (label: string, color: string, content: string) =>
+        `<p style="font-weight:bold;font-size:9pt;color:${color};text-transform:uppercase;margin:8px 0 2px">${label}</p>
+         <div style="background:#f5f5f5;padding:8px 10px;border-left:3px solid ${color};margin-bottom:10px;font-size:10pt">${content}</div>`;
+
+      const scenesHtml = generatedScript.scenes.map((scene, i) => `
+        <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Cena ${i + 1} &bull; ${scene.duration} &bull; ${scene.imageName}</h2>
+        ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', scene.imagePrompt)}
+        ${buildSectionHtml('VEO — Animação', '#2563eb', scene.veoPrompt)}
+        ${buildSectionHtml('DIGEN — Fala', '#7c3aed', scene.digenPrompt)}
+        <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+        <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${scene.narration}</div>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+      `).join('');
+
+      const anglesHtml = (generatedAngles && generatedAngles.length > 0) ? `
+        <h1 style="font-size:18pt;color:#E65C00;margin-top:24px">Ângulos do Produto</h1>
+        ${generatedAngles.map((angle, i) => `
+          <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Ângulo ${i + 1}: ${angle.angleName}</h2>
+          ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', angle.imagePrompt)}
+          ${buildSectionHtml('VEO — Animação', '#2563eb', angle.veoPrompt)}
+          ${buildSectionHtml('DIGEN — Fala', '#7c3aed', angle.digenPrompt)}
+          <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+          <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${angle.narration}</div>
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+        `).join('')}
+      ` : '';
+
+      const htmlContent = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><title>${generatedScript.campaignTitle}</title></head>
+        <body style="font-family:Arial,sans-serif;line-height:1.4">
+          <h1 style="font-size:22pt;color:#E65C00;border-bottom:3px solid #E65C00;padding-bottom:6px;margin-bottom:20px">${generatedScript.campaignTitle}</h1>
+          ${scenesHtml}
+          ${anglesHtml}
+        </body>
+        </html>
+      `;
+
+      const doc = new jsPDF();
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const maxW = pageW - margin * 2;
+      let y = margin;
+
+      const checkPage = (heightNeeded: number) => {
+        if (y + heightNeeded > pageH - margin) {
+          doc.addPage(); y = margin;
+        }
+      };
+
+      const addLabel = (text: string, r: number, g: number, b: number) => {
+        checkPage(10);
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(r, g, b);
+        doc.text(text.toUpperCase(), margin, y); y += 5;
+      };
+
+      const addBody = (text: string) => {
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 60, 60);
+        const lines = doc.splitTextToSize(text, maxW);
+        checkPage(lines.length * 4.5);
+        doc.text(lines, margin, y); y += lines.length * 4.5 + 4;
+      };
+
+      const addDivider = () => {
+        checkPage(6);
+        doc.setDrawColor(200, 200, 200);
+        doc.line(margin, y, pageW - margin, y); y += 6;
+      };
+
+      doc.setFontSize(20); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
+      const titleLines = doc.splitTextToSize(generatedScript.campaignTitle, maxW);
+      doc.text(titleLines, margin, y); y += titleLines.length * 8 + 4;
+      doc.setDrawColor(230, 92, 0); doc.line(margin, y, pageW - margin, y); y += 8;
+
+      generatedScript.scenes.forEach((scene, i) => {
+        checkPage(20);
+        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+        doc.text(`Cena ${i + 1}  •  ${scene.duration}  •  ${scene.imageName}`, margin, y); y += 7;
+        addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(scene.imagePrompt);
+        addLabel('VEO — Animação', 37, 99, 235); addBody(scene.veoPrompt);
+        addLabel('DIGEN — Fala', 124, 58, 237); addBody(scene.digenPrompt);
+        addLabel('Narração PT-BR', 234, 88, 12);
+        doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
+        const nlines = doc.splitTextToSize(scene.narration, maxW);
+        checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
+        addDivider();
+      });
+
+      if (generatedAngles && generatedAngles.length > 0) {
+        checkPage(20);
+        doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
+        doc.text('ÂNGULOS DO PRODUTO', margin, y); y += 10;
+        generatedAngles.forEach((angle, i) => {
+          checkPage(20);
+          doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+          doc.text(`Ângulo ${i + 1}: ${angle.angleName}`, margin, y); y += 7;
+          addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(angle.imagePrompt);
+          addLabel('VEO — Animação', 37, 99, 235); addBody(angle.veoPrompt);
+          addLabel('DIGEN — Fala', 124, 58, 237); addBody(angle.digenPrompt);
+          addLabel('Narração PT-BR', 234, 88, 12);
+          doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
+          const nlines = doc.splitTextToSize(angle.narration, maxW);
+          checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
+          addDivider();
+        });
       }
 
-      setImageToCrop(null);
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-    } catch (error) {
-      console.error("Error cropping image:", error);
-    } finally {
-      setIsCropping(false);
+      const pdfBase64 = doc.output('datauristring').split(',')[1];
+
+      const rawImages = activeTab === 'collection' ? images : [...productImages, ...(modelImage ? [modelImage] : [])];
+      const imagesPayload = await Promise.all(rawImages.map(async (img) => {
+        const payloadBase64 = await getImagePayload(img);
+        return {
+          name: img.name,
+          base64: payloadBase64.split(',')[1]
+        };
+      }));
+
+      if (window.electronAPI && window.electronAPI.saveProjectAssets) {
+        const result = await window.electronAPI.saveProjectAssets({
+          projectIndex: pIndex,
+          campaignTitle: generatedScript.campaignTitle,
+          txtContent,
+          htmlContent,
+          pdfBase64,
+          images: imagesPayload
+        });
+
+        if (result.success) {
+          setValidationAlert({
+            title: "Projeto Salvo",
+            message: `Todos os arquivos do projeto foram salvos em:\nDownloads/TikTok Shop/produto${pIndex}/`
+          });
+          
+          if (activeProjectId) {
+            setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, status: 'done' } : p));
+          }
+        } else {
+          throw new Error(result.error);
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to save project assets:", err);
+      setValidationAlert({
+        title: "Erro ao Salvar Assets",
+        message: `Ocorreu um erro ao salvar os assets do produto:\n${err.message || String(err)}`
+      });
+    }
+  };
+
+  // Sincroniza estados locais com o projeto ativo na fila
+  useEffect(() => {
+    if (!activeProjectId) return;
+    setProjects(prev => prev.map(proj => {
+      if (proj.id === activeProjectId) {
+        return {
+          ...proj,
+          type: activeTab,
+          images,
+          modelImage,
+          productImages,
+          theme,
+          customTheme,
+          numScenes,
+          videoStyle,
+          voiceGender,
+          observations,
+          duration,
+          generatedScript,
+          generatedAngles
+        };
+      }
+      return proj;
+    }));
+  }, [
+    activeProjectId,
+    activeTab,
+    images,
+    modelImage,
+    productImages,
+    theme,
+    customTheme,
+    numScenes,
+    videoStyle,
+    voiceGender,
+    observations,
+    duration,
+    generatedScript,
+    generatedAngles
+  ]);
+
+  const loadProject = (proj: ProjectItem) => {
+    setActiveProjectId(null);
+    setActiveTab(proj.type);
+    setImages(proj.images);
+    setModelImage(proj.modelImage);
+    setProductImages(proj.productImages);
+    setTheme(proj.theme);
+    setCustomTheme(proj.customTheme);
+    setNumScenes(proj.numScenes);
+    setVideoStyle(proj.videoStyle);
+    setVoiceGender(proj.voiceGender);
+    setObservations(proj.observations);
+    setDuration(proj.duration);
+    setGeneratedScript(proj.generatedScript);
+    setGeneratedAngles(proj.generatedAngles);
+    
+    setTimeout(() => {
+      setActiveProjectId(proj.id);
+    }, 50);
+  };
+
+  const createNewProject = () => {
+    const nextIndex = projectCounter;
+    const newProj: ProjectItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `Produto ${nextIndex}`,
+      type: 'collection',
+      images: [],
+      modelImage: null,
+      productImages: [],
+      theme: THEMES[0],
+      customTheme: '',
+      numScenes: 3,
+      videoStyle: 'standard',
+      voiceGender: 'female',
+      observations: '',
+      duration: DURATIONS[0],
+      generatedScript: null,
+      generatedAngles: null,
+      status: 'pending',
+      projectIndex: nextIndex
+    };
+
+    setProjects(prev => [...prev, newProj]);
+    setProjectCounter(prev => prev + 1);
+    
+    loadProject(newProj);
+    setShowQueue(true); 
+  };
+
+  const removeProject = (id: string) => {
+    setProjects(prev => prev.filter(p => p.id !== id));
+    if (activeProjectId === id) {
+      setActiveProjectId(null);
+      setImages([]);
+      setModelImage(null);
+      setProductImages([]);
+      setGeneratedScript(null);
+      setGeneratedAngles(null);
     }
   };
 
@@ -598,12 +915,12 @@ Retorne APENAS o array JSON.`,
       const parts: any[] = [];
       
       if (modelImage) {
-        const modelBase64 = await fileToBase64(modelImage.file);
+        const modelBase64 = await getImagePayload(modelImage);
         parts.push({ inlineData: { mimeType: modelImage.file.type, data: modelBase64.split(',')[1] } });
       }
       
       const productParts = await Promise.all(productImages.map(async (img) => {
-        const base64 = await fileToBase64(img.file);
+        const base64 = await getImagePayload(img);
         return { inlineData: { mimeType: img.file.type, data: base64.split(',')[1] } };
       }));
       parts.push(...productParts);
@@ -763,7 +1080,7 @@ A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMI
 - No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
 
       const imageParts = await Promise.all(images.map(async (img) => {
-        const base64 = await fileToBase64(img.file);
+        const base64 = await getImagePayload(img);
         return {
           inlineData: {
             mimeType: img.file.type,
@@ -873,6 +1190,21 @@ Retorne em estrutura JSON:
     });
   };
 
+  const getImagePayload = async (img: SceneImage): Promise<string> => {
+    if (img.cropState) {
+      try {
+        const croppedBlob = await getCroppedImg(img.preview, img.cropState.croppedAreaPixels);
+        if (croppedBlob) {
+          const base64 = await fileToBase64(new File([croppedBlob], img.name, { type: 'image/jpeg' }));
+          return base64;
+        }
+      } catch (err) {
+        console.error("Failed to crop image on-the-fly, falling back to original:", err);
+      }
+    }
+    return await fileToBase64(img.file);
+  };
+
   const copyText = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -910,7 +1242,7 @@ Retorne em estrutura JSON:
     setIsGeneratingAngles(true);
     try {
       const productParts = await Promise.all(productImages.map(async (img) => {
-        const base64 = await fileToBase64(img.file);
+        const base64 = await getImagePayload(img);
         return { inlineData: { mimeType: img.file.type, data: base64.split(',')[1] } };
       }));
 
@@ -1219,6 +1551,13 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <Key className="w-4 h-4" />
                   {apiKeys.length > 0 ? `${apiKeys.length} Chaves` : 'Chaves (.txt)'}
                 </button>
+                <button 
+                  onClick={() => setShowQueue(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-orange-500/10 border border-orange-500/25 rounded-xl hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider text-orange-400"
+                >
+                  <Layers className="w-4 h-4" />
+                  Fila ({projects.length})
+                </button>
               </div>
               <input 
                 type="file" 
@@ -1478,6 +1817,20 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
+                            {modelImage.cropState && (
+                              <>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); downloadCroppedImage(modelImage); }}
+                                  className="absolute top-2 right-2 p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-lg flex items-center justify-center group/btn z-10"
+                                  title="Salvar Recorte (Download)"
+                                >
+                                  <Save className="w-3.5 h-3.5" />
+                                </button>
+                                <div className="absolute bottom-2 right-2 bg-emerald-500/85 backdrop-blur-md text-[9px] text-white font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                                  <span>✂️</span>
+                                </div>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
@@ -1533,6 +1886,20 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                     <Trash2 className="w-3 h-3" />
                                   </button>
                                 </div>
+                                {img.cropState && (
+                                  <>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); downloadCroppedImage(img); }}
+                                      className="absolute top-1.5 right-1.5 p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-md flex items-center justify-center group/btn z-10"
+                                      title="Salvar Recorte (Download)"
+                                    >
+                                      <Save className="w-3 h-3" />
+                                    </button>
+                                    <div className="absolute bottom-1.5 right-1.5 bg-emerald-500/85 backdrop-blur-md text-[8px] text-white font-bold px-1 py-0.5 rounded flex items-center">
+                                      <span>✂️</span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             ))}
                           </motion.div>
@@ -1724,6 +2091,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <button onClick={exportAsPdf} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
                         <Download className="w-3.5 h-3.5" />.PDF
                       </button>
+                      {window.electronAPI && (
+                        <button 
+                          onClick={() => saveProjectToFolder()}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-emerald-500/10"
+                          title="Salvar tudo estruturado em subpasta dentro do Downloads"
+                        >
+                          <Save className="w-3.5 h-3.5" /> Salvar Pasta do Projeto
+                        </button>
+                      )}
                       <button 
                         onClick={() => {
                           if (window.electronAPI) {
@@ -2270,6 +2646,107 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </div>
         )}
       </AnimatePresence>
+
+      {/* Sidebar: Fila de Produção */}
+      <AnimatePresence>
+        {showQueue && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowQueue(false)}
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            />
+            {/* Sidebar Container */}
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed left-0 top-0 bottom-0 w-80 z-50 bg-zinc-950 border-r border-white/10 p-6 flex flex-col justify-between"
+            >
+              <div className="space-y-6 flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-5 h-5 text-orange-500" />
+                    <h2 className="text-lg font-bold font-display text-white">Fila de Produção</h2>
+                  </div>
+                  <button 
+                    onClick={() => setShowQueue(false)}
+                    className="p-1.5 hover:bg-white/5 rounded-xl transition-colors text-white/45 hover:text-white"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={createNewProject}
+                  className="w-full py-3 bg-orange-500 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] hover:bg-orange-600 transition-all shadow-[0_0_15px_rgba(249,115,22,0.2)] flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Adicionar Produto
+                </button>
+
+                <div className="flex-1 overflow-y-auto pr-1 space-y-2.5">
+                  {projects.length === 0 ? (
+                    <div className="text-center py-12 text-white/20 text-xs">
+                      Nenhum produto cadastrado na fila.
+                    </div>
+                  ) : (
+                    projects.map((proj) => (
+                      <div 
+                        key={proj.id}
+                        onClick={() => loadProject(proj)}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                          activeProjectId === proj.id
+                            ? 'bg-orange-500/10 border-orange-500/40 text-white'
+                            : 'bg-white/[0.02] border-white/5 hover:border-white/10 text-white/60 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 pr-2">
+                          <p className="font-bold text-xs truncate">{proj.name}</p>
+                          <p className="text-[9px] text-white/30 uppercase font-bold tracking-wider mt-0.5">
+                            {proj.type === 'collection' ? 'Coleção' : 'Produto'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                            proj.status === 'done'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {proj.status === 'done' ? 'Salvo' : 'Pendente'}
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeProject(proj.id); }}
+                            className="p-1 hover:bg-white/5 rounded-lg text-white/30 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {projects.length > 0 && (
+                <div className="border-t border-white/10 pt-4 mt-4 space-y-2">
+                  <div className="flex justify-between items-center text-[10px] text-white/40 uppercase tracking-wider font-bold">
+                    <span>Total da fila</span>
+                    <span>{projects.length} produtos</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-white/40 uppercase tracking-wider font-bold">
+                    <span>Próximo índice</span>
+                    <span className="font-mono text-orange-400">produto{projectCounter}</span>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -2287,6 +2764,10 @@ function PromptInjector() {
   const [isLoading, setIsLoading] = useState(false);
   const webviewRef = useRef<any>(null);
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+
+  // Auto-Scan States no Injetor
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
@@ -2321,15 +2802,36 @@ function PromptInjector() {
     }
   }, []);
 
+  const runScan = async () => {
+    if (!webviewRef.current) return;
+    setIsScanning(true);
+    try {
+      const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
+      const result = JSON.parse(resultStr) as ScanResult;
+      setScanResult(result);
+      // Auto-highlight fields inside injector for clarity
+      await webviewRef.current.executeJavaScript(SPY_HIGHLIGHT_CSS);
+    } catch (err) {
+      console.error('Injector auto-scan error:', err);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
 
     const handleStartLoad = () => setIsLoading(true);
-    const handleStopLoad = () => setIsLoading(false);
+    const handleStopLoad = () => {
+      setIsLoading(false);
+      // Rodar scan de campos 2s depois que carregar a página
+      setTimeout(() => runScan(), 2000);
+    };
     const handleNavigate = (e: any) => {
       setUrl(e.url);
       setInputValue(e.url);
+      setScanResult(null); // Limpar resultados antigos
     };
 
     webview.addEventListener('did-start-loading', handleStartLoad);
@@ -2373,12 +2875,28 @@ function PromptInjector() {
     setInputValue(targetUrl);
   };
 
-  const injectText = (text: string) => {
+  const injectText = (text: string, selector?: string) => {
     if (!webviewRef.current) return;
     
     const escapedText = JSON.stringify(text);
     
-    const script = `
+    const script = selector 
+      ? `
+      (function() {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        el.focus();
+        if (el.isContentEditable) {
+          el.innerText = ${escapedText};
+        } else {
+          el.value = ${escapedText};
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()
+      `
+      : `
       (function() {
         const el = document.activeElement;
         if (!el) return false;
@@ -2423,8 +2941,13 @@ function PromptInjector() {
     webviewRef.current.executeJavaScript(script)
       .then((success: boolean) => {
         if (!success) {
-          navigator.clipboard.writeText(text);
-          alert("Nenhum campo de texto focado encontrado na página. Copiado para a área de transferência!");
+          if (selector) {
+            // Tenta fallback com injeção clássica
+            injectText(text);
+          } else {
+            navigator.clipboard.writeText(text);
+            alert("Nenhum campo de texto focado encontrado na página. Copiado para a área de transferência!");
+          }
         }
       })
       .catch((err: any) => {
@@ -2432,6 +2955,31 @@ function PromptInjector() {
         navigator.clipboard.writeText(text);
         alert("Copiado para área de transferência (Injeção falhou).");
       });
+  };
+
+  const getSmartSelector = (type: 'veo' | 'digen' | 'image'): string | undefined => {
+    if (!scanResult) return undefined;
+    
+    // DIGEN active
+    if (url.includes('digen.ai')) {
+      if (type === 'digen') {
+        return scanResult.prompts[0]?.selector; // Fala vai pro prompt do avatar
+      }
+    }
+    
+    // Google Labs Flow active
+    if (url.includes('labs.google')) {
+      if (type === 'veo') {
+        return scanResult.prompts[0]?.selector; // Animação vai pro prompt do VEO
+      }
+    }
+    
+    // Heurística fallback: se houver apenas 1 prompt na página, manda pra ele
+    if (scanResult.prompts.length === 1) {
+      return scanResult.prompts[0].selector;
+    }
+    
+    return undefined;
   };
 
   const scenes = prompts?.generatedScript?.scenes || [];
@@ -2555,7 +3103,7 @@ function PromptInjector() {
                       {currentItem.veoPrompt}
                     </div>
                     <button
-                      onClick={() => injectText(currentItem.veoPrompt)}
+                      onClick={() => injectText(currentItem.veoPrompt, getSmartSelector('veo'))}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
                     >
                       Injetar VEO
@@ -2575,7 +3123,7 @@ function PromptInjector() {
                       {currentItem.digenPrompt}
                     </div>
                     <button
-                      onClick={() => injectText(currentItem.digenPrompt)}
+                      onClick={() => injectText(currentItem.digenPrompt, getSmartSelector('digen'))}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/10 transition-all hover:scale-[1.02]"
                     >
                       Injetar DIGEN
@@ -2595,7 +3143,7 @@ function PromptInjector() {
                       {currentItem.imagePrompt}
                     </div>
                     <button
-                      onClick={() => injectText(currentItem.imagePrompt)}
+                      onClick={() => injectText(currentItem.imagePrompt, getSmartSelector('image'))}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
                     >
                       Injetar Imagem
@@ -2620,6 +3168,99 @@ function PromptInjector() {
                     >
                       Injetar Narração
                     </button>
+                  </div>
+                )}
+
+                {/* Configurações Dinâmicas Detectadas (DIGEN/Flow) */}
+                {scanResult && (scanResult.configs.length > 0 || scanResult.actions.length > 0) && (
+                  <div className="bg-zinc-950/40 p-4.5 rounded-2xl border border-zinc-800/80 space-y-4 mt-4">
+                    <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold flex items-center gap-1.5">
+                      <Settings2 className="w-3.5 h-3.5" /> Painel de Controle Remoto
+                    </h4>
+                    
+                    {/* Selects e Dropdowns mapeados */}
+                    {scanResult.configs.map((cfg, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <label className="text-[10px] text-zinc-500 font-bold uppercase">{cfg.label || 'Opção'}</label>
+                        {cfg.options && cfg.options.length > 0 ? (
+                          <select
+                            onChange={(e) => {
+                              const optionIndex = cfg.options.indexOf(e.target.value);
+                              const script = `
+                                (function() {
+                                  const el = document.querySelector(${JSON.stringify(cfg.selector)});
+                                  if (!el) return false;
+                                  el.focus();
+                                  if (el.tagName === 'SELECT') {
+                                    el.value = ${JSON.stringify(e.target.value)};
+                                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                                  } else {
+                                    const options = el.querySelectorAll('[role="option"], option');
+                                    if (options[${optionIndex}]) {
+                                      options[${optionIndex}].click();
+                                    } else {
+                                      el.click();
+                                    }
+                                  }
+                                  return true;
+                                })()
+                              `;
+                              webviewRef.current?.executeJavaScript(script);
+                            }}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700"
+                          >
+                            <option value="">Selecione...</option>
+                            {cfg.options.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const script = `
+                                (function() {
+                                  const el = document.querySelector(${JSON.stringify(cfg.selector)});
+                                  if (el) { el.click(); return true; }
+                                  return false;
+                                })()
+                              `;
+                              webviewRef.current?.executeJavaScript(script);
+                            }}
+                            className="w-full py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl text-xs font-bold transition-all text-left px-3 truncate"
+                          >
+                            Ajustar: {cfg.label || cfg.type}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Ações Mapeadas */}
+                    {scanResult.actions.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-zinc-800/40">
+                        <span className="text-[10px] text-zinc-500 font-bold uppercase block">Disparar Ações</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          {scanResult.actions.map((act, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                const script = `
+                                  (function() {
+                                    const el = document.querySelector(${JSON.stringify(act.selector)});
+                                    if (el) { el.click(); return true; }
+                                    return false;
+                                  })()
+                                `;
+                                webviewRef.current?.executeJavaScript(script);
+                              }}
+                              className="py-2 bg-emerald-600/15 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all truncate"
+                              title={`Disparar clique no elemento: ${act.label}`}
+                            >
+                              🚀 {act.label || act.type}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
