@@ -2753,6 +2753,8 @@ interface ScanResult {
   url: string;
 }
 
+
+
 const SPY_SCAN_SCRIPT = `
 (function() {
   function getCSSSelector(el) {
@@ -2901,6 +2903,66 @@ const SPY_SCAN_SCRIPT = `
       }
     });
 
+  // Event Listeners para gravação de ações do usuário
+  if (!window.__SPY_LISTENERS_ATTACHED__) {
+    window.__SPY_LISTENERS_ATTACHED__ = true;
+    
+    document.addEventListener('click', function(e) {
+      const el = e.target;
+      if (!el) return;
+      const selector = getCSSSelector(el);
+      const label = getLabel(el) || el.textContent?.trim().slice(0, 40) || el.value || '';
+      console.log('__SPY_ACTION__:' + JSON.stringify({
+        type: 'click',
+        tag: el.tagName,
+        selector: selector,
+        label: label,
+        timestamp: Date.now()
+      }));
+    }, true);
+
+    document.addEventListener('input', function(e) {
+      const el = e.target;
+      if (!el) return;
+      const selector = getCSSSelector(el);
+      const value = el.value || el.textContent || '';
+      console.log('__SPY_ACTION__:' + JSON.stringify({
+        type: 'input',
+        tag: el.tagName,
+        selector: selector,
+        value: value.slice(0, 300),
+        label: getLabel(el),
+        timestamp: Date.now()
+      }));
+    }, true);
+
+    document.addEventListener('change', function(e) {
+      const el = e.target;
+      if (!el) return;
+      const selector = getCSSSelector(el);
+      if (el.type === 'file' && el.files) {
+        const files = Array.from(el.files).map(f => f.name).join(', ');
+        console.log('__SPY_ACTION__:' + JSON.stringify({
+          type: 'file-upload',
+          tag: el.tagName,
+          selector: selector,
+          value: files,
+          label: getLabel(el) || 'Upload de arquivo',
+          timestamp: Date.now()
+        }));
+      } else {
+        console.log('__SPY_ACTION__:' + JSON.stringify({
+          type: 'change',
+          tag: el.tagName,
+          selector: selector,
+          value: el.value,
+          label: getLabel(el),
+          timestamp: Date.now()
+        }));
+      }
+    }, true);
+  }
+
   return JSON.stringify({
     prompts: fields.prompts, uploads: fields.uploads,
     configs: fields.configs, actions: fields.actions,
@@ -2930,6 +2992,17 @@ const SPY_REMOVE_HIGHLIGHT = `
 })()
 `;
 
+interface SpyAction {
+  type: 'click' | 'input' | 'change' | 'file-upload';
+  tag: string;
+  selector: string;
+  label: string;
+  value?: string;
+  timestamp: number;
+  interpreted?: string;
+  category?: 'prompt' | 'upload' | 'config' | 'action';
+}
+
 function SpyWindow() {
   const [url, setUrl] = useState('https://digen.ai/explore');
   const [inputValue, setInputValue] = useState('https://digen.ai/explore');
@@ -2941,8 +3014,12 @@ function SpyWindow() {
   const [numImages, setNumImages] = useState(5);
   const [contentType, setContentType] = useState<'avatar' | 'product' | 'video'>('avatar');
   const [spyData, setSpyData] = useState<any>(null);
+  
+  // Abas de Controle do espião
+  const [spyTab, setSpyTab] = useState<'fields' | 'actions' | 'macro'>('fields');
+  const [recordedActions, setRecordedActions] = useState<SpyAction[]>([]);
+
   const webviewRef = useRef<any>(null);
-  const scanTimerRef = useRef<any>(null);
 
   // Receber dados do MainWindow
   useEffect(() => {
@@ -2970,20 +3047,147 @@ function SpyWindow() {
       setUrl(e.url);
       setInputValue(e.url);
       setScanResult(null);
+      setRecordedActions([]); // Limpar ações ao navegar
+    };
+
+    // Escutar mensagens do console da webview para gravar as ações
+    const handleConsoleMessage = (e: any) => {
+      const text = e.message || '';
+      if (text.startsWith('__SPY_ACTION__:')) {
+        try {
+          const rawAction = JSON.parse(text.substring(15)) as SpyAction;
+          interpretAndAddAction(rawAction);
+        } catch (err) {
+          console.error('Failed to parse spy action:', err);
+        }
+      }
     };
 
     webview.addEventListener('did-start-loading', handleStartLoad);
     webview.addEventListener('did-stop-loading', handleStopLoad);
     webview.addEventListener('did-navigate', handleNavigate);
     webview.addEventListener('did-navigate-in-page', handleNavigate);
+    webview.addEventListener('console-message', handleConsoleMessage);
 
     return () => {
       webview.removeEventListener('did-start-loading', handleStartLoad);
       webview.removeEventListener('did-stop-loading', handleStopLoad);
       webview.removeEventListener('did-navigate', handleNavigate);
       webview.removeEventListener('did-navigate-in-page', handleNavigate);
+      webview.removeEventListener('console-message', handleConsoleMessage);
     };
-  }, []);
+  }, [scanResult]);
+
+  // Função para interpretar e adicionar a ação em tempo real
+  const interpretAndAddAction = (action: SpyAction) => {
+    let interpreted = '';
+    let category: 'prompt' | 'upload' | 'config' | 'action' | undefined = undefined;
+
+    // Tentar cruzar a ação com os campos escaneados do DOM
+    if (scanResult) {
+      const findField = (list: DetectedField[]) => list.find(f => f.selector === action.selector);
+      
+      const promptField = findField(scanResult.prompts);
+      const uploadField = findField(scanResult.uploads);
+      const configField = findField(scanResult.configs);
+      const actionField = findField(scanResult.actions);
+
+      if (promptField) {
+        category = 'prompt';
+        interpreted = action.type === 'input' 
+          ? `Preencheu Prompt ("${action.value?.slice(0, 40)}...")`
+          : `Clicou no campo de Prompt`;
+      } else if (uploadField) {
+        category = 'upload';
+        interpreted = action.type === 'file-upload'
+          ? `Carregou arquivo: ${action.value}`
+          : `Iniciou upload de arquivo`;
+      } else if (configField) {
+        category = 'config';
+        interpreted = action.type === 'change' || action.type === 'input'
+          ? `Ajustou configuração [${configField.label || 'Opção'}] para: ${action.value}`
+          : `Clicou na configuração [${configField.label || 'Opção'}]`;
+      } else if (actionField) {
+        category = 'action';
+        const actionType = actionField.type === 'generate' ? 'Gerar Conteúdo' : (actionField.type === 'download' ? 'Download' : actionField.type);
+        interpreted = `Clicou em Ação [${actionType}]`;
+      }
+    }
+
+    // Heurísticas genéricas se o scan não mapeou o seletor exato
+    if (!interpreted) {
+      const lowerLabel = (action.label || '').toLowerCase();
+      const lowerTag = action.tag.toLowerCase();
+
+      if (action.type === 'input' || action.type === 'change') {
+        if (lowerTag === 'textarea' || lowerLabel.includes('prompt') || lowerLabel.includes('script')) {
+          interpreted = `Preencheu Prompt de texto ("${action.value?.slice(0, 40)}...")`;
+          category = 'prompt';
+        } else {
+          interpreted = `Digitou no campo [${action.label || action.selector}]`;
+        }
+      } else if (action.type === 'file-upload') {
+        interpreted = `Carregou arquivo: ${action.value}`;
+        category = 'upload';
+      } else if (action.type === 'click') {
+        if (/generate|gerar|create|criar|submit/.test(lowerLabel)) {
+          interpreted = `Clicou em Gerar`;
+          category = 'action';
+        } else if (/download|baixar|export/.test(lowerLabel)) {
+          interpreted = `Clicou em Download`;
+          category = 'action';
+        } else if (/upload|import|carregar/.test(lowerLabel)) {
+          interpreted = `Clicou em Upload`;
+          category = 'upload';
+        } else {
+          interpreted = `Clicou em: ${action.label || action.tag}`;
+        }
+      }
+    }
+
+    const completedAction: SpyAction = {
+      ...action,
+      interpreted,
+      category
+    };
+
+    setRecordedActions(prev => {
+      const newActions = [...prev, completedAction];
+      // Salvar progresso local
+      if (window.electronAPI && window.electronAPI.writeSpyScanResults) {
+        window.electronAPI.writeSpyScanResults({
+          scan: scanResult,
+          actions: newActions,
+          macro: consolidateMacro(newActions)
+        });
+      }
+      return newActions;
+    });
+  };
+
+  // Consolida as ações do usuário em passos de macro lógicos
+  const consolidateMacro = (actionsList: SpyAction[]) => {
+    const steps: { step: number; title: string; selector: string; type: string; value?: string }[] = [];
+    let stepCount = 1;
+
+    actionsList.forEach((act) => {
+      // Evitar cliques intermediários duplicados antes da digitação
+      if (act.type === 'click' && (act.category === 'prompt' || act.category === 'config')) {
+        return; 
+      }
+      
+      const title = act.interpreted || `${act.type} em ${act.selector}`;
+      steps.push({
+        step: stepCount++,
+        title,
+        selector: act.selector,
+        type: act.type,
+        value: act.value
+      });
+    });
+
+    return steps;
+  };
 
   const runScan = async () => {
     if (!webviewRef.current) return;
@@ -2995,7 +3199,11 @@ function SpyWindow() {
 
       // Salvar resultados localmente
       if (window.electronAPI && window.electronAPI.writeSpyScanResults) {
-        window.electronAPI.writeSpyScanResults(result);
+        window.electronAPI.writeSpyScanResults({
+          scan: result,
+          actions: recordedActions,
+          macro: consolidateMacro(recordedActions)
+        });
       }
 
       // Apply highlight if enabled
@@ -3145,90 +3353,214 @@ function SpyWindow() {
           </div>
         </div>
 
-        {/* Campos Detectados */}
+        {/* Abas de Controle */}
+        <div className="px-4 py-2 border-b border-zinc-800 bg-zinc-950/20 flex gap-1">
+          {([
+            { key: 'fields' as const, label: '📊 Campos' },
+            { key: 'actions' as const, label: '📜 Timeline' },
+            { key: 'macro' as const, label: '📦 Macro' },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setSpyTab(tab.key)}
+              className={`flex-1 py-1.5 text-[10px] rounded-lg font-bold uppercase tracking-wider transition-all border ${
+                spyTab === tab.key
+                  ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+                  : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Conteúdo da Aba */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 space-y-4">
-            {/* Status Header */}
-            <div className="flex items-center justify-between">
-              <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
-                Campos Detectados
-              </h3>
-              <div className="flex items-center gap-2">
-                {scanResult && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    totalDetected > 0
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                  }`}>
-                    {totalDetected} encontrados
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {!scanResult && !isScanning && (
-              <div className="text-center py-8 text-zinc-600 text-xs">
-                <p className="mb-2">Aguardando scan...</p>
-                <p className="text-[10px]">Navegue para um site e o scan será automático</p>
-              </div>
-            )}
-
-            {isScanning && (
-              <div className="flex items-center justify-center gap-2 py-6 text-cyan-400/60 text-xs">
-                <Loader2 className="w-4 h-4 animate-spin" /> Escaneando DOM...
-              </div>
-            )}
-
-            {scanResult && (
+            
+            {spyTab === 'fields' && (
               <>
-                {/* Prompts */}
-                {scanResult.prompts.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1.5">
-                      📝 Prompts ({scanResult.prompts.length})
-                    </h4>
-                    {scanResult.prompts.map((f, i) => <FieldCard key={`p${i}`} field={f} color="orange" />)}
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
+                    Campos Mapeados
+                  </h3>
+                  {scanResult && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {totalDetected} encontrados
+                    </span>
+                  )}
+                </div>
+
+                {!scanResult && !isScanning && (
+                  <div className="text-center py-8 text-zinc-600 text-xs">
+                    <p className="mb-2">Aguardando scan...</p>
+                    <p className="text-[10px]">Navegue para um site e o scan será automático</p>
                   </div>
                 )}
 
-                {/* Uploads */}
-                {scanResult.uploads.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
-                      📤 Uploads ({scanResult.uploads.length})
-                    </h4>
-                    {scanResult.uploads.map((f, i) => <FieldCard key={`u${i}`} field={f} color="blue" />)}
+                {isScanning && (
+                  <div className="flex items-center justify-center gap-2 py-6 text-cyan-400/60 text-xs">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Escaneando DOM...
                   </div>
                 )}
 
-                {/* Configs */}
-                {scanResult.configs.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5">
-                      ⚙️ Configurações ({scanResult.configs.length})
-                    </h4>
-                    {scanResult.configs.map((f, i) => <FieldCard key={`c${i}`} field={f} color="purple" />)}
-                  </div>
-                )}
+                {scanResult && (
+                  <>
+                    {/* Prompts */}
+                    {scanResult.prompts.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1.5">
+                          📝 Prompts ({scanResult.prompts.length})
+                        </h4>
+                        {scanResult.prompts.map((f, i) => <FieldCard key={`p${i}`} field={f} color="orange" />)}
+                      </div>
+                    )}
 
-                {/* Actions */}
-                {scanResult.actions.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
-                      🎬 Ações ({scanResult.actions.length})
-                    </h4>
-                    {scanResult.actions.map((f, i) => <FieldCard key={`a${i}`} field={f} color="emerald" />)}
-                  </div>
-                )}
+                    {/* Uploads */}
+                    {scanResult.uploads.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+                          📤 Uploads ({scanResult.uploads.length})
+                        </h4>
+                        {scanResult.uploads.map((f, i) => <FieldCard key={`u${i}`} field={f} color="blue" />)}
+                      </div>
+                    )}
 
-                {totalDetected === 0 && (
-                  <div className="text-center py-6 text-zinc-600 text-xs">
-                    <p>Nenhum campo interativo detectado.</p>
-                    <p className="text-[10px] mt-1">A página pode estar carregando ou usar elementos não-padrão.</p>
+                    {/* Configs */}
+                    {scanResult.configs.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5">
+                          ⚙️ Configurações ({scanResult.configs.length})
+                        </h4>
+                        {scanResult.configs.map((f, i) => <FieldCard key={`c${i}`} field={f} color="purple" />)}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    {scanResult.actions.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                          🎬 Ações ({scanResult.actions.length})
+                        </h4>
+                        {scanResult.actions.map((f, i) => <FieldCard key={`a${i}`} field={f} color="emerald" />)}
+                      </div>
+                    )}
+
+                    {totalDetected === 0 && (
+                      <div className="text-center py-6 text-zinc-600 text-xs">
+                        <p>Nenhum campo interativo detectado.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {spyTab === 'actions' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
+                    Linha do Tempo de Ações
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setRecordedActions([]);
+                      if (window.electronAPI && window.electronAPI.writeSpyScanResults) {
+                        window.electronAPI.writeSpyScanResults({ scan: scanResult, actions: [], macro: [] });
+                      }
+                    }}
+                    className="text-[9px] font-bold text-red-400/80 hover:text-red-400 transition-colors uppercase"
+                  >
+                    Limpar
+                  </button>
+                </div>
+
+                {recordedActions.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-600 text-xs bg-zinc-950/20 rounded-2xl border border-zinc-900 border-dashed">
+                    <p className="font-semibold text-zinc-500 mb-1">Nenhuma ação gravada ainda.</p>
+                    <p className="text-[10px] max-w-[200px] mx-auto text-zinc-600">Interaja com a página no painel direito (digite, clique, faça upload) para o espião analisar suas ações em tempo real.</p>
+                  </div>
+                ) : (
+                  <div className="relative pl-4 space-y-4">
+                    <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-zinc-800" />
+                    {recordedActions.map((act, i) => {
+                      const color = act.category === 'prompt' ? 'orange' : (act.category === 'upload' ? 'blue' : (act.category === 'config' ? 'purple' : (act.category === 'action' ? 'emerald' : 'zinc')));
+                      return (
+                        <div key={i} className="relative flex gap-3">
+                          <div className={`absolute -left-[14px] w-2.5 h-2.5 rounded-full border-2 bg-zinc-900 border-${color}-500/80 mt-1`} />
+                          <div className={`flex-1 p-2 bg-zinc-950/40 border border-zinc-900 rounded-xl space-y-1`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[10px] font-bold uppercase tracking-wider text-${color}-400`}>
+                                {categoryIcon(act.category || '')} {act.interpreted}
+                              </span>
+                              <span className="text-[8px] text-zinc-600 font-mono">
+                                {new Date(act.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-zinc-400 font-mono break-all font-semibold select-all bg-black/30 px-1.5 py-0.5 rounded border border-white/5">{act.selector}</p>
+                            {act.value && (
+                              <p className="text-[9px] text-zinc-300 italic">Valor: "{act.value.slice(0, 100)}"</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>
             )}
+
+            {spyTab === 'macro' && (
+              <>
+                <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
+                  Modelo de Macro Consolidado
+                </h3>
+
+                {recordedActions.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-600 text-xs bg-zinc-950/20 rounded-2xl border border-zinc-900 border-dashed">
+                    <p className="font-semibold text-zinc-500">Nenhuma macro construída.</p>
+                    <p className="text-[10px] mt-1">Grave ações na timeline para analisar.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-2xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-zinc-500 font-bold uppercase">Macro Estruturada</span>
+                        <button
+                          onClick={() => {
+                            const code = JSON.stringify(consolidateMacro(recordedActions), null, 2);
+                            navigator.clipboard.writeText(code);
+                            alert('Macro copiada para o clipboard!');
+                          }}
+                          className="text-[9px] bg-zinc-800 hover:bg-zinc-700 text-white px-2 py-1 rounded font-bold uppercase"
+                        >
+                          Copiar JSON
+                        </button>
+                      </div>
+                      <pre className="text-[9px] font-mono text-zinc-400 bg-black/40 p-2.5 rounded-lg max-h-56 overflow-auto border border-white/5 select-all">
+                        {JSON.stringify(consolidateMacro(recordedActions), null, 2)}
+                      </pre>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase">Etapas Mapeadas</span>
+                      {consolidateMacro(recordedActions).map((step, i) => (
+                        <div key={i} className="flex items-center gap-3 p-2 bg-zinc-950/30 border border-zinc-900 rounded-xl text-xs">
+                          <span className="w-5 h-5 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[10px] font-bold text-cyan-400">
+                            {step.step}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-[11px] text-white/80 truncate">{step.title}</p>
+                            <p className="text-[8px] text-zinc-500 font-mono truncate">{step.selector}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
           </div>
         </div>
 
