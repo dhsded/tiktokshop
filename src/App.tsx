@@ -2165,13 +2165,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
       {/* Modal de Histórico de Versões */}
       <AnimatePresence>
-        {showChangelog && (
+        {showChangelog && (() => {
+          const isDark = themeMode === 'dark';
+          return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/30'}`}
               onClick={() => setShowChangelog(false)}
             />
             <motion.div
@@ -2179,22 +2181,28 @@ Angulos a variar (escolha os mais relevantes para o produto):
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative z-10 w-full max-w-2xl max-h-[80vh] bg-[#111113] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden flex flex-col"
+              className={`relative z-10 w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border ${
+                isDark
+                  ? 'bg-[#111113] border-white/10 shadow-black/50'
+                  : 'bg-white border-zinc-200 shadow-zinc-300/50'
+              }`}
             >
               {/* Header do modal */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
-                    <History className="w-5 h-5 text-orange-400" />
+                  <div className={`p-2 rounded-xl border ${isDark ? 'bg-orange-500/10 border-orange-500/20' : 'bg-orange-50 border-orange-200'}`}>
+                    <History className="w-5 h-5 text-orange-500" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-white">Histórico de Versões</h2>
-                    <p className="text-xs text-white/40">Gerador TikTok Shop</p>
+                    <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Histórico de Versões</h2>
+                    <p className={`text-xs ${isDark ? 'text-white/40' : 'text-zinc-400'}`}>Gerador TikTok Shop</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowChangelog(false)}
-                  className="p-2 rounded-xl hover:bg-white/5 text-white/40 hover:text-white transition-colors text-lg"
+                  className={`p-2 rounded-xl transition-colors text-lg ${
+                    isDark ? 'hover:bg-white/5 text-white/40 hover:text-white' : 'hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700'
+                  }`}
                 >
                   ✕
                 </button>
@@ -2204,43 +2212,42 @@ Angulos a variar (escolha os mais relevantes para o produto):
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
                 {VERSION_HISTORY.map((entry, idx) => (
                   <div key={entry.version} className="relative">
-                    {/* Linha vertical conectora */}
                     {idx < VERSION_HISTORY.length - 1 && (
-                      <div className="absolute left-[11px] top-[32px] bottom-[-24px] w-px bg-white/10" />
+                      <div className={`absolute left-[11px] top-[32px] bottom-[-24px] w-px ${isDark ? 'bg-white/10' : 'bg-zinc-200'}`} />
                     )}
                     <div className="flex items-start gap-4">
-                      {/* Dot */}
                       <div className={`mt-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 ${
                         idx === 0
                           ? 'border-orange-500 bg-orange-500/20'
-                          : 'border-white/20 bg-white/5'
+                          : isDark ? 'border-white/20 bg-white/5' : 'border-zinc-300 bg-zinc-100'
                       }`}>
-                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-orange-400' : 'bg-white/30'}`} />
+                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-orange-400' : isDark ? 'bg-white/30' : 'bg-zinc-400'}`} />
                       </div>
-                      {/* Content */}
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-3">
                           <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full border ${
                             idx === 0
-                              ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
-                              : 'bg-white/5 border-white/10 text-white/60'
+                              ? 'bg-orange-500/10 border-orange-500/30 text-orange-500'
+                              : isDark ? 'bg-white/5 border-white/10 text-white/60' : 'bg-zinc-100 border-zinc-200 text-zinc-500'
                           }`}>
                             v{entry.version}
                           </span>
-                          <span className="text-xs text-white/30">{entry.date}</span>
+                          <span className={`text-xs ${isDark ? 'text-white/30' : 'text-zinc-400'}`}>{entry.date}</span>
                           {idx === 0 && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 uppercase tracking-wider">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 uppercase tracking-wider">
                               Atual
                             </span>
                           )}
                         </div>
-                        <h3 className={`text-base font-semibold ${idx === 0 ? 'text-white' : 'text-white/60'}`}>
+                        <h3 className={`text-base font-semibold ${
+                          idx === 0 ? (isDark ? 'text-white' : 'text-zinc-900') : (isDark ? 'text-white/60' : 'text-zinc-500')
+                        }`}>
                           {entry.title}
                         </h3>
                         <ul className="space-y-1.5">
                           {entry.changes.map((change, ci) => (
-                            <li key={ci} className="flex items-start gap-2 text-sm text-white/50">
-                              <span className={`mt-1 shrink-0 ${change.startsWith('Novo:') ? 'text-emerald-400' : change.startsWith('Fix:') ? 'text-amber-400' : 'text-white/30'}`}>
+                            <li key={ci} className={`flex items-start gap-2 text-sm ${isDark ? 'text-white/50' : 'text-zinc-600'}`}>
+                              <span className={`mt-1 shrink-0 ${change.startsWith('Novo:') ? 'text-emerald-500' : change.startsWith('Fix:') ? 'text-amber-500' : isDark ? 'text-white/30' : 'text-zinc-400'}`}>
                                 {change.startsWith('Novo:') ? '✦' : change.startsWith('Fix:') ? '🔧' : '•'}
                               </span>
                               <span>{change}</span>
@@ -2254,18 +2261,23 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3 border-t border-white/5 flex items-center justify-between">
-                <span className="text-xs text-white/20">{VERSION_HISTORY.length} versões</span>
+              <div className={`px-6 py-3 border-t flex items-center justify-between ${isDark ? 'border-white/5' : 'border-zinc-100'}`}>
+                <span className={`text-xs ${isDark ? 'text-white/20' : 'text-zinc-400'}`}>{VERSION_HISTORY.length} versões</span>
                 <button
                   onClick={() => setShowChangelog(false)}
-                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                  className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                    isDark
+                      ? 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white'
+                      : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
+                  }`}
                 >
                   Fechar
                 </button>
               </div>
             </motion.div>
           </div>
-        )}
+          );
+        })()}
       </AnimatePresence>
     </div>
   );
