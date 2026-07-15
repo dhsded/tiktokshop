@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -45,6 +45,10 @@ declare global {
       openInjectorWindow: (data: any) => void;
       injectorReady: () => void;
       onLoadPrompts: (callback: (data: any) => void) => () => void;
+      // EspiÃ£o de AÃ§Ãµes â€” Dev Mode
+      openSpyWindow: () => void;
+      saveMacro: (data: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+      listMacros: () => Promise<any[]>;
     };
   }
 }
@@ -89,7 +93,7 @@ interface GeneratedAngle {
 const DURATIONS = ['5s', '6s', '8s', '10s'];
 const THEMES = [
   'Roupas Casuais',
-  'Coleção de Verão',
+  'ColeÃ§Ã£o de VerÃ£o',
   'Noite Elegante',
   'Estilo Streetwear',
   'Moda Fitness / Esportiva',
@@ -100,10 +104,14 @@ const THEMES = [
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
-  const isInjectorWindow = params.get('window') === 'injector' || window.location.hash === '#injector';
+  const windowType = params.get('window');
 
-  if (isInjectorWindow) {
+  if (windowType === 'injector' || window.location.hash === '#injector') {
     return <PromptInjector />;
+  }
+
+  if (windowType === 'spy') {
+    return <SpyMonitor />;
   }
 
   return <MainApp />;
@@ -165,7 +173,7 @@ function MainApp() {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isCropping, setIsCropping] = useState(false);
 
-  // Ângulos do Produto
+  // Ã‚ngulos do Produto
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
   const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
   const [numAngles, setNumAngles] = useState(4);
@@ -281,15 +289,15 @@ function MainApp() {
     return process.env.GEMINI_API_KEY;
   };
 
-  // Modelo primário + fallbacks (na ordem de prioridade)
+  // Modelo primÃ¡rio + fallbacks (na ordem de prioridade)
   const GEMINI_MODEL_CHAIN = [
-    "gemini-2.5-flash",   // Modelo primário (mais recente e estável)
+    "gemini-2.5-flash",   // Modelo primÃ¡rio (mais recente e estÃ¡vel)
     "gemini-1.5-flash",   // Primeiro fallback
     "gemini-1.5-pro",     // Segundo fallback
   ];
 
   const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI, model: string) => Promise<T>): Promise<T> => {
-    // Captura as chaves no momento da chamada (evita problema de React state assíncrono)
+    // Captura as chaves no momento da chamada (evita problema de React state assÃ­ncrono)
     const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
     
     if (keysToTry.length === 0) {
@@ -298,11 +306,11 @@ function MainApp() {
 
     let lastError: any = null;
 
-    // Loop externo: percorre cada chave disponível
+    // Loop externo: percorre cada chave disponÃ­vel
     for (let keyIdx = 0; keyIdx < keysToTry.length; keyIdx++) {
       const key = keysToTry[keyIdx];
       
-      // Loop interno: percorre a cadeia de modelos (primário → fallbacks)
+      // Loop interno: percorre a cadeia de modelos (primÃ¡rio â†’ fallbacks)
       for (const model of GEMINI_MODEL_CHAIN) {
         try {
           const ai = new GoogleGenAI({ apiKey: key });
@@ -316,7 +324,7 @@ function MainApp() {
           const errorDetails = typeof error === 'object' ? JSON.stringify(error) : "";
           const errorStr = `${errorMsg} ${errorStatus} ${errorDetails} ${String(error)}`.toLowerCase();
           
-          // Erros de chave: pular para a próxima chave imediatamente
+          // Erros de chave: pular para a prÃ³xima chave imediatamente
           const isKeyError = errorStr.includes("api key expired") || 
                              errorStr.includes("api key not valid") || 
                              errorStr.includes("api_key_invalid") ||
@@ -325,11 +333,11 @@ function MainApp() {
                              (errorStr.includes("invalid_argument") && errorStr.includes("key"));
           
           if (isKeyError) {
-            console.warn(`Chave ${keyIdx + 1} expirada ou inválida. Tentando próxima chave...`);
-            break; // Sai do loop de modelos, vai para a próxima chave
+            console.warn(`Chave ${keyIdx + 1} expirada ou invÃ¡lida. Tentando prÃ³xima chave...`);
+            break; // Sai do loop de modelos, vai para a prÃ³xima chave
           }
           
-          // Erros de modelo (indisponível, sobrecarregado): tenta o próximo modelo
+          // Erros de modelo (indisponÃ­vel, sobrecarregado): tenta o prÃ³ximo modelo
           const isModelError = errorStr.includes("model not found") ||
                                errorStr.includes("not found") ||
                                errorStr.includes("model_not_found") ||
@@ -341,22 +349,22 @@ function MainApp() {
                                errorStr.includes("quota");
           
           if (isModelError) {
-            console.warn(`Modelo ${model} indisponível. Tentando próximo modelo...`);
-            continue; // Tenta o próximo modelo na cadeia
+            console.warn(`Modelo ${model} indisponÃ­vel. Tentando prÃ³ximo modelo...`);
+            continue; // Tenta o prÃ³ximo modelo na cadeia
           }
           
-          // Outros erros: lança imediatamente (erro de lógica, timeout, etc.)
+          // Outros erros: lanÃ§a imediatamente (erro de lÃ³gica, timeout, etc.)
           throw error;
         }
       }
     }
     
-    // Monta mensagem de erro amigável
+    // Monta mensagem de erro amigÃ¡vel
     const lastMsg = (lastError?.message || String(lastError) || "").toLowerCase();
     if (lastMsg.includes("key expired") || lastMsg.includes("api key") || lastMsg.includes("invalid_argument")) {
-      throw new Error(`Todas as ${keysToTry.length} chave(s) de API estão expiradas ou inválidas.\nRenove suas chaves em: https://aistudio.google.com/apikey`);
+      throw new Error(`Todas as ${keysToTry.length} chave(s) de API estÃ£o expiradas ou invÃ¡lidas.\nRenove suas chaves em: https://aistudio.google.com/apikey`);
     }
-    throw lastError || new Error("Todos os modelos e chaves falharam. Verifique sua conexão e chaves de API.");
+    throw lastError || new Error("Todos os modelos e chaves falharam. Verifique sua conexÃ£o e chaves de API.");
   };
 
   const autoSequence = async () => {
@@ -375,7 +383,7 @@ function MainApp() {
           model: model,
           contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
 Nomes das imagens: ${JSON.stringify(imageListData)}.
-Retorne um array JSON indicando a sequência ideal baseada no nome/descrição das imagens para um fluxo narrativo fluido.
+Retorne um array JSON indicando a sequÃªncia ideal baseada no nome/descriÃ§Ã£o das imagens para um fluxo narrativo fluido.
 Exemplo: [2, 0, 1].
 Retorne APENAS o array JSON.`,
           config: {
@@ -394,7 +402,7 @@ Retorne APENAS o array JSON.`,
         setImages(sortedImages);
       }
     } catch (error) {
-      console.error("Erro na sequência:", error);
+      console.error("Erro na sequÃªncia:", error);
     } finally {
       setIsSequencing(false);
     }
@@ -504,21 +512,21 @@ Retorne APENAS o array JSON.`,
     if (productImages.length === 0) {
       setValidationAlert({
         title: "Fotos do Produto Faltando",
-        message: "Por favor, adicione pelo menos uma foto do produto na seção 'Produto (Várias Fotos)' para que possamos gerar o roteiro do seu produto."
+        message: "Por favor, adicione pelo menos uma foto do produto na seÃ§Ã£o 'Produto (VÃ¡rias Fotos)' para que possamos gerar o roteiro do seu produto."
       });
       return;
     }
     if (videoStyle === 'standard' && !modelImage) {
       setValidationAlert({
         title: "Modelo/Apresentador Faltando",
-        message: "Você selecionou o estilo de vídeo 'Apresentador', que exige uma imagem de referência do apresentador. Por favor, envie uma foto na seção 'Modelo / Apresentador(a)' ou altere o estilo do vídeo para 'POV (Mãos)'."
+        message: "VocÃª selecionou o estilo de vÃ­deo 'Apresentador', que exige uma imagem de referÃªncia do apresentador. Por favor, envie uma foto na seÃ§Ã£o 'Modelo / Apresentador(a)' ou altere o estilo do vÃ­deo para 'POV (MÃ£os)'."
       });
       return;
     }
     if (!numScenes || numScenes <= 0) {
       setValidationAlert({
-        title: "Número de Cenas Inválido",
-        message: "Por favor, insira um número válido de cenas (mínimo 1) para o roteiro do seu produto."
+        title: "NÃºmero de Cenas InvÃ¡lido",
+        message: "Por favor, insira um nÃºmero vÃ¡lido de cenas (mÃ­nimo 1) para o roteiro do seu produto."
       });
       return;
     }
@@ -541,64 +549,64 @@ Retorne APENAS o array JSON.`,
       parts.push(...productParts);
 
       const styleInstruction = videoStyle === 'pov' 
-        ? `ESTILO DO VÍDEO: POV (APENAS MÃOS / PRIMEIRA PESSOA)
-- O apresentador/modelo NÃO deve aparecer de corpo inteiro ou mostrar o rosto. Apenas suas mãos (de acordo com o gênero e produto) devem aparecer manipulando, segurando, demonstrando, tocando ou usando o produto.
-- No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), NUNCA inclua descrições do rosto ou corpo do modelo. Descreva um close-up extremo ou macro focado apenas nas mãos (femininas ou masculinas conforme o produto) segurando e demonstrando o produto com extremo realismo e qualidade.
-- No campo 'veoPrompt' (Animação VEO), descreva movimentos de câmera focados nas ações das mãos: girando o produto, aplicando, mostrando texturas, detalhes e close-ups das mãos em ação.
-- No campo 'digenPrompt' (DIGEN), descreva uma narração em off (voiceover) apropriada para acompanhar a demonstração do produto, sem movimentos labiais do avatar (pois é POV).`
-        : `ESTILO DO VÍDEO: APRESENTADOR PADRÃO (VISÍVEL NO VÍDEO)
+        ? `ESTILO DO VÃDEO: POV (APENAS MÃƒOS / PRIMEIRA PESSOA)
+- O apresentador/modelo NÃƒO deve aparecer de corpo inteiro ou mostrar o rosto. Apenas suas mÃ£os (de acordo com o gÃªnero e produto) devem aparecer manipulando, segurando, demonstrando, tocando ou usando o produto.
+- No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), NUNCA inclua descriÃ§Ãµes do rosto ou corpo do modelo. Descreva um close-up extremo ou macro focado apenas nas mÃ£os (femininas ou masculinas conforme o produto) segurando e demonstrando o produto com extremo realismo e qualidade.
+- No campo 'veoPrompt' (AnimaÃ§Ã£o VEO), descreva movimentos de cÃ¢mera focados nas aÃ§Ãµes das mÃ£os: girando o produto, aplicando, mostrando texturas, detalhes e close-ups das mÃ£os em aÃ§Ã£o.
+- No campo 'digenPrompt' (DIGEN), descreva uma narraÃ§Ã£o em off (voiceover) apropriada para acompanhar a demonstraÃ§Ã£o do produto, sem movimentos labiais do avatar (pois Ã© POV).`
+        : `ESTILO DO VÃDEO: APRESENTADOR PADRÃƒO (VISÃVEL NO VÃDEO)
 - O apresentador/modelo aparece na cena interagindo e apresentando o produto.
-- O campo 'imageName' deve indicar qual referência usar principalmente na cena (use "${modelImage?.name || ''}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
+- O campo 'imageName' deve indicar qual referÃªncia usar principalmente na cena (use "${modelImage?.name || ''}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
 - No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), descreva a modelo apresentando e interagindo com o produto de forma fotorrealista e natural.`;
 
       const voiceInstruction = voiceGender === 'none'
-        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
-- O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
-- O foco é 100% visual: mostrar o produto de vários ângulos, destacando detalhes, qualidade e texturas com uma música de fundo instrumental.
-- No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Conheça a qualidade do...]').
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting product details').`
-        : `GÊNERO DA VOZ / NARRADOR:
-A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
-- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+        ? `GÃŠNERO DA VOZ / NARRADOR: SEM NARRAÃ‡ÃƒO (SEM FALA).
+- O vÃ­deo NÃƒO terÃ¡ nenhuma narraÃ§Ã£o falada, voz humana ou diÃ¡logo (no-voiceover / no-speech).
+- O foco Ã© 100% visual: mostrar o produto de vÃ¡rios Ã¢ngulos, destacando detalhes, qualidade e texturas com uma mÃºsica de fundo instrumental.
+- No campo 'narration' (em PT-BR), em vez de fala falada, vocÃª DEVE escrever descriÃ§Ãµes detalhadas da trilha sonora (SFX / MÃºsica de fundo) e legendas de texto para aparecer na tela (ex: '[MÃºsica instrumental animada de fundo] [Legenda de tela: ConheÃ§a a qualidade do...]').
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃƒO hÃ¡ voz ou narraÃ§Ã£o, focando apenas na trilha sonora instrumental e efeitos de Ã¡udio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting product details').`
+        : `GÃŠNERO DA VOZ / NARRADOR:
+A voz da narraÃ§Ã£o deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
+- Toda a narraÃ§Ã£o em PT-BR ('narration') deve ser escrita adaptando a concordÃ¢ncia verbal, adjetivos e o tom estilÃ­stico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referÃªncias no feminino/masculino dependendo do contexto).
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz Ã© uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
 
       parts.push({
-        text: `Gere um roteiro narrativo e prompts de animação focados na apresentação de um produto.
+        text: `Gere um roteiro narrativo e prompts de animaÃ§Ã£o focados na apresentaÃ§Ã£o de um produto.
 Imagens fornecidas: 
-1. Modelo/Apresentador(a): ${modelImage ? modelImage.name : "Nenhuma (Vídeo em POV)"}
+1. Modelo/Apresentador(a): ${modelImage ? modelImage.name : "Nenhuma (VÃ­deo em POV)"}
 2. Fotos do Produto: ${productImages.map(p => p.name).join(', ')}
 
-Duração de cada cena: ${duration}
-Número de cenas a gerar: ${numScenes}
-Observações específicas: ${observations || "INSTRUÇÃO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefício ou característica visível do produto para usar no roteiro e narração."}
+DuraÃ§Ã£o de cada cena: ${duration}
+NÃºmero de cenas a gerar: ${numScenes}
+ObservaÃ§Ãµes especÃ­ficas: ${observations || "INSTRUÃ‡ÃƒO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefÃ­cio ou caracterÃ­stica visÃ­vel do produto para usar no roteiro e narraÃ§Ã£o."}
 
 ${styleInstruction}
 
 ${voiceInstruction}
 
-REGRAS OBRIGATÓRIAS:
-1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
-2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena.
-3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
-4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
-5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
-6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
-7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
-8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
-9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
+REGRAS OBRIGATÃ“RIAS:
+1. Crie exatamente ${numScenes} cenas detalhando a apresentaÃ§Ã£o do produto. Varie as fotos do produto nas cenas se houver mais de uma.
+2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referÃªncia visual principal para aquela cena.
+3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluÃ­do no INÃCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
+4. O VEO Ã© excelente para as animaÃ§Ãµes de cÃ¢mera e ambiente. O DIGEN Ã© para falas e vozes.
+5. As roupas, cenÃ¡rio da modelo (se houver) e o produto original devem ser mantidos intactos.
+6. âš ï¸ CRÃTICO â€” IDIOMA DA NARRAÃ‡ÃƒO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÃŠS BRASILEIRO (PT-BR). NUNCA escreva a narraÃ§Ã£o em inglÃªs. ${voiceGender === 'none' ? 'No modo Sem NarraÃ§Ã£o, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narraÃ§Ã£o Ã© o texto falado em voz alta para o pÃºblico brasileiro do TikTok.'} Se escrever em inglÃªs, serÃ¡ considerado um erro grave.
+7. CRÃTICO: A narraÃ§Ã£o deve respeitar a duraÃ§Ã£o de ${duration}. Para ${duration}, use no mÃ¡ximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
+8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÃŠS (para as ferramentas de IA). Apenas 'narration' Ã© em PT-BR.
+9. CRÃTICO (Prompt de Imagem EstÃ¡tica da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglÃªs no campo 'imagePrompt'. O prompt deve ser riquÃ­ssimo em detalhes visuais, estilo fotogrÃ¡fico realista, iluminaÃ§Ã£o profissional. NÃ£o inclua texto explicativo, apenas a descriÃ§Ã£o visual em inglÃªs.
 
 Retorne em estrutura JSON:
 {
   "campaignTitle": "Nome da Campanha",
   "scenes": [
     { 
-      "imageName": "Nome exato do arquivo de referência", 
+      "imageName": "Nome exato do arquivo de referÃªncia", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "narration": "Narração em PT-BR...", 
-      "description": "Explicação da cena" 
+      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglÃªs...", 
+      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglÃªs...", 
+      "narration": "NarraÃ§Ã£o em PT-BR...", 
+      "description": "ExplicaÃ§Ã£o da cena" 
     }
   ]
 }`
@@ -646,12 +654,12 @@ Retorne em estrutura JSON:
       setGeneratedScript(parsed);
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.log('Geração cancelada pelo usuário');
+        console.log('GeraÃ§Ã£o cancelada pelo usuÃ¡rio');
       } else {
         console.error("Erro ao gerar roteiro de produto:", error);
         const msg = error?.message || String(error);
         setValidationAlert({
-          title: "Erro na Geração",
+          title: "Erro na GeraÃ§Ã£o",
           message: msg
         });
       }
@@ -673,7 +681,7 @@ Retorne em estrutura JSON:
     if (images.length === 0) {
       setValidationAlert({
         title: "Fotos de Look Faltando",
-        message: "Por favor, envie pelo menos uma foto de look na seção 'Imagens da Coleção' para que possamos gerar o roteiro da coleção."
+        message: "Por favor, envie pelo menos uma foto de look na seÃ§Ã£o 'Imagens da ColeÃ§Ã£o' para que possamos gerar o roteiro da coleÃ§Ã£o."
       });
       return;
     }
@@ -684,15 +692,15 @@ Retorne em estrutura JSON:
       const finalTheme = customTheme || theme;
 
       const voiceInstruction = voiceGender === 'none'
-        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
-- O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
-- O foco é 100% visual: mostrar a coleção sob vários ângulos, destacando detalhes e tecidos com música de fundo instrumental.
-- No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Coleção de verão exclusiva...]').
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting clothing details').`
-        : `GÊNERO DA VOZ / NARRADOR:
-A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
-- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+        ? `GÃŠNERO DA VOZ / NARRADOR: SEM NARRAÃ‡ÃƒO (SEM FALA).
+- O vÃ­deo NÃƒO terÃ¡ nenhuma narraÃ§Ã£o falada, voz humana ou diÃ¡logo (no-voiceover / no-speech).
+- O foco Ã© 100% visual: mostrar a coleÃ§Ã£o sob vÃ¡rios Ã¢ngulos, destacando detalhes e tecidos com mÃºsica de fundo instrumental.
+- No campo 'narration' (em PT-BR), em vez de fala falada, vocÃª DEVE escrever descriÃ§Ãµes detalhadas da trilha sonora (SFX / MÃºsica de fundo) e legendas de texto para aparecer na tela (ex: '[MÃºsica instrumental animada de fundo] [Legenda de tela: ColeÃ§Ã£o de verÃ£o exclusiva...]').
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃƒO hÃ¡ voz ou narraÃ§Ã£o, focando apenas na trilha sonora instrumental e efeitos de Ã¡udio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting clothing details').`
+        : `GÃŠNERO DA VOZ / NARRADOR:
+A voz da narraÃ§Ã£o deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
+- Toda a narraÃ§Ã£o em PT-BR ('narration') deve ser escrita adaptando a concordÃ¢ncia verbal, adjetivos e o tom estilÃ­stico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referÃªncias no feminino/masculino dependendo do contexto).
+- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz Ã© uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
 
       const imageParts = await Promise.all(images.map(async (img) => {
         const base64 = await fileToBase64(img.file);
@@ -714,19 +722,19 @@ A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMI
               {
                 text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
 Tema: ${finalTheme}
-Duração de cada cena: ${duration}
-Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
+DuraÃ§Ã£o de cada cena: ${duration}
+ObservaÃ§Ãµes especÃ­ficas: ${observations || "Seguir estilo padrÃ£o de alta costura."}
 
 ${voiceInstruction}
 
-REGRAS OBRIGATÓRIAS:
-1. O NOME ORIGINAL DO ARQUIVO de cada imagem DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_look_01.jpg] Cinematic camera movement..."
-2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
-3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
+REGRAS OBRIGATÃ“RIAS:
+1. O NOME ORIGINAL DO ARQUIVO de cada imagem DEVE ser incluÃ­do no INÃCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_look_01.jpg] Cinematic camera movement..."
+2. As roupas e o CENÃRIO devem ser mantidos idÃªnticos. NÃ£o mude cores, tecidos ou o ambiente.
+3. Foque em animaÃ§Ãµes cinematogrÃ¡ficas para VEO: movimento de cÃ¢mera (pan, tilt, zoom), partÃ­culas de luz, vento sutil no cabelo e expressÃµes faciais.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
-5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
-6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
-7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
+5. âš ï¸ CRÃTICO â€” IDIOMA DA NARRAÃ‡ÃƒO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÃŠS BRASILEIRO (PT-BR). NUNCA escreva a narraÃ§Ã£o em inglÃªs. ${voiceGender === 'none' ? 'No modo Sem NarraÃ§Ã£o, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narraÃ§Ã£o Ã© o texto falado em voz alta para o pÃºblico brasileiro do TikTok.'}
+6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÃŠS (para as ferramentas de IA). Apenas 'narration' Ã© em PT-BR.
+7. CRÃTICO (Prompt de Imagem EstÃ¡tica da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglÃªs no campo 'imagePrompt'. O prompt deve ser riquÃ­ssimo em detalhes visuais, estilo fotogrÃ¡fico realista, iluminaÃ§Ã£o profissional, mantendo consistÃªncia total com a imagem original. NÃ£o inclua texto explicativo, apenas a descriÃ§Ã£o visual em inglÃªs.
 
 Retorne em estrutura JSON:
 {
@@ -736,10 +744,10 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "narration": "Narração em PT-BR...", 
-      "description": "Explicação da cena" 
+      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglÃªs...", 
+      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglÃªs...", 
+      "narration": "NarraÃ§Ã£o em PT-BR...", 
+      "description": "ExplicaÃ§Ã£o da cena" 
     }
   ]
 }`
@@ -781,12 +789,12 @@ Retorne em estrutura JSON:
       setGeneratedScript(parsed);
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.log('Geração cancelada pelo usuário');
+        console.log('GeraÃ§Ã£o cancelada pelo usuÃ¡rio');
       } else {
         console.error("Erro ao gerar roteiro:", error);
         const msg = error?.message || String(error);
         setValidationAlert({
-          title: "Erro na Geração",
+          title: "Erro na GeraÃ§Ã£o",
           message: msg
         });
       }
@@ -835,7 +843,7 @@ Retorne em estrutura JSON:
     if (productImages.length === 0) {
       setValidationAlert({
         title: "Fotos do Produto Faltando",
-        message: "Por favor, adicione pelo menos uma foto do produto na seção 'Produto (Várias Fotos)' para gerar as variações de ângulos."
+        message: "Por favor, adicione pelo menos uma foto do produto na seÃ§Ã£o 'Produto (VÃ¡rias Fotos)' para gerar as variaÃ§Ãµes de Ã¢ngulos."
       });
       return;
     }
@@ -847,31 +855,31 @@ Retorne em estrutura JSON:
       }));
 
       const textPart = {
-        text: `Você é um especialista em fotografia de produto e marketing digital para TikTok Shop.
+        text: `VocÃª Ã© um especialista em fotografia de produto e marketing digital para TikTok Shop.
 
-Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variações de prompts para mostrar o produto em ângulos e perspectivas diferentes.
+Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variaÃ§Ãµes de prompts para mostrar o produto em Ã¢ngulos e perspectivas diferentes.
 
 PRODUTO(S): ${productImages.map(p => p.name).join(', ')}
-DURAÇÃO: ${duration}
-GÊNERO DA VOZ: ${voiceGender === 'none' ? 'SEM NARRAÇÃO (SEM FALA)' : (voiceGender === 'female' ? 'FEMININO' : 'MASCULINO')}
+DURAÃ‡ÃƒO: ${duration}
+GÃŠNERO DA VOZ: ${voiceGender === 'none' ? 'SEM NARRAÃ‡ÃƒO (SEM FALA)' : (voiceGender === 'female' ? 'FEMININO' : 'MASCULINO')}
 
-REGRAS ABSOLUTAS — NUNCA VIOLE:
-1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
-2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
+REGRAS ABSOLUTAS â€” NUNCA VIOLE:
+1. O PRODUTO DEVE SER MANTIDO 100% IDÃŠNTICO â€” mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as caracterÃ­sticas visuais originais. NUNCA altere o produto.
+2. Apenas o Ã‚NGULO DA CÃ‚MERA e a COMPOSIÃ‡ÃƒO DA CENA mudam.
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
-4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÊS.
-5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[Música instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
-6. No início dos campos veoPrompt e digenPrompt, inclua o nome do arquivo entre colchetes.
-7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
+4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÃŠS.
+5. âš ï¸ O campo narration DEVE ser em PORTUGUÃŠS BRASILEIRO (PT-BR) â€” NUNCA em inglÃªs. ${voiceGender === 'none' ? 'No modo Sem NarraÃ§Ã£o, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[MÃºsica instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
+6. No inÃ­cio dos campos veoPrompt e digenPrompt, inclua o nome do arquivo entre colchetes.
+7. ${voiceGender === 'none' ? 'Como estÃ¡ Sem NarraÃ§Ã£o (no-speech), o campo digenPrompt deve especificar apenas mÃºsica instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÃŠNERO DA VOZ.'}
 
 Angulos a variar (escolha os mais relevantes para o produto):
 - Vista frontal (Front view straight on)
 - Vista traseira (Back view)
 - Vista lateral direita/esquerda (Side profile)
-- Vista em 45° diagonal (Three-quarter view)
+- Vista em 45Â° diagonal (Three-quarter view)
 - Close-up de detalhes (Detail macro close-up)
 - Vista superior (Top-down flat lay)
-- Perspectiva dinâmica (Low angle dynamic view)
+- Perspectiva dinÃ¢mica (Low angle dynamic view)
 - Produto em contexto de uso (Lifestyle in-use shot)`
       };
 
@@ -908,10 +916,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
       const parsed = JSON.parse(response.text || '{}') as { angles: GeneratedAngle[] };
       setGeneratedAngles(parsed.angles || []);
     } catch (error: any) {
-      console.error('Erro ao gerar ângulos:', error);
+      console.error('Erro ao gerar Ã¢ngulos:', error);
       setValidationAlert({
-        title: "Erro na Geração de Ângulos",
-        message: "Ocorreu um erro ao gerar as variações de ângulos:\n" + (error?.message || String(error))
+        title: "Erro na GeraÃ§Ã£o de Ã‚ngulos",
+        message: "Ocorreu um erro ao gerar as variaÃ§Ãµes de Ã¢ngulos:\n" + (error?.message || String(error))
       });
     } finally {
       setIsGeneratingAngles(false);
@@ -938,26 +946,26 @@ Angulos a variar (escolha os mais relevantes para o produto):
       lines.push(`ROTEIRO: ${generatedScript.campaignTitle}`);
       lines.push('='.repeat(60));
       generatedScript.scenes.forEach((scene, i) => {
-        lines.push(`\nCENA ${i + 1} • ${scene.duration} • ${scene.imageName}`);
+        lines.push(`\nCENA ${i + 1} â€¢ ${scene.duration} â€¢ ${scene.imageName}`);
         lines.push('-'.repeat(40));
-        lines.push(`\n[IMAGEM — Nano Banana 2]\n${scene.imagePrompt}`);
-        lines.push(`\n[VEO — Animação]\n${scene.veoPrompt}`);
-        lines.push(`\n[DIGEN — Fala]\n${scene.digenPrompt}`);
-        lines.push(`\n[NARRAÇÃO PT-BR]\n${scene.narration}`);
+        lines.push(`\n[IMAGEM â€” Nano Banana 2]\n${scene.imagePrompt}`);
+        lines.push(`\n[VEO â€” AnimaÃ§Ã£o]\n${scene.veoPrompt}`);
+        lines.push(`\n[DIGEN â€” Fala]\n${scene.digenPrompt}`);
+        lines.push(`\n[NARRAÃ‡ÃƒO PT-BR]\n${scene.narration}`);
         lines.push(`\n[CONTEXTO]\n${scene.description}`);
         lines.push('\n' + '='.repeat(60));
       });
     }
     if (generatedAngles && generatedAngles.length > 0) {
-      lines.push(`\n\nÂNGULOS DO PRODUTO`);
+      lines.push(`\n\nÃ‚NGULOS DO PRODUTO`);
       lines.push('='.repeat(60));
       generatedAngles.forEach((angle, i) => {
-        lines.push(`\nÂNGULO ${i + 1}: ${angle.angleName}`);
+        lines.push(`\nÃ‚NGULO ${i + 1}: ${angle.angleName}`);
         lines.push('-'.repeat(40));
-        lines.push(`\n[IMAGEM — Nano Banana 2]\n${angle.imagePrompt}`);
-        lines.push(`\n[VEO — Animação]\n${angle.veoPrompt}`);
-        lines.push(`\n[DIGEN — Fala]\n${angle.digenPrompt}`);
-        lines.push(`\n[NARRAÇÃO PT-BR]\n${angle.narration}`);
+        lines.push(`\n[IMAGEM â€” Nano Banana 2]\n${angle.imagePrompt}`);
+        lines.push(`\n[VEO â€” AnimaÃ§Ã£o]\n${angle.veoPrompt}`);
+        lines.push(`\n[DIGEN â€” Fala]\n${angle.digenPrompt}`);
+        lines.push(`\n[NARRAÃ‡ÃƒO PT-BR]\n${angle.narration}`);
         lines.push('\n' + '='.repeat(60));
       });
     }
@@ -980,21 +988,21 @@ Angulos a variar (escolha os mais relevantes para o produto):
     const scenesHtml = generatedScript.scenes.map((scene, i) => `
       <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Cena ${i + 1} &bull; ${scene.duration} &bull; ${scene.imageName}</h2>
       ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', scene.imagePrompt)}
-      ${buildSectionHtml('VEO — Animação', '#2563eb', scene.veoPrompt)}
-      ${buildSectionHtml('DIGEN — Fala', '#7c3aed', scene.digenPrompt)}
-      <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+      ${buildSectionHtml('VEO â€” AnimaÃ§Ã£o', '#2563eb', scene.veoPrompt)}
+      ${buildSectionHtml('DIGEN â€” Fala', '#7c3aed', scene.digenPrompt)}
+      <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">NarraÃ§Ã£o (PT-BR)</p>
       <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${scene.narration}</div>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
     `).join('');
 
     const anglesHtml = (generatedAngles && generatedAngles.length > 0) ? `
-      <h1 style="font-size:18pt;color:#E65C00;margin-top:24px">Ângulos do Produto</h1>
+      <h1 style="font-size:18pt;color:#E65C00;margin-top:24px">Ã‚ngulos do Produto</h1>
       ${generatedAngles.map((angle, i) => `
-        <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Ângulo ${i + 1}: ${angle.angleName}</h2>
+        <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Ã‚ngulo ${i + 1}: ${angle.angleName}</h2>
         ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', angle.imagePrompt)}
-        ${buildSectionHtml('VEO — Animação', '#2563eb', angle.veoPrompt)}
-        ${buildSectionHtml('DIGEN — Fala', '#7c3aed', angle.digenPrompt)}
-        <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+        ${buildSectionHtml('VEO â€” AnimaÃ§Ã£o', '#2563eb', angle.veoPrompt)}
+        ${buildSectionHtml('DIGEN â€” Fala', '#7c3aed', angle.digenPrompt)}
+        <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">NarraÃ§Ã£o (PT-BR)</p>
         <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;font-style:italic;font-size:11pt">${angle.narration}</div>
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
       `).join('')}
@@ -1054,11 +1062,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
     generatedScript.scenes.forEach((scene, i) => {
       checkPage(20);
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
-      doc.text(`Cena ${i + 1}  •  ${scene.duration}  •  ${scene.imageName}`, margin, y); y += 7;
+      doc.text(`Cena ${i + 1}  â€¢  ${scene.duration}  â€¢  ${scene.imageName}`, margin, y); y += 7;
       addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(scene.imagePrompt);
-      addLabel('VEO — Animação', 37, 99, 235); addBody(scene.veoPrompt);
-      addLabel('DIGEN — Fala', 124, 58, 237); addBody(scene.digenPrompt);
-      addLabel('Narração PT-BR', 234, 88, 12);
+      addLabel('VEO â€” AnimaÃ§Ã£o', 37, 99, 235); addBody(scene.veoPrompt);
+      addLabel('DIGEN â€” Fala', 124, 58, 237); addBody(scene.digenPrompt);
+      addLabel('NarraÃ§Ã£o PT-BR', 234, 88, 12);
       doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
       const nlines = doc.splitTextToSize(scene.narration, maxW);
       checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
@@ -1068,15 +1076,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
     if (generatedAngles && generatedAngles.length > 0) {
       checkPage(20);
       doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
-      doc.text('ÂNGULOS DO PRODUTO', margin, y); y += 10;
+      doc.text('Ã‚NGULOS DO PRODUTO', margin, y); y += 10;
       generatedAngles.forEach((angle, i) => {
         checkPage(20);
         doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
-        doc.text(`Ângulo ${i + 1}: ${angle.angleName}`, margin, y); y += 7;
+        doc.text(`Ã‚ngulo ${i + 1}: ${angle.angleName}`, margin, y); y += 7;
         addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(angle.imagePrompt);
-        addLabel('VEO — Animação', 37, 99, 235); addBody(angle.veoPrompt);
-        addLabel('DIGEN — Fala', 124, 58, 237); addBody(angle.digenPrompt);
-        addLabel('Narração PT-BR', 234, 88, 12);
+        addLabel('VEO â€” AnimaÃ§Ã£o', 37, 99, 235); addBody(angle.veoPrompt);
+        addLabel('DIGEN â€” Fala', 124, 58, 237); addBody(angle.digenPrompt);
+        addLabel('NarraÃ§Ã£o PT-BR', 234, 88, 12);
         doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
         const nlines = doc.splitTextToSize(angle.narration, maxW);
         checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
@@ -1107,7 +1115,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 className="flex items-center gap-3 text-orange-500"
               >
                 <Sparkles className="w-5 h-5" />
-                <span className="text-xs font-bold tracking-[0.2em] uppercase text-orange-500">Produção com IA</span>
+                <span className="text-xs font-bold tracking-[0.2em] uppercase text-orange-500">ProduÃ§Ã£o com IA</span>
               </motion.div>
               <motion.h1 
                 initial={{ opacity: 0, y: 20 }}
@@ -1123,7 +1131,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 transition={{ delay: 0.2 }}
                 className="text-white/50 max-w-xl text-lg font-light leading-relaxed"
               >
-                Crie roteiros narrativos e prompts de animação para suas coleções de produtos em segundos.
+                Crie roteiros narrativos e prompts de animaÃ§Ã£o para suas coleÃ§Ãµes de produtos em segundos.
               </motion.p>
             </div>
 
@@ -1162,7 +1170,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
               onClick={() => setActiveTab('collection')}
               className={`px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase ${activeTab === 'collection' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
             >
-              Fotos Diversas / Coleção
+              Fotos Diversas / ColeÃ§Ã£o
             </button>
             <button 
               onClick={() => setActiveTab('product')}
@@ -1200,7 +1208,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all text-[10px] font-bold uppercase tracking-wider text-orange-400"
                         >
                           {isSequencing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
-                          Sequência IA
+                          SequÃªncia IA
                         </button>
                       )}
                       <span className="text-xs text-white/40">{images.length} fotos</span>
@@ -1281,7 +1289,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     )}
                   </AnimatePresence>
                   {images.length > 1 && (
-                    <p className="text-[10px] text-white/30 text-center italic">Arraste as imagens para reordenar a sequência manual</p>
+                    <p className="text-[10px] text-white/30 text-center italic">Arraste as imagens para reordenar a sequÃªncia manual</p>
                   )}
                 </section>
 
@@ -1289,7 +1297,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 <section className="space-y-6">
                   <h2 className="text-xl font-medium flex items-center gap-2">
                     <span className="bg-white/5 w-8 h-8 rounded-full flex items-center justify-center text-sm border border-white/10">2</span>
-                    Configuração
+                    ConfiguraÃ§Ã£o
                   </h2>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1309,7 +1317,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {theme === 'Personalizado' && (
                         <input 
                           type="text"
-                          placeholder="Ex: Coleção Inverno Nordestino"
+                          placeholder="Ex: ColeÃ§Ã£o Inverno Nordestino"
                           value={customTheme}
                           onChange={(e) => setCustomTheme(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm focus:outline-none focus:border-white/20"
@@ -1320,7 +1328,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <Settings2 className="w-3 h-3" />
-                        Duração da Cena
+                        DuraÃ§Ã£o da Cena
                       </label>
                       <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                         {DURATIONS.map(d => (
@@ -1339,7 +1347,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <div className="space-y-3 pt-4 border-t border-white/5">
                     <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                       <Volume2 className="w-3 h-3 text-purple-400" />
-                      Gênero da Voz / Narrador
+                      GÃªnero da Voz / Narrador
                     </label>
                     <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                       <button
@@ -1361,7 +1369,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         onClick={() => setVoiceGender('none')}
                         className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                       >
-                        Sem Narração
+                        Sem NarraÃ§Ã£o
                       </button>
                     </div>
                   </div>
@@ -1373,7 +1381,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 <section className="space-y-6">
                   <h2 className="text-xl font-medium flex items-center gap-2">
                     <span className="bg-white/5 w-8 h-8 rounded-full flex items-center justify-center text-sm border border-white/10">1</span>
-                    Imagens de Referência
+                    Imagens de ReferÃªncia
                   </h2>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1420,7 +1428,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <Package className="w-3 h-3" />
-                        Produto (Várias Fotos)
+                        Produto (VÃ¡rias Fotos)
                       </label>
                       <div 
                         onClick={() => productInputRef.current?.click()}
@@ -1470,14 +1478,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 <section className="space-y-6">
                   <h2 className="text-xl font-medium flex items-center gap-2">
                     <span className="bg-white/5 w-8 h-8 rounded-full flex items-center justify-center text-sm border border-white/10">2</span>
-                    Configuração
+                    ConfiguraÃ§Ã£o
                   </h2>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <FileJson className="w-3 h-3" />
-                        Número de Cenas
+                        NÃºmero de Cenas
                       </label>
                       <div className="flex bg-white/5 rounded-2xl border border-white/10 items-center px-4 h-12">
                         <input 
@@ -1494,7 +1502,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <Settings2 className="w-3 h-3" />
-                        Duração da Cena
+                        DuraÃ§Ã£o da Cena
                       </label>
                       <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                         {DURATIONS.map(d => (
@@ -1514,7 +1522,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <User className="w-3 h-3 text-orange-400" />
-                        Estilo do Vídeo
+                        Estilo do VÃ­deo
                       </label>
                       <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                         <button
@@ -1529,7 +1537,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           onClick={() => setVideoStyle('pov')}
                           className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
-                          POV (Mãos)
+                          POV (MÃ£os)
                         </button>
                       </div>
                     </div>
@@ -1537,7 +1545,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <Volume2 className="w-3 h-3 text-purple-400" />
-                        Gênero da Voz / Narrador
+                        GÃªnero da Voz / Narrador
                       </label>
                       <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
@@ -1559,7 +1567,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           onClick={() => setVoiceGender('none')}
                           className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
                         >
-                          Sem Narração
+                          Sem NarraÃ§Ã£o
                         </button>
                       </div>
                     </div>
@@ -1575,10 +1583,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
               <div className="space-y-3 pb-8">
                 <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                   <GripVertical className="w-3 h-3" />
-                  Observações Importantes
+                  ObservaÃ§Ãµes Importantes
                 </label>
                 <textarea 
-                  placeholder="Ex: Foco no público jovem, tom de voz entusiasmado, use gírias atuais, destaque a leveza do tecido..."
+                  placeholder="Ex: Foco no pÃºblico jovem, tom de voz entusiasmado, use gÃ­rias atuais, destaque a leveza do tecido..."
                   value={observations}
                   onChange={(e) => setObservations(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm focus:outline-none focus:border-white/20 min-h-[100px] resize-none"
@@ -1592,7 +1600,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     onClick={cancelGeneration}
                     className="flex-1 rounded-3xl py-6 bg-red-500/10 border border-red-500/20 text-red-500 font-bold tracking-tight text-lg hover:bg-red-500/20 transition-all active:scale-[0.98]"
                   >
-                    Cancelar Geração
+                    Cancelar GeraÃ§Ã£o
                   </button>
                   <div className="flex-[2] rounded-3xl py-6 bg-white/5 border border-white/10 flex items-center justify-center gap-3 text-white/40 font-bold tracking-tight text-lg">
                     <Loader2 className="w-6 h-6 animate-spin" /> Gerando...
@@ -1655,7 +1663,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           } else {
                             setValidationAlert({
                               title: "Recurso Exclusivo",
-                              message: "Esta funcionalidade de injeção automática está disponível apenas rodando no aplicativo Electron."
+                              message: "Esta funcionalidade de injeÃ§Ã£o automÃ¡tica estÃ¡ disponÃ­vel apenas rodando no aplicativo Electron."
                             });
                           }
                         }}
@@ -1734,7 +1742,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               {/* 2. Video Animation (VEO) */}
                               <div className="space-y-2 group/card bg-black/10 hover:bg-blue-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-blue-500/20 transition-all">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400 font-display">2. Animação (VEO)</h4>
+                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400 font-display">2. AnimaÃ§Ã£o (VEO)</h4>
                                   <div className="flex gap-2">
                                     <button 
                                       onClick={() => {
@@ -1748,16 +1756,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                         }
                                       }} 
                                       className="text-white/20 hover:text-orange-400 transition-colors flex items-center gap-1"
-                                      title="Baixar Imagem de Referência"
+                                      title="Baixar Imagem de ReferÃªncia"
                                     >
                                       <Upload className="w-3 h-3 rotate-180" />
                                     </button>
                                     <button 
-                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
+                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarraÃ§Ã£o (PT-BR):\n${scene.narration}`)} 
                                       className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1.5"
-                                      title="Copiar Prompt VEO + Narração"
+                                      title="Copiar Prompt VEO + NarraÃ§Ã£o"
                                     >
-                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Narração</span>
+                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ NarraÃ§Ã£o</span>
                                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                     </button>
                                   </div>
@@ -1772,11 +1780,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
+                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarraÃ§Ã£o (PT-BR):\n${scene.narration}`)} 
                                     className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1.5"
-                                    title="Copiar Prompt DIGEN + Narração"
+                                    title="Copiar Prompt DIGEN + NarraÃ§Ã£o"
                                   >
-                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Narração</span>
+                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ NarraÃ§Ã£o</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
@@ -1788,7 +1796,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
                             <div className="space-y-2 bg-orange-500/5 p-6 rounded-3xl border border-orange-500/10">
                               <div className="flex items-center justify-between">
-                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-orange-500 font-display">Narração / Diálogo (PT-BR)</h4>
+                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-orange-500 font-display">NarraÃ§Ã£o / DiÃ¡logo (PT-BR)</h4>
                                 <button onClick={() => copyText(scene.narration)} className="text-white/20 hover:text-orange-500 transition-colors">
                                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 </button>
@@ -1816,7 +1824,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <Camera className="w-5 h-5 text-teal-400" />
-                          <h3 className="text-xl font-bold font-display text-white">Ângulos Adicionais do Produto</h3>
+                          <h3 className="text-xl font-bold font-display text-white">Ã‚ngulos Adicionais do Produto</h3>
                         </div>
                         <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 self-start sm:self-auto">
                           <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Quantidade:</span>
@@ -1830,25 +1838,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </div>
                       </div>
                       <p className="text-xs text-white/50 leading-relaxed">
-                        Gere variações de prompts em ângulos alternativos (close-ups, perfil, flat lay, etc.) para o seu produto, garantindo consistência total de cor e design.
+                        Gere variaÃ§Ãµes de prompts em Ã¢ngulos alternativos (close-ups, perfil, flat lay, etc.) para o seu produto, garantindo consistÃªncia total de cor e design.
                       </p>
                       
                       {isGeneratingAngles ? (
                         <div className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/5 border border-teal-500/10 text-teal-400/60 font-bold text-sm">
-                          <Loader2 className="w-5 h-5 animate-spin" /> Gerando {numAngles} Ângulos...
+                          <Loader2 className="w-5 h-5 animate-spin" /> Gerando {numAngles} Ã‚ngulos...
                         </div>
                       ) : (
                         <button
                           onClick={generateProductAngles}
                           className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 hover:text-white transition-all active:scale-[0.98] font-bold text-sm tracking-wide uppercase"
                         >
-                          <Layers className="w-4 h-4" /> Gerar {numAngles} Ângulos do Produto
+                          <Layers className="w-4 h-4" /> Gerar {numAngles} Ã‚ngulos do Produto
                         </button>
                       )}
                     </motion.div>
                   )}
 
-                  {/* Ângulos do Produto */}
+                  {/* Ã‚ngulos do Produto */}
                   {generatedAngles && generatedAngles.length > 0 && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
@@ -1857,10 +1865,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     >
                       <div className="flex items-center gap-3 pt-4">
                         <Layers className="w-5 h-5 text-teal-400" />
-                        <h3 className="text-xl font-bold font-display">Ângulos do Produto</h3>
-                        <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full">{generatedAngles.length} variações</span>
+                        <h3 className="text-xl font-bold font-display">Ã‚ngulos do Produto</h3>
+                        <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full">{generatedAngles.length} variaÃ§Ãµes</span>
                       </div>
-                      <p className="text-xs text-white/30">Produto mantido 100% original — apenas o ângulo da câmera varia</p>
+                      <p className="text-xs text-white/30">Produto mantido 100% original â€” apenas o Ã¢ngulo da cÃ¢mera varia</p>
                       {generatedAngles.map((angle, i) => (
                         <motion.div
                           key={i}
@@ -1875,9 +1883,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               <span className="font-bold text-white">{angle.angleName}</span>
                             </div>
                             <button
-                              onClick={() => copyText(`${angle.imagePrompt}\n\nVEO:\n${angle.veoPrompt}\n\nDIGEN:\n${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)}
+                              onClick={() => copyText(`${angle.imagePrompt}\n\nVEO:\n${angle.veoPrompt}\n\nDIGEN:\n${angle.digenPrompt}\n\nNarraÃ§Ã£o (PT-BR):\n${angle.narration}`)}
                               className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
-                              title="Copiar tudo deste ângulo"
+                              title="Copiar tudo deste Ã¢ngulo"
                             >
                               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                             </button>
@@ -1896,7 +1904,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400">VEO</h4>
-                                  <button onClick={() => copyText(`${angle.veoPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1">
+                                  <button onClick={() => copyText(`${angle.veoPrompt}\n\nNarraÃ§Ã£o (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1">
                                     <span className="text-[9px] font-bold text-blue-400/70">+ Narr.</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
@@ -1906,7 +1914,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400">DIGEN</h4>
-                                  <button onClick={() => copyText(`${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1">
+                                  <button onClick={() => copyText(`${angle.digenPrompt}\n\nNarraÃ§Ã£o (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1">
                                     <span className="text-[9px] font-bold text-purple-400/70">+ Narr.</span>
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
@@ -1916,7 +1924,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             </div>
                             <div className="bg-teal-500/5 p-4 rounded-2xl border border-teal-500/10">
                               <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-teal-400">Narração (PT-BR)</h4>
+                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-teal-400">NarraÃ§Ã£o (PT-BR)</h4>
                                 <button onClick={() => copyText(angle.narration)} className="text-white/20 hover:text-teal-400 transition-colors">
                                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 </button>
@@ -1931,7 +1939,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
                   <button 
                     onClick={() => {
-                      if(confirm("Deseja iniciar um novo projeto? Todas as configurações e roteiros atuais serão perdidos.")) {
+                      if(confirm("Deseja iniciar um novo projeto? Todas as configuraÃ§Ãµes e roteiros atuais serÃ£o perdidos.")) {
                         setGeneratedScript(null);
                         setGeneratedAngles(null);
                         setImages([]);
@@ -1956,7 +1964,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <div className="max-w-xs px-6">
                     <h3 className="text-xl font-medium mb-2 font-display">Nenhum Roteiro Gerado</h3>
                     <p className="text-sm text-white/30 font-light leading-relaxed">
-                      Envie as fotos dos seus looks e defina um tema para criar prompts cinematográficos e narrações persuasivas.
+                      Envie as fotos dos seus looks e defina um tema para criar prompts cinematogrÃ¡ficos e narraÃ§Ãµes persuasivas.
                     </p>
                   </div>
                 </div>
@@ -2252,13 +2260,13 @@ function PromptInjector() {
       .then((success: boolean) => {
         if (!success) {
           navigator.clipboard.writeText(text);
-          alert("Nenhum campo de texto focado encontrado na página. Copiado para a área de transferência!");
+          alert("Nenhum campo de texto focado encontrado na pÃ¡gina. Copiado para a Ã¡rea de transferÃªncia!");
         }
       })
       .catch((err: any) => {
-        console.error("Erro na injeção:", err);
+        console.error("Erro na injeÃ§Ã£o:", err);
         navigator.clipboard.writeText(text);
-        alert("Copiado para área de transferência (Injeção falhou).");
+        alert("Copiado para Ã¡rea de transferÃªncia (InjeÃ§Ã£o falhou).");
       });
   };
 
@@ -2304,7 +2312,7 @@ function PromptInjector() {
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            Ângulos ({angles.length})
+            Ã‚ngulos ({angles.length})
           </button>
         </div>
 
@@ -2328,13 +2336,13 @@ function PromptInjector() {
                     <span className="font-bold text-xs">Cena {i + 1}</span>
                     <span className="text-[10px] text-zinc-500 font-semibold">{scene.duration}</span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 truncate">{scene.description || 'Sem descrição'}</p>
+                  <p className="text-[11px] text-zinc-400 truncate">{scene.description || 'Sem descriÃ§Ã£o'}</p>
                 </button>
               ))
             )
           ) : (
             angles.length === 0 ? (
-              <div className="text-center py-6 text-zinc-500 text-xs">Nenhum ângulo gerado.</div>
+              <div className="text-center py-6 text-zinc-500 text-xs">Nenhum Ã¢ngulo gerado.</div>
             ) : (
               angles.map((angle, i) => (
                 <button
@@ -2376,7 +2384,7 @@ function PromptInjector() {
                   <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-orange-400 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo)
+                        <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (VÃ­deo)
                       </span>
                     </div>
                     <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
@@ -2431,12 +2439,12 @@ function PromptInjector() {
                   </div>
                 )}
 
-                {/* 4. Narração */}
+                {/* 4. NarraÃ§Ã£o */}
                 {currentItem.narration && (
                   <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5" /> Narração (Falas)
+                        <Volume2 className="w-3.5 h-3.5" /> NarraÃ§Ã£o (Falas)
                       </span>
                     </div>
                     <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
@@ -2446,7 +2454,7 @@ function PromptInjector() {
                       onClick={() => injectText(currentItem.narration)}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-xs font-bold shadow-md shadow-yellow-600/10 transition-all hover:scale-[1.02]"
                     >
-                      Injetar Narração
+                      Injetar NarraÃ§Ã£o
                     </button>
                   </div>
                 )}
@@ -2454,21 +2462,21 @@ function PromptInjector() {
             </>
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-500 text-xs py-10">
-              Nenhuma cena ou ângulo selecionado.
+              Nenhuma cena ou Ã¢ngulo selecionado.
             </div>
           )}
         </div>
 
-        {/* Dica / Rodapé */}
+        {/* Dica / RodapÃ© */}
         <div className="p-4 bg-zinc-950/80 border-t border-zinc-800 text-[10px] text-zinc-400 leading-relaxed flex-shrink-0">
-          💡 <strong>Dica:</strong> Primeiro, clique no campo de entrada de texto no site à direita. Depois, clique em um botão de injeção acima para colar o prompt diretamente lá.
+          ðŸ’¡ <strong>Dica:</strong> Primeiro, clique no campo de entrada de texto no site Ã  direita. Depois, clique em um botÃ£o de injeÃ§Ã£o acima para colar o prompt diretamente lÃ¡.
         </div>
       </div>
 
       {/* PAINEL DIREITO: NAVEGADOR WEB */}
       <div className="flex-1 h-full flex flex-col overflow-hidden bg-black">
         
-        {/* Barra de Navegação do Navegador */}
+        {/* Barra de NavegaÃ§Ã£o do Navegador */}
         <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center gap-2.5 flex-shrink-0">
           <div className="flex items-center gap-1">
             <button
@@ -2481,7 +2489,7 @@ function PromptInjector() {
             <button
               onClick={goForward}
               className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
-              title="Avançar"
+              title="AvanÃ§ar"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -2502,12 +2510,12 @@ function PromptInjector() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 focus:border-zinc-700/80 rounded-xl py-1.5 pl-9 pr-4 text-xs text-zinc-300 focus:outline-none transition-all placeholder-zinc-700"
-                placeholder="Digite o endereço URL do site..."
+                placeholder="Digite o endereÃ§o URL do site..."
               />
             </div>
           </form>
 
-          {/* Atalhos Rápidos */}
+          {/* Atalhos RÃ¡pidos */}
           <div className="flex gap-2">
             <button
               onClick={toggleTheme}
@@ -2539,7 +2547,7 @@ function PromptInjector() {
           </div>
         </div>
 
-        {/* Webview Área */}
+        {/* Webview Ãrea */}
         <div className="flex-1 relative bg-black">
           {/* @ts-ignore */}
           <webview
@@ -2549,6 +2557,753 @@ function PromptInjector() {
             className="w-full h-full"
             style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// EspiÃ£o de AÃ§Ãµes â€” Ferramenta de Desenvolvimento
+// ============================================================
+
+interface SpySelector {
+  css: string;
+  xpath: string;
+  aria: string | null;
+  id: string | null;
+}
+
+interface SpyElementInfo {
+  tag: string;
+  id: string;
+  classes: string[];
+  role: string | null;
+  ariaLabel: string | null;
+  text: string;
+  type: string | null;
+  contentEditable: boolean;
+  inShadowDom: boolean;
+  shadowPath: string[];
+}
+
+interface SpyAction {
+  index: number;
+  type: 'click' | 'input' | 'change' | 'focus' | 'keydown' | 'scroll' | 'submit'
+       | 'file-upload' | 'navigate' | 'dom-mutation';
+  timestamp_ms: number;
+  selector: SpySelector;
+  element: SpyElementInfo;
+  value: string | null;
+  coordinates: { x: number; y: number } | null;
+  classification: 'PROMPT_FIELD' | 'UPLOAD_BUTTON' | 'GENERATE_BUTTON'
+                 | 'DOWNLOAD_BUTTON' | 'NAVIGATION' | 'OTHER' | null;
+}
+
+// Script de monitoramento injetado no webview
+const SPY_MONITOR_SCRIPT = `
+(function() {
+  if (window.__spyMonitorActive) return;
+  window.__spyMonitorActive = true;
+  const startTime = Date.now();
+
+  function getDeepActiveElement() {
+    let el = document.activeElement;
+    const path = [];
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+      path.push(el.tagName.toLowerCase());
+      el = el.shadowRoot.activeElement;
+    }
+    return { element: el, shadowPath: path };
+  }
+
+  function generateCssSelector(el) {
+    if (!el || el === document.body || el === document.documentElement) return el ? el.tagName.toLowerCase() : 'unknown';
+    if (el.id) return '#' + el.id;
+    if (el.getAttribute && el.getAttribute('role')) return '[role="' + el.getAttribute('role') + '"]';
+    if (el.getAttribute && el.getAttribute('aria-label')) return '[aria-label="' + el.getAttribute('aria-label') + '"]';
+    if (el.getAttribute && el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+    if (el.getAttribute && el.getAttribute('name')) return '[name="' + el.getAttribute('name') + '"]';
+    var parent = el.parentElement;
+    if (!parent) return el.tagName ? el.tagName.toLowerCase() : 'unknown';
+    var siblings = Array.from(parent.children).filter(function(c) { return c.tagName === el.tagName; });
+    var idx = siblings.indexOf(el) + 1;
+    if (siblings.length === 1) return generateCssSelector(parent) + ' > ' + el.tagName.toLowerCase();
+    return generateCssSelector(parent) + ' > ' + el.tagName.toLowerCase() + ':nth-of-type(' + idx + ')';
+  }
+
+  function generateXPath(el) {
+    if (!el || !el.tagName) return '/';
+    if (el.id) return '//*[@id="' + el.id + '"]';
+    var parts = [];
+    var current = el;
+    while (current && current.nodeType === 1 && current !== document.body) {
+      var idx = 1;
+      var sibling = current.previousElementSibling;
+      while (sibling) {
+        if (sibling.tagName === current.tagName) idx++;
+        sibling = sibling.previousElementSibling;
+      }
+      parts.unshift(current.tagName.toLowerCase() + '[' + idx + ']');
+      current = current.parentElement;
+    }
+    return '//' + parts.join('/');
+  }
+
+  function captureElement(el) {
+    if (!el || !el.tagName) return { tag: 'unknown', id: '', classes: [], role: null, ariaLabel: null, text: '', type: null, contentEditable: false, inShadowDom: false, shadowPath: [] };
+    var deep = getDeepActiveElement();
+    return {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      classes: el.classList ? Array.from(el.classList).slice(0, 10) : [],
+      role: el.getAttribute ? el.getAttribute('role') : null,
+      ariaLabel: el.getAttribute ? el.getAttribute('aria-label') : null,
+      text: (el.textContent || '').substring(0, 100).trim(),
+      type: el.getAttribute ? el.getAttribute('type') : null,
+      contentEditable: el.isContentEditable || false,
+      inShadowDom: deep.shadowPath.length > 0,
+      shadowPath: deep.shadowPath,
+    };
+  }
+
+  function generateSelectors(el) {
+    return {
+      css: generateCssSelector(el),
+      xpath: generateXPath(el),
+      aria: (el && el.getAttribute) ? (el.getAttribute('aria-label') ? '[aria-label="' + el.getAttribute('aria-label') + '"]' : null) : null,
+      id: (el && el.id) ? '#' + el.id : null,
+    };
+  }
+
+  function sendAction(action) {
+    action.timestamp_ms = Date.now() - startTime;
+    console.log('__SPY_ACTION__:' + JSON.stringify(action));
+  }
+
+  document.addEventListener('click', function(e) {
+    sendAction({ type: 'click', selector: generateSelectors(e.target), element: captureElement(e.target), value: null, coordinates: { x: e.clientX, y: e.clientY } });
+  }, true);
+
+  document.addEventListener('input', function(e) {
+    sendAction({ type: 'input', selector: generateSelectors(e.target), element: captureElement(e.target), value: ((e.target.value || e.target.textContent || '') + '').substring(0, 200), coordinates: null });
+  }, true);
+
+  document.addEventListener('change', function(e) {
+    if (e.target.type === 'file' && e.target.files) {
+      sendAction({ type: 'file-upload', selector: generateSelectors(e.target), element: captureElement(e.target), value: Array.from(e.target.files).map(function(f) { return f.name; }).join(', '), coordinates: null });
+    } else {
+      sendAction({ type: 'change', selector: generateSelectors(e.target), element: captureElement(e.target), value: e.target.value ? e.target.value.substring(0, 200) : null, coordinates: null });
+    }
+  }, true);
+
+  document.addEventListener('keydown', function(e) {
+    if (['Enter', 'Tab', 'Escape', 'Backspace', 'Delete'].indexOf(e.key) !== -1) {
+      sendAction({ type: 'keydown', selector: generateSelectors(e.target), element: captureElement(e.target), value: e.key, coordinates: null });
+    }
+  }, true);
+
+  document.addEventListener('focus', function(e) {
+    sendAction({ type: 'focus', selector: generateSelectors(e.target), element: captureElement(e.target), value: null, coordinates: null });
+  }, true);
+
+  document.addEventListener('submit', function(e) {
+    sendAction({ type: 'submit', selector: generateSelectors(e.target), element: captureElement(e.target), value: null, coordinates: null });
+  }, true);
+
+  sendAction({
+    type: 'navigate',
+    selector: { css: 'document', xpath: '/', aria: null, id: null },
+    element: { tag: 'document', id: '', classes: [], role: null, ariaLabel: null, text: document.title, type: null, contentEditable: false, inShadowDom: false, shadowPath: [] },
+    value: window.location.href,
+    coordinates: null,
+  });
+
+  console.log('__SPY_STATUS__:MONITOR_ACTIVE');
+})();
+`;
+
+const SPY_INSPECTOR_SCRIPT = `
+(function() {
+  if (window.__spyInspectorActive) return;
+  window.__spyInspectorActive = true;
+
+  var overlay = document.createElement('div');
+  overlay.id = '__spy-overlay';
+  overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:999999;border:2px solid #00d4ff;border-radius:4px;background:rgba(0,212,255,0.08);transition:all 0.15s ease;display:none;';
+  document.body.appendChild(overlay);
+
+  var label = document.createElement('div');
+  label.id = '__spy-label';
+  label.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;background:#0a0a0bee;color:#00d4ff;font:11px/1.4 monospace;padding:4px 8px;border-radius:4px;border:1px solid #00d4ff44;display:none;max-width:400px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  document.body.appendChild(label);
+
+  function getElementLabel(el) {
+    var s = '<' + el.tagName.toLowerCase() + '>';
+    if (el.id) s += ' #' + el.id;
+    if (el.className && typeof el.className === 'string') s += ' .' + el.className.split(' ').slice(0, 3).join('.');
+    if (el.getAttribute('role')) s += ' [role=' + el.getAttribute('role') + ']';
+    if (el.getAttribute('aria-label')) s += ' [aria-label="' + el.getAttribute('aria-label').substring(0, 30) + '"]';
+    return s;
+  }
+
+  document.addEventListener('mousemove', function(e) {
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || el === overlay || el === label) return;
+    var rect = el.getBoundingClientRect();
+    overlay.style.top = rect.top + 'px';
+    overlay.style.left = rect.left + 'px';
+    overlay.style.width = rect.width + 'px';
+    overlay.style.height = rect.height + 'px';
+    overlay.style.display = 'block';
+    label.textContent = getElementLabel(el);
+    label.style.top = Math.max(0, rect.top - 28) + 'px';
+    label.style.left = rect.left + 'px';
+    label.style.display = 'block';
+  }, true);
+
+  document.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    var el = e.target;
+    var selectors = {
+      css: (function gen(e) {
+        if (!e || e === document.body) return e ? 'body' : '';
+        if (e.id) return '#' + e.id;
+        if (e.getAttribute && e.getAttribute('role')) return '[role="' + e.getAttribute('role') + '"]';
+        if (e.getAttribute && e.getAttribute('aria-label')) return '[aria-label="' + e.getAttribute('aria-label') + '"]';
+        var p = e.parentElement;
+        if (!p) return e.tagName.toLowerCase();
+        var sibs = Array.from(p.children).filter(function(c){return c.tagName===e.tagName;});
+        var i = sibs.indexOf(e)+1;
+        return gen(p) + ' > ' + e.tagName.toLowerCase() + (sibs.length>1 ? ':nth-of-type('+i+')' : '');
+      })(el),
+      xpath: (function genX(e) {
+        if (!e || !e.tagName) return '/';
+        if (e.id) return '//*[@id="'+e.id+'"]';
+        var parts=[];var c=e;
+        while(c&&c.nodeType===1&&c!==document.body){var idx=1;var s=c.previousElementSibling;while(s){if(s.tagName===c.tagName)idx++;s=s.previousElementSibling;}parts.unshift(c.tagName.toLowerCase()+'['+idx+']');c=c.parentElement;}
+        return '//'+parts.join('/');
+      })(el),
+      aria: el.getAttribute ? (el.getAttribute('aria-label') ? '[aria-label="'+el.getAttribute('aria-label')+'"]' : null) : null,
+      id: el.id ? '#'+el.id : null,
+    };
+    console.log('__SPY_INSPECT__:' + JSON.stringify({
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      classes: el.classList ? Array.from(el.classList) : [],
+      role: el.getAttribute ? el.getAttribute('role') : null,
+      ariaLabel: el.getAttribute ? el.getAttribute('aria-label') : null,
+      text: (el.textContent || '').substring(0, 200).trim(),
+      type: el.getAttribute ? el.getAttribute('type') : null,
+      contentEditable: el.isContentEditable || false,
+      inShadowDom: false,
+      shadowPath: [],
+      attributes: el.attributes ? Array.from(el.attributes).map(function(a){ return {name:a.name, value:a.value.substring(0,100)}; }).slice(0, 20) : [],
+      rect: (function(){ var r=el.getBoundingClientRect(); return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)}; })(),
+      selectors: selectors,
+      computedStyle: { display: getComputedStyle(el).display, visibility: getComputedStyle(el).visibility, position: getComputedStyle(el).position, cursor: getComputedStyle(el).cursor },
+      innerHTML: el.innerHTML ? el.innerHTML.substring(0, 300) : '',
+    }));
+    return false;
+  }, true);
+
+  console.log('__SPY_STATUS__:INSPECTOR_ACTIVE');
+})();
+`;
+
+const SPY_INSPECTOR_DISABLE_SCRIPT = `
+(function() {
+  window.__spyInspectorActive = false;
+  var overlay = document.getElementById('__spy-overlay');
+  var label = document.getElementById('__spy-label');
+  if (overlay) overlay.remove();
+  if (label) label.remove();
+  console.log('__SPY_STATUS__:INSPECTOR_DISABLED');
+})();
+`;
+
+function SpyMonitor() {
+  const webviewRef = useRef<any>(null);
+  const [url, setUrl] = useState('https://labs.google/fx/pt/tools/flow');
+  const [currentUrl, setCurrentUrl] = useState(url);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [actions, setActions] = useState<SpyAction[]>([]);
+  const [selectedAction, setSelectedAction] = useState<SpyAction | null>(null);
+  const [inspectedElement, setInspectedElement] = useState<any>(null);
+  const [consoleMessages, setConsoleMessages] = useState<{level: string; text: string; timestamp: number}[]>([]);
+  const [macroName, setMacroName] = useState('');
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'actions' | 'inspector' | 'console'>('actions');
+  const actionsEndRef = useRef<HTMLDivElement>(null);
+  const actionCountRef = useRef(0);
+
+  useEffect(() => {
+    if (actionsEndRef.current && actions.length > 0) {
+      actionsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [actions]);
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const onStartLoading = () => setIsLoading(true);
+    const onStopLoading = () => setIsLoading(false);
+    const onNavigate = (e: any) => { setCurrentUrl(e.url); setUrl(e.url); };
+    const onNavigateInPage = (e: any) => { setCurrentUrl(e.url); setUrl(e.url); };
+
+    const onConsoleMessage = (e: any) => {
+      const msg = e.message;
+      if (msg.startsWith('__SPY_ACTION__:')) {
+        try {
+          const action: SpyAction = JSON.parse(msg.slice('__SPY_ACTION__:'.length));
+          action.index = actionCountRef.current++;
+          action.classification = null;
+          setActions(prev => [...prev, action]);
+        } catch { /* ignore */ }
+        return;
+      }
+      if (msg.startsWith('__SPY_INSPECT__:')) {
+        try {
+          const data = JSON.parse(msg.slice('__SPY_INSPECT__:'.length));
+          setInspectedElement(data);
+          setActiveTab('inspector');
+        } catch { /* ignore */ }
+        return;
+      }
+      if (msg.startsWith('__SPY_STATUS__:')) return;
+      setConsoleMessages(prev => [...prev.slice(-200), {
+        level: e.level === 0 ? 'log' : e.level === 1 ? 'warn' : 'error',
+        text: msg.substring(0, 500),
+        timestamp: Date.now(),
+      }]);
+    };
+
+    const onDomReady = () => {
+      if (isRecording) webview.executeJavaScript(SPY_MONITOR_SCRIPT).catch(() => {});
+      if (isInspecting) webview.executeJavaScript(SPY_INSPECTOR_SCRIPT).catch(() => {});
+    };
+
+    webview.addEventListener('did-start-loading', onStartLoading);
+    webview.addEventListener('did-stop-loading', onStopLoading);
+    webview.addEventListener('did-navigate', onNavigate);
+    webview.addEventListener('did-navigate-in-page', onNavigateInPage);
+    webview.addEventListener('console-message', onConsoleMessage);
+    webview.addEventListener('dom-ready', onDomReady);
+
+    return () => {
+      webview.removeEventListener('did-start-loading', onStartLoading);
+      webview.removeEventListener('did-stop-loading', onStopLoading);
+      webview.removeEventListener('did-navigate', onNavigate);
+      webview.removeEventListener('did-navigate-in-page', onNavigateInPage);
+      webview.removeEventListener('console-message', onConsoleMessage);
+      webview.removeEventListener('dom-ready', onDomReady);
+    };
+  }, [isRecording, isInspecting]);
+
+  const navigateTo = useCallback((targetUrl: string) => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    let finalUrl = targetUrl.trim();
+    if (finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) finalUrl = 'https://' + finalUrl;
+    setUrl(finalUrl);
+    webview.loadURL(finalUrl);
+  }, []);
+
+  const goBack = useCallback(() => { webviewRef.current?.goBack(); }, []);
+  const goForward = useCallback(() => { webviewRef.current?.goForward(); }, []);
+  const reload = useCallback(() => { webviewRef.current?.reload(); }, []);
+
+  const startRecording = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    actionCountRef.current = 0;
+    setActions([]);
+    setIsRecording(true);
+    webview.executeJavaScript(SPY_MONITOR_SCRIPT).catch(() => {});
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    setIsRecording(false);
+    webviewRef.current?.executeJavaScript('window.__spyMonitorActive = false;').catch(() => {});
+  }, []);
+
+  const toggleInspection = useCallback(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    if (isInspecting) {
+      webview.executeJavaScript(SPY_INSPECTOR_DISABLE_SCRIPT).catch(() => {});
+      setIsInspecting(false);
+    } else {
+      webview.executeJavaScript(SPY_INSPECTOR_SCRIPT).catch(() => {});
+      setIsInspecting(true);
+    }
+  }, [isInspecting]);
+
+  const classifyAction = useCallback((idx: number, classification: SpyAction['classification']) => {
+    setActions(prev => prev.map(a => a.index === idx ? { ...a, classification } : a));
+  }, []);
+
+  const exportMacro = useCallback(async () => {
+    const macro = {
+      macro_id: macroName.replace(/\s+/g, '_').toLowerCase() || 'macro_' + Date.now(),
+      macro_name: macroName || 'Macro sem nome',
+      site: currentUrl.includes('digen.ai') ? 'digen' : currentUrl.includes('labs.google') ? 'google_flow' : 'unknown',
+      site_url: currentUrl,
+      recorded_at: new Date().toISOString(),
+      workflow_steps: actions.map((a, i) => ({ index: i, action: a.type, target: a.classification || 'OTHER', selector: a.selector, value: a.value, timestamp_ms: a.timestamp_ms })),
+      classified_elements: actions.filter(a => a.classification && a.classification !== 'OTHER').reduce((acc, a) => {
+        const key = a.classification!.toLowerCase();
+        if (!acc[key]) acc[key] = { role: a.classification!, selectors: a.selector, element_info: a.element };
+        return acc;
+      }, {} as any),
+    };
+    try {
+      const result = await window.electronAPI.saveMacro(macro);
+      setSaveStatus(result.success ? 'âœ… Macro salvo: ' + result.path : 'âŒ Erro: ' + result.error);
+      setTimeout(() => setSaveStatus(null), 5000);
+    } catch (err: any) {
+      setSaveStatus('âŒ Erro: ' + err.message);
+      setTimeout(() => setSaveStatus(null), 5000);
+    }
+  }, [actions, macroName, currentUrl]);
+
+  const actionIcon = (type: string) => {
+    const icons: Record<string, string> = { click: 'ðŸ–±ï¸', input: 'âŒ¨ï¸', change: 'ðŸ”„', focus: 'ðŸŽ¯', keydown: 'âŒ¨ï¸', scroll: 'ðŸ“œ', submit: 'ðŸ“¤', 'file-upload': 'ðŸ“Ž', navigate: 'ðŸ”—', 'dom-mutation': 'ðŸ”€' };
+    return icons[type] || 'â“';
+  };
+
+  const classificationColor = (c: string | null) => {
+    const colors: Record<string, string> = {
+      PROMPT_FIELD: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+      UPLOAD_BUTTON: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+      GENERATE_BUTTON: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
+      DOWNLOAD_BUTTON: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+      NAVIGATION: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
+    };
+    return (c && colors[c]) || 'text-zinc-400 bg-zinc-500/10 border-zinc-500/30';
+  };
+
+  const formatTimestamp = (ms: number) => ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-[#0a0a0b] text-white overflow-hidden select-none"
+         style={{ fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif" }}>
+
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-2 bg-[#111113] border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">ðŸ”</span>
+          <span className="font-semibold text-sm tracking-wide text-zinc-200">ESPIÃƒO DE AÃ‡Ã•ES</span>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-medium text-emerald-400">DEV MODE</span>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-4 py-2 bg-[#111113] border-b border-white/5">
+        <div className="flex items-center gap-1">
+          <button onClick={goBack} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors" title="Voltar">
+            <ChevronLeft size={16} />
+          </button>
+          <button onClick={goForward} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors" title="AvanÃ§ar">
+            <ChevronRight size={16} />
+          </button>
+          <button onClick={reload} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors" title="Recarregar">
+            <RefreshCcw size={14} />
+          </button>
+        </div>
+
+        <form className="flex-1 flex" onSubmit={(e) => { e.preventDefault(); navigateTo(url); }}>
+          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 focus-within:border-blue-500/50 transition-colors">
+            {isLoading && <Loader2 size={14} className="text-blue-400 animate-spin shrink-0" />}
+            <Globe size={14} className="text-zinc-500 shrink-0" />
+            <input type="text" value={url} onChange={(e) => setUrl(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-zinc-300 outline-none placeholder:text-zinc-600" placeholder="URL..." />
+          </div>
+        </form>
+
+        <div className="flex items-center gap-1">
+          <button onClick={() => navigateTo('https://digen.ai/explore')}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">
+            ðŸ…³ Digen
+          </button>
+          <button onClick={() => navigateTo('https://labs.google/fx/pt/tools/flow')}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-colors">
+            ðŸ…¶ Flow
+          </button>
+        </div>
+
+        <div className="w-px h-6 bg-white/10" />
+
+        <div className="flex items-center gap-1">
+          {!isRecording ? (
+            <button onClick={startRecording}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors">
+              <div className="w-2 h-2 rounded-full bg-red-500" /> Gravar
+            </button>
+          ) : (
+            <button onClick={stopRecording}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 transition-colors animate-pulse">
+              <div className="w-2 h-2 rounded-sm bg-red-400" /> Parar
+            </button>
+          )}
+          <button onClick={toggleInspection}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isInspecting ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300' : 'bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20'}`}>
+            ðŸ” Inspecionar
+          </button>
+          <button onClick={() => { setActions([]); actionCountRef.current = 0; setInspectedElement(null); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-500/10 border border-zinc-500/20 text-zinc-400 hover:bg-zinc-500/20 transition-colors">
+            ðŸ—‘ Limpar
+          </button>
+          <button onClick={() => setShowExportPanel(!showExportPanel)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
+            ðŸ’¾ Exportar ({actions.length})
+          </button>
+        </div>
+      </div>
+
+      {saveStatus && (
+        <div className="px-4 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20 text-xs text-emerald-400">{saveStatus}</div>
+      )}
+
+      {showExportPanel && (
+        <div className="px-4 py-3 bg-[#111113] border-b border-white/5 flex items-center gap-3">
+          <input type="text" value={macroName} onChange={(e) => setMacroName(e.target.value)} placeholder="Nome do macro (ex: flow_gerar_imagem)"
+            className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-zinc-300 outline-none focus:border-amber-500/50" />
+          <button onClick={exportMacro} disabled={actions.length === 0}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            Salvar Macro JSON
+          </button>
+          <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(actions, null, 2)); setSaveStatus('ðŸ“‹ AÃ§Ãµes copiadas para clipboard'); setTimeout(() => setSaveStatus(null), 3000); }}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors">
+            Copiar JSON
+          </button>
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 relative bg-black">
+          {isRecording && (
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/90 text-white text-xs font-semibold shadow-lg shadow-red-500/30">
+              <div className="w-2 h-2 rounded-full bg-white animate-pulse" /> GRAVANDO â€” {actions.length} aÃ§Ãµes
+            </div>
+          )}
+          {isInspecting && (
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-500/90 text-white text-xs font-semibold shadow-lg shadow-cyan-500/30">
+              ðŸ” MODO INSPEÃ‡ÃƒO â€” Clique num elemento
+            </div>
+          )}
+          {/* @ts-ignore */}
+          <webview ref={webviewRef} src={url} partition="persist:spy-session" className="w-full h-full"
+            style={{ width: '100%', height: '100%', border: 'none', background: '#000' }} />
+        </div>
+
+        {/* Sidebar */}
+        <div className="w-[420px] flex flex-col bg-[#111113] border-l border-white/5">
+          <div className="flex border-b border-white/5">
+            {(['actions', 'inspector', 'console'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`flex-1 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                  activeTab === tab ? `text-white border-b-2 bg-white/5 ${tab === 'actions' ? 'border-orange-500' : tab === 'inspector' ? 'border-cyan-500' : 'border-emerald-500'}` : 'text-zinc-500 hover:text-zinc-300'
+                }`}>
+                {tab === 'actions' ? `ðŸ“‹ AÃ§Ãµes${actions.length > 0 ? ` (${actions.length})` : ''}` :
+                 tab === 'inspector' ? 'ðŸ” Inspector' :
+                 `ðŸ–¥ï¸ Console${consoleMessages.length > 0 ? ` (${consoleMessages.length})` : ''}`}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {activeTab === 'actions' && (
+              <div className="p-2 space-y-1">
+                {actions.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 text-zinc-600">
+                    <span className="text-3xl mb-3">ðŸ“‹</span>
+                    <p className="text-sm">Nenhuma aÃ§Ã£o gravada</p>
+                    <p className="text-xs mt-1">Clique em "Gravar" e interaja com o site</p>
+                  </div>
+                )}
+                {actions.map((action) => (
+                  <div key={action.index}
+                    onClick={() => { setSelectedAction(action); setActiveTab('inspector'); setInspectedElement({ ...action.element, selectors: action.selector }); }}
+                    className={`p-2.5 rounded-lg cursor-pointer transition-all border ${
+                      selectedAction?.index === action.index ? 'bg-white/10 border-white/20'
+                        : action.classification ? classificationColor(action.classification) + ' hover:brightness-125'
+                        : 'bg-white/[0.02] border-transparent hover:bg-white/5 hover:border-white/10'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{actionIcon(action.type)}</span>
+                      <span className="text-xs font-semibold text-zinc-300">{action.type}</span>
+                      <span className="text-[10px] text-zinc-600 ml-auto">+{formatTimestamp(action.timestamp_ms)}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-zinc-500 font-mono truncate">
+                      {action.selector.id || action.selector.aria || action.selector.css}
+                    </div>
+                    {action.value && <div className="mt-1 text-[11px] text-zinc-400 truncate">"{action.value}"</div>}
+                    {action.classification && (
+                      <div className="mt-1.5">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${classificationColor(action.classification)}`}>
+                          {action.classification}
+                        </span>
+                      </div>
+                    )}
+                    {!action.classification && selectedAction?.index === action.index && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(['PROMPT_FIELD', 'UPLOAD_BUTTON', 'GENERATE_BUTTON', 'DOWNLOAD_BUTTON', 'NAVIGATION', 'OTHER'] as const).map(cls => (
+                          <button key={cls} onClick={(e) => { e.stopPropagation(); classifyAction(action.index, cls); }}
+                            className="px-2 py-0.5 rounded text-[10px] font-medium bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
+                            {cls === 'PROMPT_FIELD' ? 'ðŸ“' : cls === 'UPLOAD_BUTTON' ? 'ðŸ“Ž' : cls === 'GENERATE_BUTTON' ? 'â–¶ï¸' : cls === 'DOWNLOAD_BUTTON' ? 'â¬‡ï¸' : cls === 'NAVIGATION' ? 'ðŸ”„' : 'â“'} {cls.replace('_', ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={actionsEndRef} />
+              </div>
+            )}
+
+            {activeTab === 'inspector' && (
+              <div className="p-3 space-y-3">
+                {!inspectedElement && !selectedAction ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-zinc-600">
+                    <span className="text-3xl mb-3">ðŸ”</span>
+                    <p className="text-sm">Nenhum elemento selecionado</p>
+                    <p className="text-xs mt-1">Use o modo InspeÃ§Ã£o ou clique numa aÃ§Ã£o</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-2">
+                      <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸ“Œ Elemento</div>
+                      <div className="grid grid-cols-[80px_1fr] gap-y-1.5 text-[11px]">
+                        <span className="text-zinc-600">Tag:</span>
+                        <span className="text-cyan-400 font-mono">{'<'}{inspectedElement?.tag || 'n/a'}{'>'}</span>
+                        <span className="text-zinc-600">ID:</span>
+                        <span className="text-amber-400 font-mono">{inspectedElement?.id || 'â€”'}</span>
+                        <span className="text-zinc-600">Classes:</span>
+                        <span className="text-purple-400 font-mono truncate">{(inspectedElement?.classes || []).join(' ') || 'â€”'}</span>
+                        <span className="text-zinc-600">Role:</span>
+                        <span className="text-emerald-400 font-mono">{inspectedElement?.role || 'â€”'}</span>
+                        <span className="text-zinc-600">ARIA Label:</span>
+                        <span className="text-blue-400 font-mono truncate">{inspectedElement?.ariaLabel || 'â€”'}</span>
+                        <span className="text-zinc-600">Type:</span>
+                        <span className="text-zinc-300 font-mono">{inspectedElement?.type || 'â€”'}</span>
+                        <span className="text-zinc-600">Editable:</span>
+                        <span className="text-zinc-300 font-mono">{inspectedElement?.contentEditable ? 'âœ… Sim' : 'âŒ NÃ£o'}</span>
+                        <span className="text-zinc-600">Shadow DOM:</span>
+                        <span className="text-zinc-300 font-mono">{inspectedElement?.inShadowDom ? 'âš ï¸ Sim' : 'âŒ NÃ£o'}</span>
+                      </div>
+                      {inspectedElement?.text && (
+                        <div className="mt-2">
+                          <span className="text-zinc-600 text-[11px]">Texto:</span>
+                          <p className="text-[11px] text-zinc-400 mt-0.5 break-words">"{inspectedElement.text}"</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-2">
+                      <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸŽ¯ Seletores</div>
+                      {[
+                        ['CSS', inspectedElement?.selectors?.css || 'â€”'],
+                        ['XPath', inspectedElement?.selectors?.xpath || 'â€”'],
+                        ['ARIA', inspectedElement?.selectors?.aria || 'â€”'],
+                        ['ID', inspectedElement?.selectors?.id || (inspectedElement?.id ? '#' + inspectedElement.id : 'â€”')],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-start gap-2 text-[11px]">
+                          <span className="text-zinc-600 w-12 shrink-0">{label}:</span>
+                          <code className="text-emerald-400 font-mono break-all cursor-pointer hover:text-emerald-300"
+                            onClick={() => navigator.clipboard.writeText(String(value))} title="Clique para copiar">
+                            {String(value)}
+                          </code>
+                        </div>
+                      ))}
+                    </div>
+
+                    {inspectedElement?.attributes && (
+                      <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-1">
+                        <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸ“‹ Atributos</div>
+                        {inspectedElement.attributes.map((attr: any, i: number) => (
+                          <div key={i} className="flex items-start gap-2 text-[11px]">
+                            <span className="text-cyan-500 font-mono shrink-0">{attr.name}:</span>
+                            <span className="text-zinc-400 font-mono break-all">{attr.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {inspectedElement?.computedStyle && (
+                      <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-1">
+                        <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸŽ¨ Computed Style</div>
+                        {Object.entries(inspectedElement.computedStyle).map(([k, v]) => (
+                          <div key={k} className="flex items-center gap-2 text-[11px]">
+                            <span className="text-zinc-600 font-mono w-20">{k}:</span>
+                            <span className="text-zinc-400 font-mono">{String(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {inspectedElement?.rect && (
+                      <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
+                        <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸ“ DimensÃµes</div>
+                        <div className="text-[11px] text-zinc-400 font-mono">
+                          {inspectedElement.rect.w}Ã—{inspectedElement.rect.h} @ ({inspectedElement.rect.x}, {inspectedElement.rect.y})
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
+                      <div className="text-xs font-semibold text-zinc-300 mb-2">ðŸ·ï¸ Classificar como</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {([
+                          ['PROMPT_FIELD', 'ðŸ“ Prompt', 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'],
+                          ['UPLOAD_BUTTON', 'ðŸ“Ž Upload', 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'],
+                          ['GENERATE_BUTTON', 'â–¶ï¸ Gerar', 'bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20'],
+                          ['DOWNLOAD_BUTTON', 'â¬‡ï¸ Download', 'bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20'],
+                          ['NAVIGATION', 'ðŸ”„ NavegaÃ§Ã£o', 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20'],
+                        ] as const).map(([cls, label, colors]) => (
+                          <button key={cls}
+                            onClick={() => { if (selectedAction) classifyAction(selectedAction.index, cls as SpyAction['classification']); }}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${colors}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'console' && (
+              <div className="p-2 space-y-0.5 font-mono text-[11px]">
+                {consoleMessages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 text-zinc-600">
+                    <span className="text-3xl mb-3">ðŸ–¥ï¸</span>
+                    <p className="text-sm font-sans">Console vazio</p>
+                    <p className="text-xs mt-1 font-sans">Logs do site aparecerÃ£o aqui</p>
+                  </div>
+                )}
+                {consoleMessages.map((msg, i) => (
+                  <div key={i} className={`px-2 py-1 rounded text-[11px] break-words ${
+                    msg.level === 'error' ? 'text-red-400 bg-red-500/5' : msg.level === 'warn' ? 'text-amber-400 bg-amber-500/5' : 'text-zinc-400'
+                  }`}>
+                    <span className="text-zinc-600">[{msg.level}]</span> {msg.text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

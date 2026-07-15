@@ -11,5 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('load-prompts', subscription);
     };
-  }
+  },
+  // Espião de Ações — Dev Mode
+  openSpyWindow: () => ipcRenderer.send('open-spy-window'),
+  saveMacro: (data: any) => ipcRenderer.invoke('spy-save-macro', data),
+  listMacros: () => ipcRenderer.invoke('spy-list-macros'),
 });
