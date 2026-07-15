@@ -151,6 +151,18 @@ ipcMain.on('spy-ready', () => {
   }
 });
 
+// Salvar resultados do scan para que o agente de IA possa inspecionar e verificar
+ipcMain.on('spy-write-results', (_event, data: any) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const filepath = path.join(app.getAppPath(), 'spy_last_scan.json');
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing spy results:', err);
+  }
+});
+
 // ============================================================
 // App Lifecycle
 // ============================================================

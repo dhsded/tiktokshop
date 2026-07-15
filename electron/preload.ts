@@ -22,4 +22,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('spy-load-data', subscription);
     };
   },
+  writeSpyScanResults: (data: any) => ipcRenderer.send('spy-write-results', data),
 });

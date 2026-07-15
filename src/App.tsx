@@ -106,6 +106,7 @@ declare global {
       openSpyWindow: (data?: any) => void;
       spyReady: () => void;
       onSpyData: (callback: (data: any) => void) => () => void;
+      writeSpyScanResults: (data: any) => void;
     };
   }
 }
@@ -2991,6 +2992,11 @@ function SpyWindow() {
       const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
       const result = JSON.parse(resultStr) as ScanResult;
       setScanResult(result);
+
+      // Salvar resultados localmente
+      if (window.electronAPI && window.electronAPI.writeSpyScanResults) {
+        window.electronAPI.writeSpyScanResults(result);
+      }
 
       // Apply highlight if enabled
       if (highlightEnabled) {
