@@ -42,7 +42,7 @@ import { jsPDF } from 'jspdf';
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 interface VersionEntry {
   version: string;
@@ -53,17 +53,27 @@ interface VersionEntry {
 
 const VERSION_HISTORY: VersionEntry[] = [
   {
+    version: '1.2.0',
+    date: '15/07/2026',
+    title: 'Espião Auto-Detect & Melhorias',
+    changes: [
+      'Novo: Espião Auto-Detect — detecta automaticamente campos do DIGEN e Flow',
+      'Novo: Mapa visual de campos detectados por categoria (prompts, uploads, configs, ações)',
+      'Novo: MutationObserver para detectar campos carregados dinamicamente',
+      'Novo: Highlight visual dos campos na webview',
+      'Melhoria: Corte de imagens agora é LIVRE (não mais quadrado fixo)',
+      'Melhoria: Presets de proporção para corte (Livre, 9:16, 16:9, 1:1, 4:5)',
+      'Fix: Prompts VEO/DIGEN agora são puros sem [nome_arquivo.jpg] no início',
+      'Fix: Vídeos serão gerados a partir de novas imagens, não das originais',
+      'Removido: Sistema de gravação de macros (substituído pelo Auto-Detect)',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '15/07/2026',
-    title: 'Espião de Ações',
+    title: 'Espião de Ações (Legado)',
     changes: [
-      'Novo: Ferramenta Espião de Ações para desenvolvimento (Ctrl+Shift+S)',
-      'Novo: Gravação de ações do usuário em sites (clicks, inputs, uploads)',
-      'Novo: Inspeção visual de elementos DOM com hover highlight',
-      'Novo: Sistema de classificação de elementos (Prompt, Upload, Gerar, Download)',
-      'Novo: Exportação de macros em JSON para automação futura',
-      'Novo: Console de mensagens do site em tempo real',
-      'Novo: Quick links para Digen.ai e Google Labs Flow',
+      'Ferramenta Espião de Ações (substituída na v1.2.0)',
     ],
   },
   {
@@ -92,10 +102,10 @@ declare global {
       openInjectorWindow: (data: any) => void;
       injectorReady: () => void;
       onLoadPrompts: (callback: (data: any) => void) => () => void;
-      // Espião de Ações — Dev Mode
-      openSpyWindow: () => void;
-      saveMacro: (data: any) => Promise<{ success: boolean; path?: string; error?: string }>;
-      listMacros: () => Promise<any[]>;
+      // Espião de Ações — Auto-Detect
+      openSpyWindow: (data?: any) => void;
+      spyReady: () => void;
+      onSpyData: (callback: (data: any) => void) => () => void;
     };
   }
 }
@@ -152,9 +162,13 @@ const THEMES = [
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const isInjectorWindow = params.get('window') === 'injector' || window.location.hash === '#injector';
+  const isSpyWindow = params.get('window') === 'spy' || window.location.hash === '#spy';
 
   if (isInjectorWindow) {
     return <PromptInjector />;
+  }
+  if (isSpyWindow) {
+    return <SpyWindow />;
   }
 
   return <MainApp />;
@@ -216,6 +230,7 @@ function MainApp() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isCropping, setIsCropping] = useState(false);
+  const [cropAspect, setCropAspect] = useState<number | undefined>(undefined); // undefined = livre
 
   // Ângulos do Produto
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
@@ -630,8 +645,8 @@ ${voiceInstruction}
 
 REGRAS OBRIGATÓRIAS:
 1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
-2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena.
-3. O NOME DO ARQUIVO REFERENCIADO DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_produto.jpg] ..."
+2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena (apenas referência interna, NÃO inclua esse nome nos prompts).
+3. Os campos 'veoPrompt' e 'digenPrompt' devem ser prompts PUROS e AUTO-CONTIDOS em inglês — descritivos, cinematográficos e completos. NUNCA inclua nomes de arquivos, colchetes com nomes ou referências a imagens originais nesses campos. As imagens originais servem apenas como referência visual para a IA entender o contexto, mas os vídeos serão gerados a partir de novas imagens criadas pela IA.
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
 6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
@@ -644,11 +659,11 @@ Retorne em estrutura JSON:
   "campaignTitle": "Nome da Campanha",
   "scenes": [
     { 
-      "imageName": "Nome exato do arquivo de referência", 
+      "imageName": "Nome exato do arquivo de referência (uso interno)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
+      "veoPrompt": "Cinematic slow-motion camera pan across... (pure English prompt, NO filenames)", 
+      "digenPrompt": "Natural talking head presenting the product with... (pure English prompt, NO filenames)", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -772,7 +787,7 @@ Observações específicas: ${observations || "Seguir estilo padrão de alta cos
 ${voiceInstruction}
 
 REGRAS OBRIGATÓRIAS:
-1. O NOME ORIGINAL DO ARQUIVO de cada imagem DEVE ser incluído no INÍCIO dos prompts 'veoPrompt' e 'digenPrompt' entre colchetes. Exemplo: "[foto_look_01.jpg] Cinematic camera movement..."
+1. Os campos 'veoPrompt' e 'digenPrompt' devem ser prompts PUROS e AUTO-CONTIDOS em inglês — descritivos, cinematográficos e completos. NUNCA inclua nomes de arquivos, colchetes com nomes ou referências a imagens originais nesses campos. As imagens originais servem apenas como referência visual, mas os vídeos serão gerados a partir de novas imagens criadas pela IA.
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
@@ -785,11 +800,11 @@ Retorne em estrutura JSON:
   "campaignTitle": "Nome da Campanha",
   "scenes": [
     { 
-      "imageName": "Nome exato do arquivo", 
+      "imageName": "Nome exato do arquivo (referência interna)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
-      "digenPrompt": "[NOME_DO_ARQUIVO] Prompt em inglês...", 
+      "veoPrompt": "Cinematic slow-motion camera pan across... (pure English prompt, NO filenames)", 
+      "digenPrompt": "Natural talking head presenting... (pure English prompt, NO filenames)", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -913,7 +928,7 @@ REGRAS ABSOLUTAS — NUNCA VIOLE:
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
 4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÊS.
 5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[Música instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
-6. No início dos campos veoPrompt e digenPrompt, inclua o nome do arquivo entre colchetes.
+6. Os campos veoPrompt e digenPrompt devem ser prompts PUROS e AUTO-CONTIDOS — NUNCA inclua nomes de arquivo, colchetes com nomes ou referências a imagens originais. As imagens servem apenas como referência visual para a IA.
 7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
 
 Angulos a variar (escolha os mais relevantes para o produto):
@@ -2066,7 +2081,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 image={imageToCrop.preview}
                 crop={crop}
                 zoom={zoom}
-                aspect={1}
+                aspect={cropAspect}
                 onCropChange={setCrop}
                 onCropComplete={onCropComplete}
                 onZoomChange={setZoom}
@@ -2074,7 +2089,34 @@ Angulos a variar (escolha os mais relevantes para o produto):
             </div>
 
             <div className="p-8 space-y-6 border-t border-white/10 bg-[#0a0a0b]">
-              <div className="max-w-md mx-auto space-y-4">
+              <div className="max-w-lg mx-auto space-y-4">
+                {/* Presets de Proporção */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Proporção</span>
+                  <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                    {[
+                      { label: 'Livre', value: undefined },
+                      { label: '9:16', value: 9/16 },
+                      { label: '16:9', value: 16/9 },
+                      { label: '1:1', value: 1 },
+                      { label: '4:5', value: 4/5 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => setCropAspect(preset.value)}
+                        className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${
+                          cropAspect === preset.value
+                            ? 'bg-orange-500 text-white shadow-lg'
+                            : 'text-white/40 hover:text-white/60'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Zoom */}
                 <div className="flex items-center gap-4">
                   <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Zoom</span>
                   <input
@@ -2675,6 +2717,619 @@ function PromptInjector() {
             ref={webviewRef}
             src={url}
             partition="persist:injector-session"
+            className="w-full h-full"
+            style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Espião Auto-Detect — Detecta campos automaticamente no DIGEN & Flow
+// ============================================================
+
+interface DetectedField {
+  selector: string;
+  tag: string;
+  type: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  visible: boolean;
+  options?: string[];
+  enabled?: boolean;
+  category: 'prompt' | 'upload' | 'config' | 'action';
+}
+
+interface ScanResult {
+  prompts: DetectedField[];
+  uploads: DetectedField[];
+  configs: DetectedField[];
+  actions: DetectedField[];
+  timestamp: number;
+  url: string;
+}
+
+const SPY_SCAN_SCRIPT = `
+(function() {
+  function getCSSSelector(el) {
+    if (el.id) return '#' + el.id;
+    if (!el.parentElement) return el.tagName.toLowerCase();
+    const siblings = Array.from(el.parentElement.children).filter(c => c.tagName === el.tagName);
+    const idx = siblings.indexOf(el);
+    const tag = el.tagName.toLowerCase();
+    const cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+    return tag + cls + (siblings.length > 1 ? ':nth-of-type(' + (idx + 1) + ')' : '');
+  }
+
+  function getLabel(el) {
+    if (el.ariaLabel) return el.ariaLabel;
+    if (el.title) return el.title;
+    if (el.placeholder) return el.placeholder;
+    if (el.name) return el.name;
+    const label = el.closest('label') || document.querySelector('label[for="' + el.id + '"]');
+    if (label) return label.textContent.trim().slice(0, 60);
+    const prev = el.previousElementSibling;
+    if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'P')) {
+      return prev.textContent.trim().slice(0, 60);
+    }
+    const parent = el.parentElement;
+    if (parent) {
+      const parentLabel = parent.querySelector('label, .label, [class*="label"], [class*="title"]');
+      if (parentLabel && parentLabel !== el) return parentLabel.textContent.trim().slice(0, 60);
+    }
+    return '';
+  }
+
+  function isVisible(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    const s = window.getComputedStyle(el);
+    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+  }
+
+  function classifyButton(text) {
+    const t = (text || '').toLowerCase().trim();
+    if (!t || t.length > 80) return null;
+    if (/gerar|generate|create|criar|submit|enviar|go|run|start|iniciar/.test(t)) return 'generate';
+    if (/download|baixar|save|salvar|export/.test(t)) return 'download';
+    if (/upload|enviar|importar|carregar|import|selecionar/.test(t)) return 'upload';
+    if (/record|gravar|mic/.test(t)) return 'record';
+    if (/play|preview|reproduzir|visualizar/.test(t)) return 'preview';
+    if (/extend|estender|continuar|continue/.test(t)) return 'extend';
+    return null;
+  }
+
+  const fields = { prompts: [], uploads: [], configs: [], actions: [] };
+
+  // 1. Prompts (textareas, inputs, contenteditable)
+  document.querySelectorAll('textarea, input[type="text"], input[type="search"], [contenteditable="true"], [contenteditable=""]')
+    .forEach(function(el) {
+      if (el.closest('[hidden]') || el.type === 'hidden') return;
+      fields.prompts.push({
+        tag: el.tagName, type: 'text', selector: getCSSSelector(el),
+        label: getLabel(el), placeholder: el.placeholder || '',
+        value: (el.value || el.textContent || '').slice(0, 200),
+        visible: isVisible(el), category: 'prompt'
+      });
+    });
+
+  // 2. Uploads (file inputs, drop zones)
+  document.querySelectorAll('input[type="file"]')
+    .forEach(function(el) {
+      fields.uploads.push({
+        tag: 'INPUT', type: 'file', selector: getCSSSelector(el),
+        label: getLabel(el) || 'Upload de arquivo',
+        placeholder: '', value: '', accept: el.accept || '*',
+        visible: isVisible(el), category: 'upload'
+      });
+    });
+  // Drop zones heuristic
+  document.querySelectorAll('[class*="drop"], [class*="upload"], [class*="drag"], [data-dropzone], [role="button"]')
+    .forEach(function(el) {
+      const text = (el.textContent || '').toLowerCase();
+      if ((text.includes('drag') || text.includes('drop') || text.includes('upload') || text.includes('arrastr')) && text.length < 200) {
+        fields.uploads.push({
+          tag: el.tagName, type: 'dropzone', selector: getCSSSelector(el),
+          label: el.textContent.trim().slice(0, 80),
+          placeholder: '', value: '', visible: isVisible(el), category: 'upload'
+        });
+      }
+    });
+
+  // 3. Configs (selects, dropdowns, sliders, radio groups, tabs)
+  document.querySelectorAll('select')
+    .forEach(function(el) {
+      fields.configs.push({
+        tag: 'SELECT', type: 'select', selector: getCSSSelector(el),
+        label: getLabel(el), placeholder: '',
+        value: el.value, options: Array.from(el.options).map(function(o) { return o.text; }),
+        visible: isVisible(el), category: 'config'
+      });
+    });
+  document.querySelectorAll('[role="listbox"], [role="combobox"]')
+    .forEach(function(el) {
+      const opts = Array.from(el.querySelectorAll('[role="option"]')).map(function(o) { return o.textContent.trim(); });
+      fields.configs.push({
+        tag: el.tagName, type: 'dropdown', selector: getCSSSelector(el),
+        label: getLabel(el), placeholder: '', value: '',
+        options: opts, visible: isVisible(el), category: 'config'
+      });
+    });
+  document.querySelectorAll('input[type="range"], [role="slider"]')
+    .forEach(function(el) {
+      fields.configs.push({
+        tag: el.tagName, type: 'slider', selector: getCSSSelector(el),
+        label: getLabel(el), placeholder: '',
+        value: el.value || '', min: el.min, max: el.max,
+        visible: isVisible(el), category: 'config'
+      });
+    });
+  document.querySelectorAll('[role="tablist"]')
+    .forEach(function(el) {
+      const tabs = Array.from(el.querySelectorAll('[role="tab"]')).map(function(t) { return t.textContent.trim(); });
+      fields.configs.push({
+        tag: el.tagName, type: 'tabs', selector: getCSSSelector(el),
+        label: getLabel(el) || 'Abas', placeholder: '',
+        value: '', options: tabs, visible: isVisible(el), category: 'config'
+      });
+    });
+  document.querySelectorAll('[role="radiogroup"]')
+    .forEach(function(el) {
+      const radios = Array.from(el.querySelectorAll('[role="radio"], input[type="radio"]')).map(function(r) { return r.textContent || r.value || ''; });
+      fields.configs.push({
+        tag: el.tagName, type: 'radiogroup', selector: getCSSSelector(el),
+        label: getLabel(el), placeholder: '', value: '',
+        options: radios.filter(Boolean), visible: isVisible(el), category: 'config'
+      });
+    });
+
+  // 4. Action Buttons
+  document.querySelectorAll('button, [role="button"], a[download]')
+    .forEach(function(el) {
+      var text = (el.textContent || el.ariaLabel || '').trim();
+      var cat = classifyButton(text);
+      if (cat) {
+        fields.actions.push({
+          tag: el.tagName, type: cat, selector: getCSSSelector(el),
+          label: text.slice(0, 60), placeholder: '', value: '',
+          visible: isVisible(el), enabled: !el.disabled, category: 'action'
+        });
+      }
+    });
+
+  return JSON.stringify({
+    prompts: fields.prompts, uploads: fields.uploads,
+    configs: fields.configs, actions: fields.actions,
+    timestamp: Date.now(), url: window.location.href
+  });
+})()
+`;
+
+const SPY_HIGHLIGHT_CSS = `
+(function() {
+  if (document.getElementById('spy-highlight-styles')) return;
+  var style = document.createElement('style');
+  style.id = 'spy-highlight-styles';
+  style.textContent = [
+    'textarea, input[type="text"], [contenteditable="true"], [contenteditable=""] { outline: 2px dashed rgba(249,115,22,0.6) !important; outline-offset: 2px !important; }',
+    'input[type="file"] { outline: 2px dashed rgba(59,130,246,0.6) !important; outline-offset: 2px !important; }',
+    'select, [role="listbox"], [role="combobox"], input[type="range"], [role="slider"] { outline: 2px dashed rgba(139,92,246,0.6) !important; outline-offset: 2px !important; }',
+  ].join('\\n');
+  document.head.appendChild(style);
+})()
+`;
+
+const SPY_REMOVE_HIGHLIGHT = `
+(function() {
+  var el = document.getElementById('spy-highlight-styles');
+  if (el) el.remove();
+})()
+`;
+
+function SpyWindow() {
+  const [url, setUrl] = useState('https://digen.ai/explore');
+  const [inputValue, setInputValue] = useState('https://digen.ai/explore');
+  const [isLoading, setIsLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [numVideos, setNumVideos] = useState(3);
+  const [numImages, setNumImages] = useState(5);
+  const [contentType, setContentType] = useState<'avatar' | 'product' | 'video'>('avatar');
+  const [spyData, setSpyData] = useState<any>(null);
+  const webviewRef = useRef<any>(null);
+  const scanTimerRef = useRef<any>(null);
+
+  // Receber dados do MainWindow
+  useEffect(() => {
+    if (window.electronAPI) {
+      const unsubscribe = window.electronAPI.onSpyData((data) => {
+        setSpyData(data);
+      });
+      window.electronAPI.spyReady();
+      return unsubscribe;
+    }
+  }, []);
+
+  // Webview events
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const handleStartLoad = () => setIsLoading(true);
+    const handleStopLoad = () => {
+      setIsLoading(false);
+      // Auto-scan depois que a página terminar de carregar
+      setTimeout(() => runScan(), 2000);
+    };
+    const handleNavigate = (e: any) => {
+      setUrl(e.url);
+      setInputValue(e.url);
+      setScanResult(null);
+    };
+
+    webview.addEventListener('did-start-loading', handleStartLoad);
+    webview.addEventListener('did-stop-loading', handleStopLoad);
+    webview.addEventListener('did-navigate', handleNavigate);
+    webview.addEventListener('did-navigate-in-page', handleNavigate);
+
+    return () => {
+      webview.removeEventListener('did-start-loading', handleStartLoad);
+      webview.removeEventListener('did-stop-loading', handleStopLoad);
+      webview.removeEventListener('did-navigate', handleNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleNavigate);
+    };
+  }, []);
+
+  const runScan = async () => {
+    if (!webviewRef.current) return;
+    setIsScanning(true);
+    try {
+      const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
+      const result = JSON.parse(resultStr) as ScanResult;
+      setScanResult(result);
+
+      // Apply highlight if enabled
+      if (highlightEnabled) {
+        await webviewRef.current.executeJavaScript(SPY_HIGHLIGHT_CSS);
+      }
+    } catch (err) {
+      console.error('Spy scan error:', err);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const toggleHighlight = async () => {
+    const next = !highlightEnabled;
+    setHighlightEnabled(next);
+    if (webviewRef.current) {
+      try {
+        if (next) {
+          await webviewRef.current.executeJavaScript(SPY_HIGHLIGHT_CSS);
+        } else {
+          await webviewRef.current.executeJavaScript(SPY_REMOVE_HIGHLIGHT);
+        }
+      } catch {}
+    }
+  };
+
+  const goBack = () => { if (webviewRef.current?.canGoBack()) webviewRef.current.goBack(); };
+  const goForward = () => { if (webviewRef.current?.canGoForward()) webviewRef.current.goForward(); };
+  const reload = () => { if (webviewRef.current) webviewRef.current.reload(); };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    let target = inputValue.trim();
+    if (!target.startsWith('http://') && !target.startsWith('https://')) target = 'https://' + target;
+    setUrl(target);
+    setInputValue(target);
+  };
+
+  const totalDetected = scanResult
+    ? scanResult.prompts.length + scanResult.uploads.length + scanResult.configs.length + scanResult.actions.length
+    : 0;
+
+  const scenesCount = spyData?.generatedScript?.scenes?.length || 0;
+  const anglesCount = spyData?.generatedAngles?.length || 0;
+
+  const categoryIcon = (cat: string) => {
+    switch (cat) {
+      case 'prompt': return '📝';
+      case 'upload': return '📤';
+      case 'config': return '⚙️';
+      case 'action': return '🎬';
+      default: return '•';
+    }
+  };
+
+  const FieldCard = ({ field, color }: { field: DetectedField; color: string; key?: React.Key }) => (
+    <div className={`p-2.5 rounded-xl border transition-all hover:bg-white/5 ${field.visible ? `border-${color}-500/20 bg-${color}-500/[0.03]` : 'border-zinc-800 bg-zinc-900/30 opacity-50'}`}>
+      <div className="flex items-start gap-2">
+        <span className={`text-xs mt-0.5 ${field.visible ? `text-${color}-400` : 'text-zinc-600'}`}>
+          {field.visible ? '✅' : '👁️‍🗨️'}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-white/80 truncate">{field.label || field.type || field.tag}</span>
+            <span className="text-[9px] text-zinc-500 font-mono shrink-0">{field.tag.toLowerCase()}</span>
+          </div>
+          {field.placeholder && (
+            <p className="text-[10px] text-zinc-500 truncate mt-0.5 italic">"{field.placeholder}"</p>
+          )}
+          {field.options && field.options.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {field.options.slice(0, 6).map((opt, j) => (
+                <span key={j} className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-md">{opt}</span>
+              ))}
+              {field.options.length > 6 && <span className="text-[9px] text-zinc-500">+{field.options.length - 6}</span>}
+            </div>
+          )}
+          {field.value && (
+            <p className="text-[10px] text-zinc-400 truncate mt-0.5">Valor: {field.value.slice(0, 60)}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-screen w-screen dark bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none">
+      {/* PAINEL ESQUERDO: CONTROLE E DETECÇÃO */}
+      <div className="w-[380px] h-full border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex flex-col flex-shrink-0 overflow-hidden">
+
+        {/* Topo */}
+        <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-purple-500 flex items-center justify-center shadow-lg shadow-cyan-500/10 flex-shrink-0 text-lg">
+            🔍
+          </div>
+          <div>
+            <h1 className="font-bold text-sm bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Espião Auto-Detect</h1>
+            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Detecção Automática de Campos</p>
+          </div>
+        </div>
+
+        {/* Configuração do Usuário */}
+        <div className="p-4 border-b border-zinc-800 space-y-3">
+          <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold flex items-center gap-1.5">
+            <Settings2 className="w-3 h-3" /> Configuração
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 font-semibold">Qtd. Vídeos</label>
+              <input
+                type="number" min={1} max={20} value={numVideos}
+                onChange={(e) => setNumVideos(Number(e.target.value) || 1)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 font-semibold">Qtd. Imagens</label>
+              <input
+                type="number" min={1} max={50} value={numImages}
+                onChange={(e) => setNumImages(Number(e.target.value) || 1)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-zinc-500 font-semibold">Tipo de Conteúdo</label>
+            <div className="flex bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 gap-0.5">
+              {([
+                { key: 'avatar' as const, label: 'Avatar Falante' },
+                { key: 'product' as const, label: 'Produto' },
+                { key: 'video' as const, label: 'Vídeo' },
+              ]).map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setContentType(t.key)}
+                  className={`flex-1 py-1.5 text-[10px] rounded-md font-bold uppercase tracking-wider transition-all ${
+                    contentType === t.key
+                      ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Campos Detectados */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 space-y-4">
+            {/* Status Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
+                Campos Detectados
+              </h3>
+              <div className="flex items-center gap-2">
+                {scanResult && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    totalDetected > 0
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {totalDetected} encontrados
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {!scanResult && !isScanning && (
+              <div className="text-center py-8 text-zinc-600 text-xs">
+                <p className="mb-2">Aguardando scan...</p>
+                <p className="text-[10px]">Navegue para um site e o scan será automático</p>
+              </div>
+            )}
+
+            {isScanning && (
+              <div className="flex items-center justify-center gap-2 py-6 text-cyan-400/60 text-xs">
+                <Loader2 className="w-4 h-4 animate-spin" /> Escaneando DOM...
+              </div>
+            )}
+
+            {scanResult && (
+              <>
+                {/* Prompts */}
+                {scanResult.prompts.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1.5">
+                      📝 Prompts ({scanResult.prompts.length})
+                    </h4>
+                    {scanResult.prompts.map((f, i) => <FieldCard key={`p${i}`} field={f} color="orange" />)}
+                  </div>
+                )}
+
+                {/* Uploads */}
+                {scanResult.uploads.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+                      📤 Uploads ({scanResult.uploads.length})
+                    </h4>
+                    {scanResult.uploads.map((f, i) => <FieldCard key={`u${i}`} field={f} color="blue" />)}
+                  </div>
+                )}
+
+                {/* Configs */}
+                {scanResult.configs.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5">
+                      ⚙️ Configurações ({scanResult.configs.length})
+                    </h4>
+                    {scanResult.configs.map((f, i) => <FieldCard key={`c${i}`} field={f} color="purple" />)}
+                  </div>
+                )}
+
+                {/* Actions */}
+                {scanResult.actions.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                      🎬 Ações ({scanResult.actions.length})
+                    </h4>
+                    {scanResult.actions.map((f, i) => <FieldCard key={`a${i}`} field={f} color="emerald" />)}
+                  </div>
+                )}
+
+                {totalDetected === 0 && (
+                  <div className="text-center py-6 text-zinc-600 text-xs">
+                    <p>Nenhum campo interativo detectado.</p>
+                    <p className="text-[10px] mt-1">A página pode estar carregando ou usar elementos não-padrão.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Botões de Ação */}
+        <div className="p-3 border-t border-zinc-800 flex gap-2">
+          <button
+            onClick={runScan}
+            disabled={isScanning}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-cyan-400 text-xs font-bold hover:bg-cyan-500/20 transition-all disabled:opacity-50"
+          >
+            {isScanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
+            Re-escanear
+          </button>
+          <button
+            onClick={toggleHighlight}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+              highlightEnabled
+                ? 'bg-purple-500/10 border-purple-500/30 text-purple-400'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+            }`}
+          >
+            🎨 {highlightEnabled ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        {/* Dados Disponíveis do Gerador */}
+        {spyData && (scenesCount > 0 || anglesCount > 0) && (
+          <div className="p-3 border-t border-zinc-800 bg-zinc-950/50">
+            <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mb-2 flex items-center gap-1.5">
+              <FileJson className="w-3 h-3" /> Dados do Gerador
+            </h4>
+            <div className="flex gap-2">
+              {scenesCount > 0 && (
+                <span className="text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-full font-bold">
+                  {scenesCount} cenas
+                </span>
+              )}
+              {anglesCount > 0 && (
+                <span className="text-[10px] bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full font-bold">
+                  {anglesCount} ângulos
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* PAINEL DIREITO: WEBVIEW */}
+      <div className="flex-1 h-full flex flex-col overflow-hidden bg-black">
+        {/* Barra de Navegação */}
+        <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center gap-2.5 flex-shrink-0">
+          <div className="flex items-center gap-1">
+            <button onClick={goBack} className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors" title="Voltar">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button onClick={goForward} className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors" title="Avançar">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button onClick={reload} className={`p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors ${isLoading ? 'animate-spin text-cyan-400' : ''}`} title="Recarregar">
+              <RefreshCcw className="w-4 h-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleUrlSubmit} className="flex-1">
+            <div className="relative flex items-center">
+              <Globe className="w-4 h-4 text-zinc-500 absolute left-3" />
+              <input
+                type="text" value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500/40 rounded-xl py-1.5 pl-9 pr-4 text-xs text-zinc-300 focus:outline-none transition-all placeholder-zinc-700"
+                placeholder="Digite o endereço URL..."
+              />
+            </div>
+          </form>
+
+          {/* Quick Links */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setUrl('https://digen.ai/explore'); setInputValue('https://digen.ai/explore'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                url.includes('digen.ai')
+                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+              }`}
+            >
+              Digen
+            </button>
+            <button
+              onClick={() => { setUrl('https://labs.google/fx/pt/tools/flow'); setInputValue('https://labs.google/fx/pt/tools/flow'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                url.includes('labs.google')
+                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+              }`}
+            >
+              Google Flow
+            </button>
+          </div>
+        </div>
+
+        {/* Webview */}
+        <div className="flex-1 relative bg-black">
+          {/* @ts-ignore */}
+          <webview
+            ref={webviewRef}
+            src={url}
+            partition="persist:spy-session"
             className="w-full h-full"
             style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
           />

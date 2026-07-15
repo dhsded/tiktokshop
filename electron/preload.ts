@@ -12,8 +12,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('load-prompts', subscription);
     };
   },
-  // Espião de Ações — Dev Mode
-  openSpyWindow: () => ipcRenderer.send('open-spy-window'),
-  saveMacro: (data: any) => ipcRenderer.invoke('spy-save-macro', data),
-  listMacros: () => ipcRenderer.invoke('spy-list-macros'),
+  // Espião de Ações — Auto-Detect
+  openSpyWindow: (data?: any) => ipcRenderer.send('open-spy-window', data),
+  spyReady: () => ipcRenderer.send('spy-ready'),
+  onSpyData: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('spy-load-data', subscription);
+    return () => {
+      ipcRenderer.removeListener('spy-load-data', subscription);
+    };
+  },
 });

@@ -1,11 +1,11 @@
 import { app, BrowserWindow, shell, ipcMain, globalShortcut } from 'electron';
 import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
 let injectorWindow: BrowserWindow | null = null;
 let spyWindow: BrowserWindow | null = null;
 let pendingPromptsData: any = null;
+let pendingSpyData: any = null;
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -96,7 +96,6 @@ ipcMain.on('injector-ready', () => {
 // Espião de Ações — Janela de Desenvolvimento
 // ============================================================
 function createSpyWindow(): void {
-  if (!is.dev) return; // Bloqueado em produção
 
   if (spyWindow) {
     spyWindow.focus();
@@ -108,7 +107,7 @@ function createSpyWindow(): void {
     height: 900,
     minWidth: 1200,
     minHeight: 700,
-    title: '\uD83D\uDD0D Espião de Ações — Dev Mode',
+    title: '\uD83D\uDD0D Espião Auto-Detect',
     backgroundColor: '#0a0a0b',
     autoHideMenuBar: true,
     webPreferences: {
@@ -133,41 +132,22 @@ function createSpyWindow(): void {
   }
 }
 
-ipcMain.on('open-spy-window', () => {
+ipcMain.on('open-spy-window', (_event, data?: any) => {
+  if (data) pendingSpyData = data;
   createSpyWindow();
 });
 
-// Salvar macro gravado em disco
-ipcMain.handle('spy-save-macro', async (_event, macroData: any) => {
-  try {
-    const macrosDir = join(app.getPath('userData'), 'dev-macros');
-    if (!existsSync(macrosDir)) mkdirSync(macrosDir, { recursive: true });
-    const filename = `${macroData.macro_id || 'macro'}_${Date.now()}.json`;
-    const filepath = join(macrosDir, filename);
-    writeFileSync(filepath, JSON.stringify(macroData, null, 2), 'utf-8');
-    return { success: true, path: filepath };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+// Espião: enviar dados gerados (prompts/cenas/ângulos) para a janela do espião
+ipcMain.on('spy-send-data', (_event, data: any) => {
+  pendingSpyData = data;
+  if (spyWindow) {
+    spyWindow.webContents.send('spy-load-data', pendingSpyData);
   }
 });
 
-// Listar macros salvos
-ipcMain.handle('spy-list-macros', async () => {
-  try {
-    const macrosDir = join(app.getPath('userData'), 'dev-macros');
-    if (!existsSync(macrosDir)) return [];
-    return readdirSync(macrosDir)
-      .filter(f => f.endsWith('.json'))
-      .map(f => {
-        try {
-          return JSON.parse(readFileSync(join(macrosDir, f), 'utf-8'));
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
+ipcMain.on('spy-ready', () => {
+  if (spyWindow && pendingSpyData) {
+    spyWindow.webContents.send('spy-load-data', pendingSpyData);
   }
 });
 
