@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,10 +33,57 @@ import {
   Globe,
   Sun,
   Moon,
-  AlertTriangle
+  AlertTriangle,
+  History
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
+
+// ============================================================
+// Versão e Histórico
+// ============================================================
+const APP_VERSION = '1.1.0';
+
+interface VersionEntry {
+  version: string;
+  date: string;
+  title: string;
+  changes: string[];
+}
+
+const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.1.0',
+    date: '15/07/2026',
+    title: 'Espião de Ações',
+    changes: [
+      'Novo: Ferramenta Espião de Ações para desenvolvimento (Ctrl+Shift+S)',
+      'Novo: Gravação de ações do usuário em sites (clicks, inputs, uploads)',
+      'Novo: Inspeção visual de elementos DOM com hover highlight',
+      'Novo: Sistema de classificação de elementos (Prompt, Upload, Gerar, Download)',
+      'Novo: Exportação de macros em JSON para automação futura',
+      'Novo: Console de mensagens do site em tempo real',
+      'Novo: Quick links para Digen.ai e Google Labs Flow',
+    ],
+  },
+  {
+    version: '1.0.0',
+    date: '14/07/2026',
+    title: 'Lançamento Inicial',
+    changes: [
+      'Gerador de roteiros narrativos com IA (Gemini)',
+      'Modo Coleção: múltiplas imagens com sequenciamento automático',
+      'Modo Produto: ângulos únicos com geração por produto',
+      'Prompts de imagem, VEO e Digen para cada cena',
+      'Narração automática por cena',
+      'Injetor de Prompts com webview integrado',
+      'Suporte a múltiplas chaves de API com rotação',
+      'Exportação em PDF e JSON',
+      'Tema claro/escuro',
+      'Crop de imagens integrado',
+    ],
+  },
+];
 
 declare global {
   interface Window {
@@ -134,6 +181,7 @@ function MainApp() {
   };
 
   const [activeTab, setActiveTab] = useState<TabMode>('collection');
+  const [showChangelog, setShowChangelog] = useState(false);
   
   // Tab 1: Collection
   const [images, setImages] = useState<SceneImage[]>([]);
@@ -1135,7 +1183,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </motion.p>
             </div>
 
-            <div className="flex flex-col items-start md:items-end gap-2">
+            <div className="flex flex-col items-start md:items-end gap-3">
+              <button
+                onClick={() => setShowChangelog(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 transition-all cursor-pointer group"
+              >
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                <span className="text-xs font-bold text-orange-400 tracking-wide">v{APP_VERSION}</span>
+                <History className="w-3 h-3 text-orange-400/60 group-hover:text-orange-400 transition-colors" />
+              </button>
               <div className="flex items-center gap-2">
                 <button
                   onClick={toggleTheme}
@@ -2102,6 +2158,111 @@ Angulos a variar (escolha os mais relevantes para o produto):
               >
                 Entendi, vou corrigir
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Histórico de Versões */}
+      <AnimatePresence>
+        {showChangelog && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowChangelog(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative z-10 w-full max-w-2xl max-h-[80vh] bg-[#111113] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden flex flex-col"
+            >
+              {/* Header do modal */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                    <History className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Histórico de Versões</h2>
+                    <p className="text-xs text-white/40">Gerador TikTok Shop</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowChangelog(false)}
+                  className="p-2 rounded-xl hover:bg-white/5 text-white/40 hover:text-white transition-colors text-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Lista de versões */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+                {VERSION_HISTORY.map((entry, idx) => (
+                  <div key={entry.version} className="relative">
+                    {/* Linha vertical conectora */}
+                    {idx < VERSION_HISTORY.length - 1 && (
+                      <div className="absolute left-[11px] top-[32px] bottom-[-24px] w-px bg-white/10" />
+                    )}
+                    <div className="flex items-start gap-4">
+                      {/* Dot */}
+                      <div className={`mt-1.5 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        idx === 0
+                          ? 'border-orange-500 bg-orange-500/20'
+                          : 'border-white/20 bg-white/5'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-orange-400' : 'bg-white/30'}`} />
+                      </div>
+                      {/* Content */}
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full border ${
+                            idx === 0
+                              ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                              : 'bg-white/5 border-white/10 text-white/60'
+                          }`}>
+                            v{entry.version}
+                          </span>
+                          <span className="text-xs text-white/30">{entry.date}</span>
+                          {idx === 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 uppercase tracking-wider">
+                              Atual
+                            </span>
+                          )}
+                        </div>
+                        <h3 className={`text-base font-semibold ${idx === 0 ? 'text-white' : 'text-white/60'}`}>
+                          {entry.title}
+                        </h3>
+                        <ul className="space-y-1.5">
+                          {entry.changes.map((change, ci) => (
+                            <li key={ci} className="flex items-start gap-2 text-sm text-white/50">
+                              <span className={`mt-1 shrink-0 ${change.startsWith('Novo:') ? 'text-emerald-400' : change.startsWith('Fix:') ? 'text-amber-400' : 'text-white/30'}`}>
+                                {change.startsWith('Novo:') ? '✦' : change.startsWith('Fix:') ? '🔧' : '•'}
+                              </span>
+                              <span>{change}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3 border-t border-white/5 flex items-center justify-between">
+                <span className="text-xs text-white/20">{VERSION_HISTORY.length} versões</span>
+                <button
+                  onClick={() => setShowChangelog(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
