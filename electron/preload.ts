@@ -26,5 +26,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProjectAssets: (payload: any) => ipcRenderer.invoke('save-project-assets', payload),
   loadSiteSchema: (siteName: string) => ipcRenderer.invoke('load-site-schema', siteName),
   saveSiteSchema: (payload: any) => ipcRenderer.invoke('save-site-schema', payload),
-  setCurrentDownloadInfo: (info: any) => ipcRenderer.send('set-current-download-info', info),
+  setCurrentDownloadInfo: (info: any) => ipcRenderer.invoke('set-current-download-info', info),
 });

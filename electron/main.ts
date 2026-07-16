@@ -246,8 +246,9 @@ ipcMain.handle('save-site-schema', async (_event, payload: any) => {
   }
 });
 
-ipcMain.on('set-current-download-info', (_event, info: any) => {
+ipcMain.handle('set-current-download-info', (_event, info: any) => {
   currentDownloadInfo = info;
+  return true;
 });
 
 // ============================================================

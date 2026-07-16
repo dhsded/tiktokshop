@@ -245,4 +245,13 @@
   background-color: var(--tw-zinc-800) !important;
 }
 
+/* Correção de cores do select options no modo escuro */
+select option,
+select option:hover,
+select option:focus,
+.dark select option {
+  background-color: #121214 !important;
+  color: #ffffff !important;
+}
+
 

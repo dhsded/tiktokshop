@@ -37,7 +37,9 @@ import {
   History,
   Save,
   GripHorizontal,
-  EyeOff
+  EyeOff,
+  Pause,
+  Square
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -113,7 +115,7 @@ declare global {
       saveProjectAssets: (payload: any) => Promise<{ success: boolean; path?: string; error?: string }>;
       loadSiteSchema: (siteName: string) => Promise<any>;
       saveSiteSchema: (payload: any) => Promise<{ success: boolean; error?: string }>;
-      setCurrentDownloadInfo: (info: any) => void;
+      setCurrentDownloadInfo: (info: any) => Promise<boolean>;
     };
   }
 }
@@ -2421,7 +2423,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 space-y-4">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                              Opções da Plataforma (Mapeamento Automático)
+                              Configurações Gerais de Geração
                             </span>
                             <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-bold tracking-wider">
                               Conectado
@@ -3366,6 +3368,21 @@ function PromptInjector() {
   const [queueDelayRemaining, setQueueDelayRemaining] = useState(0);
   const [downloadDelayRemaining, setDownloadDelayRemaining] = useState(0);
   const [isAutomating, setIsAutomating] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const abortControllerRef = useRef<boolean>(false);
+  const pauseControllerRef = useRef<boolean>(false);
+
+  const togglePauseAutomation = () => {
+    const nextPause = !isPaused;
+    setIsPaused(nextPause);
+    pauseControllerRef.current = nextPause;
+  };
+
+  const cancelAutomation = () => {
+    abortControllerRef.current = true;
+    setIsPaused(false);
+    pauseControllerRef.current = false;
+  };
   const [injectionProgressText, setInjectionProgressText] = useState('Pendente');
 
   useEffect(() => {
@@ -3754,6 +3771,9 @@ function PromptInjector() {
       return;
     }
 
+    abortControllerRef.current = false;
+    pauseControllerRef.current = false;
+    setIsPaused(false);
     setIsAutomating(true);
     setAutoConfigStatus("Aplicando...");
     setActiveNode(3); // Auto-Config
@@ -3836,6 +3856,14 @@ function PromptInjector() {
       const generationsCount = Number(injConfigs['generationsPerPrompt']) || 1;
 
       for (let idx = 0; idx < itemsToInject.length; idx++) {
+        // Verificar cancelamento/pausa no início da cena
+        if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+        while (pauseControllerRef.current) {
+          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+          setDownloadStatus("Pausado...");
+          await new Promise(r => setTimeout(r, 500));
+        }
+
         setSelectedItemIndex(idx);
         setActiveNode(4); // Injeção
 
@@ -3847,11 +3875,19 @@ function PromptInjector() {
         const smartSelector = getSmartSelector(injTarget === 'flow' ? 'veo' : 'digen');
 
         for (let loop = 1; loop <= generationsCount; loop++) {
+          // Verificar cancelamento/pausa no início da variação
+          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+          while (pauseControllerRef.current) {
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            setDownloadStatus("Pausado...");
+            await new Promise(r => setTimeout(r, 500));
+          }
+
           setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Gerando ${loop}/${generationsCount})`);
           setDownloadStatus("Aguardando Geração...");
 
-          // Metadados de interceptação de download
-          window.electronAPI.setCurrentDownloadInfo({
+          // Metadados de interceptação de download com await síncrono no Main process
+          await window.electronAPI.setCurrentDownloadInfo({
             projectIndex: prompts?.projectIndex || 1,
             sceneIndex: idx + 1,
             generationLoop: loop
@@ -3860,6 +3896,14 @@ function PromptInjector() {
           // Injeta prompt
           await injectText(promptText, smartSelector);
           await new Promise(r => setTimeout(r, 1500));
+
+          // Verificar cancelamento/pausa antes de clicar em Criar
+          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+          while (pauseControllerRef.current) {
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            setDownloadStatus("Pausado...");
+            await new Promise(r => setTimeout(r, 500));
+          }
 
           // Clica em Criar
           const clickGenerateScript = `
@@ -3882,6 +3926,14 @@ function PromptInjector() {
           setDownloadStatus("Renderizando...");
           let isDone = false;
           for (let check = 0; check < 60; check++) { // Timeout de 3 minutos
+            // Verificar cancelamento/pausa durante render
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            while (pauseControllerRef.current) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              setDownloadStatus("Pausado durante render...");
+              await new Promise(r => setTimeout(r, 500));
+            }
+
             await new Promise(r => setTimeout(r, 3000));
             try {
               const checkScript = `
@@ -3904,6 +3956,14 @@ function PromptInjector() {
             } catch (err) {
               // Silencia erros
             }
+          }
+
+          // Verificar cancelamento/pausa antes de baixar
+          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+          while (pauseControllerRef.current) {
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            setDownloadStatus("Pausado...");
+            await new Promise(r => setTimeout(r, 500));
           }
 
           // Clica em Baixar
@@ -3935,6 +3995,13 @@ function PromptInjector() {
           setDownloadStatus(`Salvo (${loop}/${generationsCount})`);
           setActiveNode(5); // Download
           for (let s = 10; s > 0; s--) {
+            // Verificar cancelamento/pausa no cooldown de download
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            while (pauseControllerRef.current) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              setDownloadStatus("Pausado...");
+              await new Promise(r => setTimeout(r, 500));
+            }
             setDownloadDelayRemaining(s);
             await new Promise(r => setTimeout(r, 1000));
           }
@@ -3947,13 +4014,20 @@ function PromptInjector() {
       setDownloadStatus("Lote Concluído!");
       setActiveNode(5);
       for (let s = 20; s > 0; s--) {
+        // Verificar cancelamento/pausa no cooldown de fila
+        if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+        while (pauseControllerRef.current) {
+          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+          setDownloadStatus("Pausado...");
+          await new Promise(r => setTimeout(r, 500));
+        }
         setQueueDelayRemaining(s);
         await new Promise(r => setTimeout(r, 1000));
       }
       setQueueDelayRemaining(0);
 
       alert("Automação em Lote concluída com sucesso! Todos os vídeos foram salvos na pasta.");
-      window.electronAPI.setCurrentDownloadInfo(null);
+      await window.electronAPI.setCurrentDownloadInfo(null);
     } catch (err: any) {
       console.error('Batch automation error:', err);
       alert(`Houve um erro na automação em lote: ${err.message}`);
@@ -3993,30 +4067,51 @@ function PromptInjector() {
               <p className="text-xs text-white font-bold truncate mt-0.5">Destino: {injTarget === 'digen' ? 'DIGEN.ai' : 'Google Flow'}</p>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={runAutoConfigure}
-                disabled={isAutomating}
-                className="py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
-                title="Ajustar automaticamente vozes, aspect ratio, etc. mapeados na página"
-              >
-                <Settings2 className="w-3.5 h-3.5" /> Configurar
-              </button>
-              <button
-                onClick={runBatchAutomation}
-                disabled={isAutomating}
-                className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-purple-600/10"
-                title="Executar automação completa de injeção, geração e download em sequência"
-              >
-                {isAutomating ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Rodando
-                  </>
-                ) : (
-                  <>
+              {isAutomating ? (
+                <>
+                  <button
+                    onClick={togglePauseAutomation}
+                    className="py-1.5 px-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-amber-600/10"
+                    title={isPaused ? "Retomar a automação em lote" : "Pausar a automação temporariamente"}
+                  >
+                    {isPaused ? (
+                      <>
+                        <Play className="w-3.5 h-3.5" /> Retomar
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-3.5 h-3.5" /> Pausar
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={cancelAutomation}
+                    className="py-1.5 px-3 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-red-600/10"
+                    title="Cancelar a automação em lote"
+                  >
+                    <Square className="w-3.5 h-3.5" /> Parar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={runAutoConfigure}
+                    disabled={isAutomating}
+                    className="py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                    title="Ajustar automaticamente vozes, aspect ratio, etc. mapeados na página"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" /> Configurar
+                  </button>
+                  <button
+                    onClick={runBatchAutomation}
+                    disabled={isAutomating}
+                    className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-purple-600/10"
+                    title="Executar automação completa de injeção, geração e download em sequência"
+                  >
                     <Play className="w-3.5 h-3.5" /> Executar Lote
-                  </>
-                )}
-              </button>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
