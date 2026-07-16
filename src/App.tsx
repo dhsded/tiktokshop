@@ -199,6 +199,7 @@ interface N8NFlowchartProps {
   downloadStatus: string;
   queueDelayRemaining: number;
   downloadDelayRemaining: number;
+  themeMode: 'dark' | 'light';
 }
 
 function N8NFlowchart({
@@ -210,12 +211,15 @@ function N8NFlowchart({
   injectionProgressText,
   downloadStatus,
   queueDelayRemaining,
-  downloadDelayRemaining
+  downloadDelayRemaining,
+  themeMode
 }: N8NFlowchartProps) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
+
+  const isLight = themeMode === 'light';
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!(e.target as HTMLElement).closest('.drag-handle')) return;
@@ -301,11 +305,11 @@ function N8NFlowchart({
     return (
       <div 
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-6 right-6 z-50 py-2.5 px-4 bg-zinc-900/90 hover:bg-zinc-800 text-white rounded-2xl border border-zinc-700/80 shadow-lg shadow-black/40 backdrop-blur-md cursor-pointer transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider select-none animate-bounce"
+        className={`fixed bottom-6 right-6 z-50 py-2.5 px-4 rounded-2xl border shadow-lg cursor-pointer transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider select-none animate-bounce ${isLight ? 'bg-white/90 hover:bg-zinc-100 text-zinc-800 border-zinc-300/80 shadow-zinc-200/50' : 'bg-zinc-900/90 hover:bg-zinc-800 text-white border-zinc-700/80 shadow-black/40'}`}
       >
         <span className="flex h-2 w-2 relative">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
         </span>
         📊 Exibir Fluxo
       </div>
@@ -320,7 +324,7 @@ function N8NFlowchart({
       style={{
         transform: `translate(${position.x}px, ${position.y}px)`
       }}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[780px] bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-2xl shadow-2xl p-4 text-zinc-100 touch-none select-none transition-shadow duration-200 active:shadow-purple-500/10"
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[780px] backdrop-blur-md rounded-2xl shadow-2xl p-4 touch-none select-none transition-shadow duration-200 ${isLight ? 'bg-white/95 border border-zinc-300 text-zinc-800 shadow-zinc-300/30' : 'bg-zinc-900/95 border border-zinc-700/80 text-zinc-100 shadow-black/50'}`}
     >
       <style>{`
         @keyframes flowDash {
@@ -332,14 +336,14 @@ function N8NFlowchart({
       `}</style>
 
       {/* Barra de título / Drag handle */}
-      <div className="drag-handle flex items-center justify-between pb-3.5 mb-3 border-b border-zinc-800/80 cursor-move">
+      <div className={`drag-handle flex items-center justify-between pb-3.5 mb-3 border-b cursor-move ${isLight ? 'border-zinc-200' : 'border-zinc-800/80'}`}>
         <div className="flex items-center gap-2">
-          <GripHorizontal className="w-4 h-4 text-zinc-400" />
-          <span className="text-[10px] text-zinc-300 uppercase tracking-widest font-bold font-display">Fluxo de Automação Ativo</span>
+          <GripHorizontal className={`w-4 h-4 ${isLight ? 'text-zinc-500' : 'text-zinc-400'}`} />
+          <span className={`text-[10px] uppercase tracking-widest font-bold font-display ${isLight ? 'text-zinc-700' : 'text-zinc-300'}`}>Fluxo de Automação Ativo</span>
         </div>
         <button 
           onClick={() => setIsMinimized(true)}
-          className="p-1 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors"
+          className={`p-1 rounded-lg transition-colors ${isLight ? 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
           title="Minimizar Fluxo"
         >
           <EyeOff className="w-3.5 h-3.5" />
@@ -354,14 +358,14 @@ function N8NFlowchart({
           {/* Linha inativa brilhante */}
           <line
             x1="45" y1="40" x2="715" y2="40"
-            stroke="#3f3f46"
+            stroke={isLight ? "#d4d4d8" : "#3f3f46"}
             strokeWidth="3"
             strokeLinecap="round"
           />
           {activeNode > 0 && (
             <path
               d={`M 45,40 L ${45 + activeNode * 134},40`}
-              stroke="#a855f7"
+              stroke={isLight ? "#8b5cf6" : "#a855f7"}
               strokeWidth="4"
               strokeLinecap="round"
               strokeDasharray="6,4"
@@ -375,9 +379,20 @@ function N8NFlowchart({
           const isCompleted = index < activeNode;
           const isActive = index === activeNode;
           
-          let circleBg = 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500';
-          if (isCompleted) circleBg = 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
-          if (isActive) circleBg = 'bg-purple-600 border-purple-300 text-white shadow-[0_0_15px_rgba(168,85,247,0.6)] animate-pulse';
+          let circleBg = isLight 
+            ? 'bg-zinc-100 border-zinc-300 text-zinc-600 hover:border-zinc-400' 
+            : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500';
+            
+          if (isCompleted) {
+            circleBg = isLight 
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.05)]' 
+              : 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
+          }
+          if (isActive) {
+            circleBg = isLight 
+              ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(139,92,246,0.5)] animate-pulse' 
+              : 'bg-purple-600 border-purple-300 text-white shadow-[0_0_15px_rgba(168,85,247,0.6)] animate-pulse';
+          }
 
           return (
             <div key={node.id} className="flex flex-col items-center space-y-2 w-24 relative">
@@ -386,9 +401,13 @@ function N8NFlowchart({
               </div>
               
               <div className="text-center space-y-0.5">
-                <p className={`text-[10px] font-bold ${isActive ? 'text-purple-300 font-extrabold' : 'text-zinc-100'}`}>{node.title}</p>
+                <p className={`text-[10px] font-bold ${isActive ? (isLight ? 'text-purple-600 font-extrabold' : 'text-purple-300 font-extrabold') : (isLight ? 'text-zinc-800' : 'text-zinc-100')}`}>{node.title}</p>
                 <p className={`text-[8px] font-bold tracking-wide truncate max-w-[90px] ${
-                  isActive ? 'text-purple-400' : (isCompleted ? 'text-emerald-400 font-extrabold' : 'text-zinc-400')
+                  isActive 
+                    ? (isLight ? 'text-purple-500' : 'text-purple-400') 
+                    : (isCompleted 
+                        ? (isLight ? 'text-emerald-600 font-extrabold' : 'text-emerald-400 font-extrabold') 
+                        : (isLight ? 'text-zinc-500' : 'text-zinc-400'))
                 }`}>
                   {node.getStatus()}
                 </p>
@@ -399,7 +418,7 @@ function N8NFlowchart({
       </div>
 
       {(queueDelayRemaining > 0 || downloadDelayRemaining > 0) && (
-        <div className="mt-2.5 p-2 bg-amber-500/20 border border-amber-500/40 rounded-xl flex items-center justify-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider animate-pulse">
+        <div className={`mt-2.5 p-2 border rounded-xl flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider animate-pulse ${isLight ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-amber-500/20 border-amber-500/40 text-amber-400'}`}>
           ⏳ {queueDelayRemaining > 0 
             ? `Fila em Cooldown: Aguardando ${queueDelayRemaining}s para o próximo produto...` 
             : `Download em Cooldown: Aguardando ${downloadDelayRemaining}s antes do próximo arquivo...`}
@@ -3310,6 +3329,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
         downloadStatus="Pendente"
         queueDelayRemaining={0}
         downloadDelayRemaining={0}
+        themeMode={themeMode}
       />
     </div>
   );
@@ -4377,6 +4397,7 @@ function PromptInjector() {
         downloadStatus={downloadStatus}
         queueDelayRemaining={queueDelayRemaining}
         downloadDelayRemaining={downloadDelayRemaining}
+        themeMode={themeMode}
       />
     </div>
   );
