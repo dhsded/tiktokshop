@@ -2962,21 +2962,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
         </div>
       </main>
 
-      <footer className="mt-20 border-t border-white/5 py-12">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3 opacity-20 hover:opacity-100 transition-opacity">
-            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-black" />
-            </div>
-            <span className="font-bold tracking-tighter font-display uppercase tracking-widest text-xs">Fashion Creator Studio</span>
-          </div>
-          <p className="text-[10px] text-white/20 uppercase tracking-[0.2em]">Desenvolvido para Marketing de Varejo Moderno</p>
-          <div className="flex gap-4">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] text-white/40 font-mono italic">GEMINI-2.5-FLASH-ACTIVE</span>
-          </div>
-        </div>
-      </footer>
 
       {/* Crop Modal */}
       <AnimatePresence>
