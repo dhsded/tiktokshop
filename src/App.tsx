@@ -2079,7 +2079,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           <button
                             type="button"
                             onClick={() => setInjectionTarget('none')}
-                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-zinc-800 text-white shadow-lg border border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
+                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-lg border border-white/10 dark:border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
                           >
                             Apenas Criar
                           </button>
