@@ -994,6 +994,22 @@ A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMI
 - Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
 - No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
 
+      const configList = Object.entries(targetConfigs)
+        .filter(([key]) => key.startsWith(`${injectionTarget}-`))
+        .map(([key, val]) => {
+          let label = key.replace(`${injectionTarget}-`, '');
+          if (label === 'Variacoes') label = 'Quantidade de Variações (em paralelo)';
+          return `${label}: ${val}`;
+        })
+        .join('\n');
+
+      const platformInstruction = injectionTarget !== 'none'
+        ? `PLATAFORMA DE DESTINO DA AUTOMAÇÃO: ${injectionTarget.toUpperCase()}
+CONFIGURAÇÕES SELECIONADAS:
+${configList}
+- Certifique-se de que os prompts gerados em 'veoPrompt' e 'digenPrompt' reflitam e respeitem essas escolhas (por exemplo, se o formato é vertical 9:16, descreva enquadramentos verticais móveis; se o narrador selecionado é Jenny, monte o tom de voz e estilo adequados).`
+        : '';
+
       parts.push({
         text: `Gere um roteiro narrativo e prompts de animação focados na apresentação de um produto.
 Imagens fornecidas: 
@@ -1003,6 +1019,8 @@ Imagens fornecidas:
 Duração de cada cena: ${duration}
 Número de cenas a gerar: ${numScenes}
 Observações específicas: ${observations || "INSTRUÇÃO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefício ou característica visível do produto para usar no roteiro e narração."}
+
+${platformInstruction}
 
 ${styleInstruction}
 
@@ -1126,6 +1144,22 @@ A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMI
 - Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
 - No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
 
+      const configList = Object.entries(targetConfigs)
+        .filter(([key]) => key.startsWith(`${injectionTarget}-`))
+        .map(([key, val]) => {
+          let label = key.replace(`${injectionTarget}-`, '');
+          if (label === 'Variacoes') label = 'Quantidade de Variações (em paralelo)';
+          return `${label}: ${val}`;
+        })
+        .join('\n');
+
+      const platformInstruction = injectionTarget !== 'none'
+        ? `PLATAFORMA DE DESTINO DA AUTOMAÇÃO: ${injectionTarget.toUpperCase()}
+CONFIGURAÇÕES SELECIONADAS:
+${configList}
+- Certifique-se de que os prompts gerados em 'veoPrompt' e 'digenPrompt' reflitam e respeitem essas escolhas (por exemplo, se o formato é vertical 9:16, descreva enquadramentos verticais móveis; se o narrador selecionado é Jenny, monte o tom de voz e estilo adequados).`
+        : '';
+
       const imageParts = await Promise.all(images.map(async (img) => {
         const base64 = await getImagePayload(img);
         return {
@@ -1148,6 +1182,8 @@ A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMI
 Tema: ${finalTheme}
 Duração de cada cena: ${duration}
 Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
+
+${platformInstruction}
 
 ${voiceInstruction}
 
@@ -1295,7 +1331,11 @@ Retorne em estrutura JSON:
 
       const configList = Object.entries(targetConfigs)
         .filter(([key]) => key.startsWith(`${injectionTarget}-`))
-        .map(([key, val]) => `${key.replace(`${injectionTarget}-`, '')}: ${val}`)
+        .map(([key, val]) => {
+          let label = key.replace(`${injectionTarget}-`, '');
+          if (label === 'Variacoes') label = 'Quantidade de Variações (em paralelo)';
+          return `${label}: ${val}`;
+        })
         .join('\n');
 
       const platformInstruction = injectionTarget !== 'none'
@@ -2190,19 +2230,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 </select>
                               </div>
 
-                              {/* 4. Escala / Upscale */}
+                              {/* 4. Quantidade de Variações */}
                               <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Upscale / Resolução</label>
+                                <label className="text-[11px] text-white/60 font-medium block">Quantidade de Variações</label>
                                 <select
-                                  value={targetConfigs['flow-Upscale'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Upscale': e.target.value }))}
+                                  value={targetConfigs['flow-Variacoes'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Variacoes': e.target.value }))}
                                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                                 >
                                   <option value="">Selecione...</option>
-                                  <option value="1x">1x</option>
-                                  <option value="x2">x2</option>
-                                  <option value="x3">x3</option>
-                                  <option value="x4">x4</option>
+                                  <option value="1x">1x (Gerar 1)</option>
+                                  <option value="x2">x2 (Gerar 2)</option>
+                                  <option value="x3">x3 (Gerar 3)</option>
+                                  <option value="x4">x4 (Gerar 4)</option>
                                 </select>
                               </div>
 
@@ -3235,7 +3275,7 @@ function PromptInjector() {
         injConfigs['flow-Tipo'],
         injConfigs['flow-Modo'],
         injConfigs['flow-Aspecto'],
-        injConfigs['flow-Upscale'],
+        injConfigs['flow-Variacoes'],
         injConfigs['flow-Duração']
       ].filter(Boolean);
 
