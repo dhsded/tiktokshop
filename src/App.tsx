@@ -260,6 +260,7 @@ function MainApp() {
   const [apiKeys, setApiKeys] = useState<string[]>([]);
   const [currentKeyIndex, setCurrentKeyIndex] = useState(0);
   const keysFileInputRef = useRef<HTMLInputElement>(null);
+  const [isKeysExhaustedAlertOpen, setIsKeysExhaustedAlertOpen] = useState(false);
 
   // Cropping State
   const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string } | null>(null);
@@ -720,6 +721,35 @@ function MainApp() {
     "gemini-1.5-pro",     // Segundo fallback
   ];
 
+  const playAlertSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const playBeep = (delay: number, frequency: number, duration: number) => {
+        setTimeout(() => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+          
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + duration);
+        }, delay);
+      };
+
+      playBeep(0, 880, 0.15);
+      playBeep(200, 880, 0.15);
+      playBeep(400, 523, 0.35);
+    } catch (err) {
+      console.error("Falha ao tocar o som de alerta:", err);
+    }
+  };
+
   const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI, model: string) => Promise<T>): Promise<T> => {
     // Captura as chaves no momento da chamada (evita problema de React state assíncrono)
     const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
@@ -782,6 +812,10 @@ function MainApp() {
         }
       }
     }
+
+    // Se todas as chaves falharem, dispara o popup e o sinal sonoro de alerta
+    setIsKeysExhaustedAlertOpen(true);
+    playAlertSound();
     
     // Monta mensagem de erro amigável
     const lastMsg = (lastError?.message || String(lastError) || "").toLowerCase();
@@ -2140,12 +2174,12 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </div>
                       </div>
 
-                      {/* Renderização do Formulário Dinâmico com base no schema aprendido pelo Espião */}
+                      {/* Renderização do Formulário Dinâmico com base no schema aprendido */}
                       {injectionTarget !== 'none' && (
                         <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 space-y-4">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                              Opções Aprendidas (Espião Auto-Detect)
+                              Opções da Plataforma (Mapeamento Automático)
                             </span>
                             <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-bold tracking-wider">
                               Conectado
@@ -2155,7 +2189,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           {/* Se for Digen e o DigenSchema estiver carregado */}
                           {injectionTarget === 'digen' && (
                             !digenSchema || digenSchema.configs.length === 0 ? (
-                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o DIGEN ainda. Use o Espião para escaneá-lo!</p>
+                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o DIGEN ainda.</p>
                             ) : (
                               digenSchema.configs.map((cfg) => (
                                 <div key={cfg.label} className="space-y-1.5">
@@ -3010,6 +3044,29 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </>
         )}
       </AnimatePresence>
+      {/* Modal Alerta Chaves Esgotadas */}
+      {isKeysExhaustedAlertOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-red-500/30 rounded-3xl p-6 max-w-sm w-full shadow-2xl shadow-red-500/5 text-center space-y-5">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 mx-auto flex items-center justify-center text-3xl">
+              ⚠️
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-base font-bold font-display text-white">Chaves de API Esgotadas!</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Todas as chaves de API cadastradas falharam ou expiraram durante o processamento da fila. 
+                Carregue novas chaves do Gemini válidas para prosseguir.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsKeysExhaustedAlertOpen(false)}
+              className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-md shadow-red-600/10"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3031,6 +3088,8 @@ function PromptInjector() {
   // Auto-Scan States no Injetor
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isAutoRetryActive, setIsAutoRetryActive] = useState(true);
+  const [flowRecoveryStatus, setFlowRecoveryStatus] = useState<string | null>(null);
 
   // States de configuração repassados do MainApp
   const [injTarget, setInjTarget] = useState<'digen' | 'flow' | 'none'>('none');
@@ -3083,6 +3142,50 @@ function PromptInjector() {
       return unsubscribe;
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAutoRetryActive || !url.includes('labs.google')) return;
+
+    const interval = setInterval(async () => {
+      if (!webviewRef.current) return;
+      try {
+        const errorScript = `
+          (function() {
+            const bodyText = document.body.innerText.toLowerCase();
+            const hasErrorText = bodyText.includes('error') || 
+                                 bodyText.includes('failed') || 
+                                 bodyText.includes('falhou') || 
+                                 bodyText.includes('tente novamente') || 
+                                 bodyText.includes('try again') ||
+                                 bodyText.includes('could not generate');
+
+            if (hasErrorText) {
+              const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+              const generateBtn = buttons.find(b => {
+                const text = (b.textContent || '').trim();
+                return text.includes('Criar') || text.includes('Generate') || text.includes('Tente novamente') || text.includes('Try again');
+              });
+              if (generateBtn && !generateBtn.disabled) {
+                generateBtn.click();
+                return "error_recovered";
+              }
+            }
+            return "ok";
+          })()
+        `;
+        const result = await webviewRef.current.executeJavaScript(errorScript);
+        if (result === 'error_recovered') {
+          console.warn("Google Flow Auto-Recovery: Geração falhou. Clicando em 'Criar' novamente!");
+          setFlowRecoveryStatus("Recuperando falha de geração... Tentando novamente!");
+          setTimeout(() => setFlowRecoveryStatus(null), 5000);
+        }
+      } catch (err) {
+        // Ignora erros de injeção JS na carga inicial
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [url, isAutoRetryActive]);
 
   const runScan = async () => {
     if (!webviewRef.current) return;
@@ -3399,6 +3502,13 @@ function PromptInjector() {
           </div>
         )}
 
+        {/* Banner de Recuperação Automática do Flow */}
+        {flowRecoveryStatus && (
+          <div className="p-3 bg-amber-500/10 border-b border-amber-500/20 text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-2 animate-pulse">
+            <span>⚠️</span> {flowRecoveryStatus}
+          </div>
+        )}
+
         {/* Abas */}
         <div className="p-3 border-b border-zinc-800 bg-zinc-900/20 flex gap-2 flex-shrink-0">
           <button
@@ -3667,11 +3777,6 @@ function PromptInjector() {
               Nenhuma cena ou ângulo selecionado.
             </div>
           )}
-        </div>
-
-        {/* Dica / Rodapé */}
-        <div className="p-4 bg-zinc-950/80 border-t border-zinc-800 text-[10px] text-zinc-400 leading-relaxed flex-shrink-0">
-          💡 <strong>Dica:</strong> Primeiro, clique no campo de entrada de texto no site à direita. Depois, clique em um botão de injeção acima para colar o prompt diretamente lá.
         </div>
       </div>
 
@@ -4401,8 +4506,8 @@ function SpyWindow() {
             🔍
           </div>
           <div>
-            <h1 className="font-bold text-sm bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Espião Auto-Detect</h1>
-            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Detecção Automática de Campos</p>
+            <h1 className="font-bold text-sm bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Mapeador de Integrações</h1>
+            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Configuração Avançada de Sites</p>
           </div>
         </div>
 
@@ -4578,7 +4683,7 @@ function SpyWindow() {
                 {recordedActions.length === 0 ? (
                   <div className="text-center py-12 text-zinc-600 text-xs bg-zinc-950/20 rounded-2xl border border-zinc-900 border-dashed">
                     <p className="font-semibold text-zinc-500 mb-1">Nenhuma ação gravada ainda.</p>
-                    <p className="text-[10px] max-w-[200px] mx-auto text-zinc-600">Interaja com a página no painel direito (digite, clique, faça upload) para o espião analisar suas ações em tempo real.</p>
+                    <p className="text-[10px] max-w-[200px] mx-auto text-zinc-600">Interaja com a página no painel direito (digite, clique, faça upload) para analisar as ações e seletores em tempo real.</p>
                   </div>
                 ) : (
                   <div className="relative pl-4 space-y-4">

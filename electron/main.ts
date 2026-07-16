@@ -107,7 +107,7 @@ function createSpyWindow(): void {
     height: 900,
     minWidth: 1200,
     minHeight: 700,
-    title: '\uD83D\uDD0D Espião Auto-Detect',
+    title: '🔍 Mapeador de Integrações',
     backgroundColor: '#0a0a0b',
     autoHideMenuBar: true,
     webPreferences: {
