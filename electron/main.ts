@@ -212,6 +212,39 @@ ipcMain.handle('save-project-assets', async (_event, payload: any) => {
   }
 });
 
+// Salvar e carregar schemas aprendidos pelo Espião
+ipcMain.handle('load-site-schema', async (_event, siteName: string) => {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const filename = `${siteName}_schema.json`;
+    const filepath = path.join(app.getAppPath(), filename);
+    if (fs.existsSync(filepath)) {
+      const content = fs.readFileSync(filepath, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.error(`Error loading site schema for ${siteName}:`, err);
+  }
+  return { siteName, configs: [], actions: [] };
+});
+
+ipcMain.handle('save-site-schema', async (_event, payload: any) => {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const { siteName, configs, actions } = payload;
+    const filename = `${siteName}_schema.json`;
+    const filepath = path.join(app.getAppPath(), filename);
+    const data = { siteName, configs, actions };
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err: any) {
+    console.error(`Error saving site schema:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
 // ============================================================
 // App Lifecycle
 // ============================================================

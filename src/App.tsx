@@ -109,6 +109,8 @@ declare global {
       onSpyData: (callback: (data: any) => void) => () => void;
       writeSpyScanResults: (data: any) => void;
       saveProjectAssets: (payload: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+      loadSiteSchema: (siteName: string) => Promise<any>;
+      saveSiteSchema: (payload: any) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -129,6 +131,21 @@ interface SceneImage {
     cropSize?: { width: number; height: number };
     croppedAreaPixels: Area;
   };
+}
+
+interface SiteSchema {
+  siteName: string;
+  configs: Array<{
+    label: string;
+    selector: string;
+    type: string;
+    options?: string[];
+  }>;
+  actions: Array<{
+    label: string;
+    selector: string;
+    type: string;
+  }>;
 }
 
 interface GeneratedScene {
@@ -191,6 +208,16 @@ function MainApp() {
     const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
     if (savedTheme) {
       setThemeMode(savedTheme);
+    }
+
+    // Carregar schemas aprendidos pelo Espião
+    if (window.electronAPI) {
+      window.electronAPI.loadSiteSchema('digen').then((schema) => {
+        if (schema && schema.configs) setDigenSchema(schema);
+      });
+      window.electronAPI.loadSiteSchema('flow').then((schema) => {
+        if (schema && schema.configs) setFlowSchema(schema);
+      });
     }
   }, []);
 
@@ -265,12 +292,22 @@ function MainApp() {
     generatedAngles: GeneratedAngle[] | null;
     status: 'pending' | 'done';
     projectIndex: number;
+    injectionTarget: 'digen' | 'flow' | 'none';
+    targetConfigs: Record<string, string>;
   }
 
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectCounter, setProjectCounter] = useState(1);
   const [showQueue, setShowQueue] = useState(false);
+
+  // States do Injetor Auto-adaptável
+  const [injectionTarget, setInjectionTarget] = useState<'digen' | 'flow' | 'none'>('none');
+  const [targetConfigs, setTargetConfigs] = useState<Record<string, string>>({});
+  
+  // Schemas locais carregados
+  const [digenSchema, setDigenSchema] = useState<SiteSchema | null>(null);
+  const [flowSchema, setFlowSchema] = useState<SiteSchema | null>(null);
 
   // Ângulos do Produto
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
@@ -553,7 +590,9 @@ function MainApp() {
           observations,
           duration,
           generatedScript,
-          generatedAngles
+          generatedAngles,
+          injectionTarget,
+          targetConfigs
         };
       }
       return proj;
@@ -572,7 +611,9 @@ function MainApp() {
     observations,
     duration,
     generatedScript,
-    generatedAngles
+    generatedAngles,
+    injectionTarget,
+    targetConfigs
   ]);
 
   const loadProject = (proj: ProjectItem) => {
@@ -590,6 +631,8 @@ function MainApp() {
     setDuration(proj.duration);
     setGeneratedScript(proj.generatedScript);
     setGeneratedAngles(proj.generatedAngles);
+    setInjectionTarget(proj.injectionTarget || 'none');
+    setTargetConfigs(proj.targetConfigs || {});
     
     setTimeout(() => {
       setActiveProjectId(proj.id);
@@ -615,7 +658,9 @@ function MainApp() {
       generatedScript: null,
       generatedAngles: null,
       status: 'pending',
-      projectIndex: nextIndex
+      projectIndex: nextIndex,
+      injectionTarget: 'none',
+      targetConfigs: {}
     };
 
     setProjects(prev => [...prev, newProj]);
@@ -634,6 +679,8 @@ function MainApp() {
       setProductImages([]);
       setGeneratedScript(null);
       setGeneratedAngles(null);
+      setInjectionTarget('none');
+      setTargetConfigs({});
     }
   };
 
@@ -2007,6 +2054,118 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
 
+                    {/* Seção Inteligente de Plataforma de Injeção */}
+                    <div className="space-y-4 pt-6 border-t border-white/5">
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Globe className="w-3 h-3 text-teal-400" />
+                          Plataforma de Injeção (Onde rodar o vídeo)
+                        </label>
+                        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setInjectionTarget('none')}
+                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-zinc-800 text-white shadow-lg border border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
+                          >
+                            Apenas Criar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInjectionTarget('digen')}
+                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          >
+                            DIGEN.ai
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInjectionTarget('flow')}
+                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          >
+                            Google Flow
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Renderização do Formulário Dinâmico com base no schema aprendido pelo Espião */}
+                      {injectionTarget !== 'none' && (
+                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                              Opções Aprendidas (Espião Auto-Detect)
+                            </span>
+                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-bold tracking-wider">
+                              Conectado
+                            </span>
+                          </div>
+
+                          {/* Se for Digen e o DigenSchema estiver carregado */}
+                          {injectionTarget === 'digen' && (
+                            !digenSchema || digenSchema.configs.length === 0 ? (
+                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o DIGEN ainda. Use o Espião para escaneá-lo!</p>
+                            ) : (
+                              digenSchema.configs.map((cfg) => (
+                                <div key={cfg.label} className="space-y-1.5">
+                                  <label className="text-[11px] text-white/60 font-medium block">{cfg.label}</label>
+                                  {cfg.options && cfg.options.length > 0 ? (
+                                    <select
+                                      value={targetConfigs[`digen-${cfg.label}`] || ''}
+                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                    >
+                                      <option value="">Selecione...</option>
+                                      {cfg.options.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={targetConfigs[`digen-${cfg.label}`] || ''}
+                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
+                                      placeholder={`Seletor: ${cfg.selector}`}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                    />
+                                  )}
+                                </div>
+                              ))
+                            )
+                          )}
+
+                          {/* Se for Flow e o FlowSchema estiver carregado */}
+                          {injectionTarget === 'flow' && (
+                            !flowSchema || flowSchema.configs.length === 0 ? (
+                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o Google Flow ainda. Use o Espião para escaneá-lo!</p>
+                            ) : (
+                              flowSchema.configs.map((cfg) => (
+                                <div key={cfg.label} className="space-y-1.5">
+                                  <label className="text-[11px] text-white/60 font-medium block">{cfg.label}</label>
+                                  {cfg.options && cfg.options.length > 0 ? (
+                                    <select
+                                      value={targetConfigs[`flow-${cfg.label}`] || ''}
+                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`flow-${cfg.label}`]: e.target.value }))}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                    >
+                                      <option value="">Selecione...</option>
+                                      {cfg.options.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={targetConfigs[`flow-${cfg.label}`] || ''}
+                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`flow-${cfg.label}`]: e.target.value }))}
+                                      placeholder={`Seletor: ${cfg.selector}`}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                    />
+                                  )}
+                                </div>
+                              ))
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                   </div>
                 </section>
@@ -2103,7 +2262,12 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <button 
                         onClick={() => {
                           if (window.electronAPI) {
-                            window.electronAPI.openInjectorWindow({ generatedScript, generatedAngles });
+                            window.electronAPI.openInjectorWindow({ 
+                              generatedScript, 
+                              generatedAngles,
+                              injectionTarget,
+                              targetConfigs
+                            });
                           } else {
                             setValidationAlert({
                               title: "Recurso Exclusivo",
@@ -2769,6 +2933,10 @@ function PromptInjector() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
+  // States de configuração repassados do MainApp
+  const [injTarget, setInjTarget] = useState<'digen' | 'flow' | 'none'>('none');
+  const [injConfigs, setInjConfigs] = useState<Record<string, string>>({});
+
   useEffect(() => {
     const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
     if (savedTheme) {
@@ -2793,6 +2961,21 @@ function PromptInjector() {
     if (window.electronAPI) {
       const unsubscribe = window.electronAPI.onLoadPrompts((data) => {
         setPrompts(data);
+        if (data.injectionTarget) {
+          setInjTarget(data.injectionTarget);
+          
+          // Definir URL inicial com base no target selecionado
+          if (data.injectionTarget === 'flow') {
+            setUrl('https://labs.google/fx/pt/tools/flow');
+            setInputValue('https://labs.google/fx/pt/tools/flow');
+          } else if (data.injectionTarget === 'digen') {
+            setUrl('https://digen.ai/explore');
+            setInputValue('https://digen.ai/explore');
+          }
+        }
+        if (data.targetConfigs) {
+          setInjConfigs(data.targetConfigs);
+        }
         if (!data.generatedScript?.scenes?.length && data.generatedAngles?.length) {
           setActiveTab('angles');
         }
@@ -2982,6 +3165,52 @@ function PromptInjector() {
     return undefined;
   };
 
+  const runAutoConfigure = async () => {
+    if (!webviewRef.current || !scanResult) {
+      alert("Aguarde a página terminar de carregar e o scan ser concluído!");
+      return;
+    }
+
+    let successCount = 0;
+    try {
+      for (const cfg of scanResult.configs) {
+        if (!cfg.label) continue;
+        const configKey = `${injTarget}-${cfg.label}`;
+        const selectedValue = injConfigs[configKey];
+        
+        if (selectedValue) {
+          const optionIndex = cfg.options ? cfg.options.indexOf(selectedValue) : -1;
+          const script = `
+            (function() {
+              const el = document.querySelector(${JSON.stringify(cfg.selector)});
+              if (!el) return false;
+              el.focus();
+              if (el.tagName === 'SELECT') {
+                el.value = ${JSON.stringify(selectedValue)};
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              } else {
+                const options = el.querySelectorAll('[role="option"], option');
+                if (options[${optionIndex}] && ${optionIndex} !== -1) {
+                  options[${optionIndex}].click();
+                } else {
+                  el.click();
+                }
+              }
+              return true;
+            })()
+          `;
+          const success = await webviewRef.current.executeJavaScript(script);
+          if (success) successCount++;
+        }
+      }
+      
+      alert(`Auto-configuração concluída! ${successCount} campos foram ajustados automaticamente de acordo com as escolhas da fila.`);
+    } catch (err: any) {
+      console.error('Error applying auto configurations:', err);
+      alert('Houve um problema ao aplicar as configurações automáticas.');
+    }
+  };
+
   const scenes = prompts?.generatedScript?.scenes || [];
   const angles = prompts?.generatedAngles || [];
   const currentItem = activeTab === 'scenes' ? scenes[selectedItemIndex] : angles[selectedItemIndex];
@@ -3001,6 +3230,23 @@ function PromptInjector() {
             <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Digen & Google Labs Flow</p>
           </div>
         </div>
+
+        {/* Banner de Auto-configuração */}
+        {injTarget !== 'none' && (
+          <div className="p-4 bg-zinc-950/40 border-b border-zinc-800 flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Auto-Configuração da Fila</p>
+              <p className="text-xs text-white font-bold truncate mt-0.5">Destino: {injTarget === 'digen' ? 'DIGEN.ai' : 'Google Flow'}</p>
+            </div>
+            <button
+              onClick={runAutoConfigure}
+              className="py-1.5 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-teal-600/10"
+              title="Ajustar automaticamente vozes, aspect ratio, etc. mapeados na página"
+            >
+              <Settings2 className="w-3.5 h-3.5" /> Configurar
+            </button>
+          </div>
+        )}
 
         {/* Abas */}
         <div className="p-3 border-b border-zinc-800 bg-zinc-900/20 flex gap-2 flex-shrink-0">
@@ -3830,6 +4076,67 @@ function SpyWindow() {
     return steps;
   };
 
+  const updateSchemaFromScan = async (currentUrl: string, scan: ScanResult) => {
+    if (!window.electronAPI) return;
+    
+    let siteName = '';
+    if (currentUrl.includes('digen.ai')) {
+      siteName = 'digen';
+    } else if (currentUrl.includes('labs.google') || currentUrl.includes('google')) {
+      siteName = 'flow';
+    } else {
+      return;
+    }
+
+    try {
+      const currentSchema = await window.electronAPI.loadSiteSchema(siteName);
+      const configs = currentSchema?.configs ? [...currentSchema.configs] : [];
+      const actions = currentSchema?.actions ? [...currentSchema.actions] : [];
+
+      scan.configs.forEach((scField) => {
+        if (!scField.label) return;
+        const existingIdx = configs.findIndex(c => c.label.toLowerCase() === scField.label!.toLowerCase());
+        if (existingIdx !== -1) {
+          configs[existingIdx].selector = scField.selector;
+          if (scField.options && scField.options.length > 0) {
+            const mergedOptions = Array.from(new Set([...(configs[existingIdx].options || []), ...scField.options]));
+            configs[existingIdx].options = mergedOptions.filter(o => o.trim().length > 0);
+          }
+        } else {
+          configs.push({
+            label: scField.label,
+            selector: scField.selector,
+            type: scField.type,
+            options: scField.options || []
+          });
+        }
+      });
+
+      scan.actions.forEach((scAct) => {
+        const existingIdx = actions.findIndex(a => a.label.toLowerCase() === scAct.label.toLowerCase());
+        if (existingIdx !== -1) {
+          actions[existingIdx].selector = scAct.selector;
+        } else {
+          actions.push({
+            label: scAct.label,
+            selector: scAct.selector,
+            type: scAct.type
+          });
+        }
+      });
+
+      await window.electronAPI.saveSiteSchema({
+        siteName,
+        configs,
+        actions
+      });
+      
+      console.log(`Schema de ${siteName} atualizado e persistido com sucesso!`);
+    } catch (err) {
+      console.error('Error updating site schema:', err);
+    }
+  };
+
   const runScan = async () => {
     if (!webviewRef.current) return;
     setIsScanning(true);
@@ -3838,7 +4145,9 @@ function SpyWindow() {
       const result = JSON.parse(resultStr) as ScanResult;
       setScanResult(result);
 
-      // Salvar resultados localmente
+      // Auto-update site schema persistido
+      updateSchemaFromScan(url, result);
+
       if (window.electronAPI && window.electronAPI.writeSpyScanResults) {
         window.electronAPI.writeSpyScanResults({
           scan: result,
@@ -3847,7 +4156,6 @@ function SpyWindow() {
         });
       }
 
-      // Apply highlight if enabled
       if (highlightEnabled) {
         await webviewRef.current.executeJavaScript(SPY_HIGHLIGHT_CSS);
       }

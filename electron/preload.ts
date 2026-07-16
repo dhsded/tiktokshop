@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   writeSpyScanResults: (data: any) => ipcRenderer.send('spy-write-results', data),
   saveProjectAssets: (payload: any) => ipcRenderer.invoke('save-project-assets', payload),
+  loadSiteSchema: (siteName: string) => ipcRenderer.invoke('load-site-schema', siteName),
+  saveSiteSchema: (payload: any) => ipcRenderer.invoke('save-site-schema', payload),
 });
