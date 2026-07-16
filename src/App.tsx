@@ -1293,6 +1293,18 @@ Retorne em estrutura JSON:
         return { inlineData: { mimeType: img.file.type, data: base64.split(',')[1] } };
       }));
 
+      const configList = Object.entries(targetConfigs)
+        .filter(([key]) => key.startsWith(`${injectionTarget}-`))
+        .map(([key, val]) => `${key.replace(`${injectionTarget}-`, '')}: ${val}`)
+        .join('\n');
+
+      const platformInstruction = injectionTarget !== 'none'
+        ? `PLATAFORMA DE DESTINO DA AUTOMAÇÃO: ${injectionTarget.toUpperCase()}
+CONFIGURAÇÕES SELECIONADAS:
+${configList}
+- Certifique-se de que os prompts gerados em 'veoPrompt' e 'digenPrompt' reflitam e respeitem essas escolhas (por exemplo, se o formato é vertical 9:16, descreva enquadramentos verticais móveis; se o narrador selecionado é Jenny, monte o tom de voz e estilo adequados).`
+        : '';
+
       const textPart = {
         text: `Você é um especialista em fotografia de produto e marketing digital para TikTok Shop.
 
@@ -1301,6 +1313,8 @@ Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variaç
 PRODUTO(S): ${productImages.map(p => p.name).join(', ')}
 DURAÇÃO: ${duration}
 GÊNERO DA VOZ: ${voiceGender === 'none' ? 'SEM NARRAÇÃO (SEM FALA)' : (voiceGender === 'female' ? 'FEMININO' : 'MASCULINO')}
+
+${platformInstruction}
 
 REGRAS ABSOLUTAS — NUNCA VIOLE:
 1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
