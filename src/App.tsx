@@ -320,7 +320,7 @@ function N8NFlowchart({
       style={{
         transform: `translate(${position.x}px, ${position.y}px)`
       }}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[780px] bg-zinc-950/85 backdrop-blur-md border border-zinc-800/80 rounded-2xl shadow-2xl p-4 text-zinc-100 touch-none select-none transition-shadow duration-200 active:shadow-purple-500/5"
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[780px] bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 rounded-2xl shadow-2xl p-4 text-zinc-100 touch-none select-none transition-shadow duration-200 active:shadow-purple-500/10"
     >
       <style>{`
         @keyframes flowDash {
@@ -332,14 +332,14 @@ function N8NFlowchart({
       `}</style>
 
       {/* Barra de título / Drag handle */}
-      <div className="drag-handle flex items-center justify-between pb-3.5 mb-3 border-b border-zinc-800/60 cursor-move">
+      <div className="drag-handle flex items-center justify-between pb-3.5 mb-3 border-b border-zinc-800/80 cursor-move">
         <div className="flex items-center gap-2">
-          <GripHorizontal className="w-4 h-4 text-zinc-500" />
-          <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold font-display">Fluxo de Automação Ativo</span>
+          <GripHorizontal className="w-4 h-4 text-zinc-400" />
+          <span className="text-[10px] text-zinc-300 uppercase tracking-widest font-bold font-display">Fluxo de Automação Ativo</span>
         </div>
         <button 
           onClick={() => setIsMinimized(true)}
-          className="p-1 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-colors"
+          className="p-1 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors"
           title="Minimizar Fluxo"
         >
           <EyeOff className="w-3.5 h-3.5" />
@@ -351,17 +351,18 @@ function N8NFlowchart({
         
         {/* SVG de Linhas do Fluxo */}
         <svg className="absolute inset-0 w-full h-full -z-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+          {/* Linha inativa brilhante */}
           <line
             x1="45" y1="40" x2="715" y2="40"
-            stroke="#1e293b"
+            stroke="#3f3f46"
             strokeWidth="3"
             strokeLinecap="round"
           />
           {activeNode > 0 && (
             <path
               d={`M 45,40 L ${45 + activeNode * 134},40`}
-              stroke="#6366f1"
-              strokeWidth="3.5"
+              stroke="#a855f7"
+              strokeWidth="4"
               strokeLinecap="round"
               strokeDasharray="6,4"
               className="active-flow-path"
@@ -374,9 +375,9 @@ function N8NFlowchart({
           const isCompleted = index < activeNode;
           const isActive = index === activeNode;
           
-          let circleBg = 'bg-zinc-900 border-zinc-800 text-zinc-500';
-          if (isCompleted) circleBg = 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400';
-          if (isActive) circleBg = 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/30';
+          let circleBg = 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500';
+          if (isCompleted) circleBg = 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
+          if (isActive) circleBg = 'bg-purple-600 border-purple-300 text-white shadow-[0_0_15px_rgba(168,85,247,0.6)] animate-pulse';
 
           return (
             <div key={node.id} className="flex flex-col items-center space-y-2 w-24 relative">
@@ -385,9 +386,9 @@ function N8NFlowchart({
               </div>
               
               <div className="text-center space-y-0.5">
-                <p className="text-[10px] font-bold text-zinc-300">{node.title}</p>
-                <p className={`text-[8px] font-semibold tracking-wide truncate max-w-[90px] ${
-                  isActive ? 'text-purple-400' : (isCompleted ? 'text-emerald-400' : 'text-zinc-500')
+                <p className={`text-[10px] font-bold ${isActive ? 'text-purple-300 font-extrabold' : 'text-zinc-100'}`}>{node.title}</p>
+                <p className={`text-[8px] font-bold tracking-wide truncate max-w-[90px] ${
+                  isActive ? 'text-purple-400' : (isCompleted ? 'text-emerald-400 font-extrabold' : 'text-zinc-400')
                 }`}>
                   {node.getStatus()}
                 </p>
@@ -398,7 +399,7 @@ function N8NFlowchart({
       </div>
 
       {(queueDelayRemaining > 0 || downloadDelayRemaining > 0) && (
-        <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider animate-pulse">
+        <div className="mt-2.5 p-2 bg-amber-500/20 border border-amber-500/40 rounded-xl flex items-center justify-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider animate-pulse">
           ⏳ {queueDelayRemaining > 0 
             ? `Fila em Cooldown: Aguardando ${queueDelayRemaining}s para o próximo produto...` 
             : `Download em Cooldown: Aguardando ${downloadDelayRemaining}s antes do próximo arquivo...`}
