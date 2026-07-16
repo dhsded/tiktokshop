@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, globalShortcut } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, session } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
@@ -6,6 +6,7 @@ let injectorWindow: BrowserWindow | null = null;
 let spyWindow: BrowserWindow | null = null;
 let pendingPromptsData: any = null;
 let pendingSpyData: any = null;
+let currentDownloadInfo: any = null;
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -245,6 +246,10 @@ ipcMain.handle('save-site-schema', async (_event, payload: any) => {
   }
 });
 
+ipcMain.on('set-current-download-info', (_event, info: any) => {
+  currentDownloadInfo = info;
+});
+
 // ============================================================
 // App Lifecycle
 // ============================================================
@@ -256,6 +261,32 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+
+  // Interceptar downloads do Injetor para salvamento automatizado e numerado
+  session.defaultSession.on('will-download', (event, item, webContents) => {
+    if (currentDownloadInfo) {
+      const fs = require('fs');
+      const path = require('path');
+      const downloadsPath = app.getPath('downloads');
+      
+      const folderName = `produto${currentDownloadInfo.projectIndex || 1}`;
+      const targetDir = path.join(downloadsPath, 'TikTok Shop', folderName);
+      
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      const originalName = item.getFilename();
+      const ext = path.extname(originalName) || '.mp4';
+      
+      // Nome formatado sequencial: cenaX_Y.mp4 (onde X é o sceneIndex e Y é o loop da variação)
+      const fileName = `cena${currentDownloadInfo.sceneIndex || 0}_${currentDownloadInfo.generationLoop || 1}${ext}`;
+      const filePath = path.join(targetDir, fileName);
+      
+      item.setSavePath(filePath);
+      console.log(`[Electron Download Redirect] Direcionando arquivo para: ${filePath}`);
+    }
+  });
 
   // Atalho global para abrir o espião (apenas em dev)
   if (is.dev) {

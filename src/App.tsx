@@ -35,7 +35,9 @@ import {
   Moon,
   AlertTriangle,
   History,
-  Save
+  Save,
+  GripHorizontal,
+  EyeOff
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -111,6 +113,7 @@ declare global {
       saveProjectAssets: (payload: any) => Promise<{ success: boolean; path?: string; error?: string }>;
       loadSiteSchema: (siteName: string) => Promise<any>;
       saveSiteSchema: (payload: any) => Promise<{ success: boolean; error?: string }>;
+      setCurrentDownloadInfo: (info: any) => void;
     };
   }
 }
@@ -185,6 +188,225 @@ const THEMES = [
   'Boho Chic',
   'Essenciais Minimalistas'
 ];
+
+interface N8NFlowchartProps {
+  queueLength: number;
+  activeNode: number; // 0 a 5
+  isGenerating: boolean;
+  injectionTarget: 'flow' | 'digen' | 'none';
+  autoConfigStatus: string;
+  injectionProgressText: string;
+  downloadStatus: string;
+  queueDelayRemaining: number;
+  downloadDelayRemaining: number;
+}
+
+function N8NFlowchart({
+  queueLength,
+  activeNode,
+  isGenerating,
+  injectionTarget,
+  autoConfigStatus,
+  injectionProgressText,
+  downloadStatus,
+  queueDelayRemaining,
+  downloadDelayRemaining
+}: N8NFlowchartProps) {
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!(e.target as HTMLElement).closest('.drag-handle')) return;
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch (err) {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.current.x,
+      y: e.clientY - dragStart.current.y
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch (err) {}
+  };
+
+  const nodes = [
+    {
+      id: 'queue',
+      title: 'Fila',
+      icon: <Layers className="w-4.5 h-4.5" />,
+      getStatus: () => {
+        if (queueDelayRemaining > 0) return `⏳ Cooldown (${queueDelayRemaining}s)`;
+        return queueLength > 0 ? `${queueLength} pendentes` : 'Aguardando';
+      }
+    },
+    {
+      id: 'ai',
+      title: 'Roteiro IA',
+      icon: <Sparkles className="w-4.5 h-4.5" />,
+      getStatus: () => {
+        if (isGenerating) return 'Gerando...';
+        return activeNode > 1 ? 'Concluído' : 'Pendente';
+      }
+    },
+    {
+      id: 'platform',
+      title: 'Plataforma',
+      icon: <Globe className="w-4.5 h-4.5" />,
+      getStatus: () => {
+        if (injectionTarget === 'flow') return 'Google Flow';
+        if (injectionTarget === 'digen') return 'DIGEN.ai';
+        return 'Apenas Criar';
+      }
+    },
+    {
+      id: 'config',
+      title: 'Auto-Config',
+      icon: <Settings2 className="w-4.5 h-4.5" />,
+      getStatus: () => {
+        return autoConfigStatus || 'Pendente';
+      }
+    },
+    {
+      id: 'inject',
+      title: 'Injeção',
+      icon: <Play className="w-4.5 h-4.5 animate-pulse" />,
+      getStatus: () => {
+        return injectionProgressText || 'Pendente';
+      }
+    },
+    {
+      id: 'download',
+      title: 'Download',
+      icon: <Download className="w-4.5 h-4.5" />,
+      getStatus: () => {
+        if (downloadDelayRemaining > 0) return `⏳ Cooldown (${downloadDelayRemaining}s)`;
+        return downloadStatus || 'Pendente';
+      }
+    }
+  ];
+
+  if (isMinimized) {
+    return (
+      <div 
+        onClick={() => setIsMinimized(false)}
+        className="fixed bottom-6 right-6 z-50 py-2.5 px-4 bg-zinc-900/90 hover:bg-zinc-800 text-white rounded-2xl border border-zinc-700/80 shadow-lg shadow-black/40 backdrop-blur-md cursor-pointer transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider select-none animate-bounce"
+      >
+        <span className="flex h-2 w-2 relative">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
+        </span>
+        📊 Exibir Fluxo
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px)`
+      }}
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[780px] bg-zinc-950/85 backdrop-blur-md border border-zinc-800/80 rounded-2xl shadow-2xl p-4 text-zinc-100 touch-none select-none transition-shadow duration-200 active:shadow-purple-500/5"
+    >
+      <style>{`
+        @keyframes flowDash {
+          to { stroke-dashoffset: -20; }
+        }
+        .active-flow-path {
+          animation: flowDash 0.8s linear infinite;
+        }
+      `}</style>
+
+      {/* Barra de título / Drag handle */}
+      <div className="drag-handle flex items-center justify-between pb-3.5 mb-3 border-b border-zinc-800/60 cursor-move">
+        <div className="flex items-center gap-2">
+          <GripHorizontal className="w-4 h-4 text-zinc-500" />
+          <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold font-display">Fluxo de Automação Ativo</span>
+        </div>
+        <button 
+          onClick={() => setIsMinimized(true)}
+          className="p-1 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white transition-colors"
+          title="Minimizar Fluxo"
+        >
+          <EyeOff className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Grid de Nós */}
+      <div className="relative flex items-center justify-between px-3 h-20">
+        
+        {/* SVG de Linhas do Fluxo */}
+        <svg className="absolute inset-0 w-full h-full -z-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+          <line
+            x1="45" y1="40" x2="715" y2="40"
+            stroke="#1e293b"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          {activeNode > 0 && (
+            <path
+              d={`M 45,40 L ${45 + activeNode * 134},40`}
+              stroke="#6366f1"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeDasharray="6,4"
+              className="active-flow-path"
+              fill="none"
+            />
+          )}
+        </svg>
+
+        {nodes.map((node, index) => {
+          const isCompleted = index < activeNode;
+          const isActive = index === activeNode;
+          
+          let circleBg = 'bg-zinc-900 border-zinc-800 text-zinc-500';
+          if (isCompleted) circleBg = 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400';
+          if (isActive) circleBg = 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/30';
+
+          return (
+            <div key={node.id} className="flex flex-col items-center space-y-2 w-24 relative">
+              <div className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all duration-300 ${circleBg}`}>
+                {node.icon}
+              </div>
+              
+              <div className="text-center space-y-0.5">
+                <p className="text-[10px] font-bold text-zinc-300">{node.title}</p>
+                <p className={`text-[8px] font-semibold tracking-wide truncate max-w-[90px] ${
+                  isActive ? 'text-purple-400' : (isCompleted ? 'text-emerald-400' : 'text-zinc-500')
+                }`}>
+                  {node.getStatus()}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {(queueDelayRemaining > 0 || downloadDelayRemaining > 0) && (
+        <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center gap-2 text-[10px] text-amber-400 font-bold uppercase tracking-wider animate-pulse">
+          ⏳ {queueDelayRemaining > 0 
+            ? `Fila em Cooldown: Aguardando ${queueDelayRemaining}s para o próximo produto...` 
+            : `Download em Cooldown: Aguardando ${downloadDelayRemaining}s antes do próximo arquivo...`}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -2294,8 +2516,32 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                   <option value="8s">8s</option>
                                 </select>
                               </div>
-                            </div>
+                             </div>
                           )}
+
+                          {/* Campo Compartilhado: Gerações por Prompt */}
+                          <div className="space-y-1.5 pt-3 border-t border-white/5">
+                            <label className="text-[11px] text-white/60 font-medium block flex items-center gap-1.5">
+                              🔁 Gerações por Prompt / Variações
+                            </label>
+                            <select
+                              value={targetConfigs['generationsPerPrompt'] || '1'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'generationsPerPrompt': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="1">1 geração (Padrão)</option>
+                              <option value="2">2 gerações sequenciais</option>
+                              <option value="3">3 gerações sequenciais</option>
+                              <option value="4">4 gerações sequenciais</option>
+                              <option value="5">5 gerações sequenciais</option>
+                              <option value="6">6 gerações sequenciais</option>
+                              <option value="8">8 gerações sequenciais</option>
+                              <option value="10">10 gerações sequenciais</option>
+                            </select>
+                            <p className="text-[9px] text-white/30 leading-relaxed">
+                              O injetor repetirá a geração sequencialmente o número de vezes escolhido, salvando como cenaX_1.mp4, cenaX_2.mp4, etc.
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -3067,6 +3313,18 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </div>
         </div>
       )}
+      {/* Fluxograma N8N de execução flutuante no painel principal */}
+      <N8NFlowchart
+        queueLength={projects.length}
+        activeNode={isSequencing ? 1 : (projects.length > 0 ? 0 : 0)}
+        isGenerating={isSequencing}
+        injectionTarget={injectionTarget}
+        autoConfigStatus="Pendente"
+        injectionProgressText=""
+        downloadStatus="Pendente"
+        queueDelayRemaining={0}
+        downloadDelayRemaining={0}
+      />
     </div>
   );
 }
@@ -3094,6 +3352,15 @@ function PromptInjector() {
   // States de configuração repassados do MainApp
   const [injTarget, setInjTarget] = useState<'digen' | 'flow' | 'none'>('none');
   const [injConfigs, setInjConfigs] = useState<Record<string, string>>({});
+
+  // States do N8NFlowchart e Automação no Injetor
+  const [activeNode, setActiveNode] = useState(2); // Começa em "Plataforma" (nó 2)
+  const [autoConfigStatus, setAutoConfigStatus] = useState('Pendente');
+  const [downloadStatus, setDownloadStatus] = useState('Pendente');
+  const [queueDelayRemaining, setQueueDelayRemaining] = useState(0);
+  const [downloadDelayRemaining, setDownloadDelayRemaining] = useState(0);
+  const [isAutomating, setIsAutomating] = useState(false);
+  const [injectionProgressText, setInjectionProgressText] = useState('Pendente');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light' | null;
@@ -3465,6 +3732,233 @@ function PromptInjector() {
     }
   };
 
+  const runBatchAutomation = async () => {
+    if (!webviewRef.current) {
+      alert("Aguarde a página carregar!");
+      return;
+    }
+    if (injTarget === 'none') {
+      alert("Selecione um destino (DIGEN ou Flow) nas configurações da fila!");
+      return;
+    }
+
+    const itemsToInject = activeTab === 'scenes' ? scenes : angles;
+    if (itemsToInject.length === 0) {
+      alert("Nenhum item disponível para automação.");
+      return;
+    }
+
+    setIsAutomating(true);
+    setAutoConfigStatus("Aplicando...");
+    setActiveNode(3); // Auto-Config
+
+    try {
+      // 1. Auto-configuração Silenciosa
+      if (injTarget === 'flow') {
+        const flowConfigsToApply = [
+          injConfigs['flow-Tipo'],
+          injConfigs['flow-Modo'],
+          injConfigs['flow-Aspecto'],
+          injConfigs['flow-Variacoes'],
+          injConfigs['flow-Duração']
+        ].filter(Boolean);
+
+        let successCount = 0;
+        for (const val of flowConfigsToApply) {
+          const script = `
+            (function() {
+              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
+              const targetEl = els.find(el => {
+                const text = (el.textContent || '').trim();
+                if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
+                if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
+                if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
+                if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
+                return text === '${val}';
+              });
+              if (targetEl) {
+                targetEl.click();
+                targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+              }
+              return false;
+            })()
+          `;
+          const success = await webviewRef.current.executeJavaScript(script);
+          if (success) successCount++;
+        }
+        setAutoConfigStatus(`Sucesso (${successCount}/${flowConfigsToApply.length})`);
+      } else if (injTarget === 'digen' && scanResult) {
+        let successCount = 0;
+        for (const cfg of scanResult.configs) {
+          if (!cfg.label) continue;
+          const configKey = `${injTarget}-${cfg.label}`;
+          const selectedValue = injConfigs[configKey];
+          if (selectedValue) {
+            const optionIndex = cfg.options ? cfg.options.indexOf(selectedValue) : -1;
+            const script = `
+              (function() {
+                const el = document.querySelector(${JSON.stringify(cfg.selector)});
+                if (!el) return false;
+                el.focus();
+                if (el.tagName === 'SELECT') {
+                  el.value = ${JSON.stringify(selectedValue)};
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                  const options = el.querySelectorAll('[role="option"], option');
+                  if (options[${optionIndex}] && ${optionIndex} !== -1) {
+                    options[${optionIndex}].click();
+                  } else {
+                    el.click();
+                  }
+                }
+                return true;
+              })()
+            `;
+            const success = await webviewRef.current.executeJavaScript(script);
+            if (success) successCount++;
+          }
+        }
+        setAutoConfigStatus(`Sucesso (${successCount} campos)`);
+      } else {
+        setAutoConfigStatus("Sem configs");
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
+
+      // 2. Loop de Geração Sequencial
+      const generationsCount = Number(injConfigs['generationsPerPrompt']) || 1;
+
+      for (let idx = 0; idx < itemsToInject.length; idx++) {
+        setSelectedItemIndex(idx);
+        setActiveNode(4); // Injeção
+
+        const item = itemsToInject[idx];
+        const promptText = activeTab === 'scenes' 
+          ? (injTarget === 'flow' ? (item as any).veoPrompt : (item as any).digenPrompt)
+          : (item as any).veoPrompt;
+
+        const smartSelector = getSmartSelector(injTarget === 'flow' ? 'veo' : 'digen');
+
+        for (let loop = 1; loop <= generationsCount; loop++) {
+          setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Gerando ${loop}/${generationsCount})`);
+          setDownloadStatus("Aguardando Geração...");
+
+          // Metadados de interceptação de download
+          window.electronAPI.setCurrentDownloadInfo({
+            projectIndex: prompts?.projectIndex || 1,
+            sceneIndex: idx + 1,
+            generationLoop: loop
+          });
+
+          // Injeta prompt
+          await injectText(promptText, smartSelector);
+          await new Promise(r => setTimeout(r, 1500));
+
+          // Clica em Criar
+          const clickGenerateScript = `
+            (function() {
+              const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
+              const btn = els.find(el => {
+                const text = (el.textContent || '').trim();
+                return text === 'Criar' || text === 'Generate' || text === 'Create' || text.includes('Gerar');
+              });
+              if (btn && !btn.disabled) {
+                btn.click();
+                return true;
+              }
+              return false;
+            })()
+          `;
+          await webviewRef.current.executeJavaScript(clickGenerateScript);
+
+          // Espera conclusão do render
+          setDownloadStatus("Renderizando...");
+          let isDone = false;
+          for (let check = 0; check < 60; check++) { // Timeout de 3 minutos
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+              const checkScript = `
+                (function() {
+                  const hasLoader = document.querySelector('.loader, .loading, [class*="progress"], [class*="loading"]') !== null;
+                  const buttons = Array.from(document.querySelectorAll('button'));
+                  const generateBtn = buttons.find(b => b.textContent.includes('Criar') || b.textContent.includes('Generate') || b.textContent.includes('Create'));
+                  
+                  if (generateBtn && !generateBtn.disabled && !hasLoader) {
+                    return "ready";
+                  }
+                  return "generating";
+                })()
+              `;
+              const status = await webviewRef.current.executeJavaScript(checkScript);
+              if (status === 'ready') {
+                isDone = true;
+                break;
+              }
+            } catch (err) {
+              // Silencia erros
+            }
+          }
+
+          // Clica em Baixar
+          setDownloadStatus("Baixando...");
+          const clickDownloadScript = `
+            (function() {
+              const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
+              const downloadBtn = els.find(el => {
+                const text = (el.textContent || '').trim().toLowerCase();
+                const title = (el.getAttribute('title') || '').toLowerCase();
+                const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                const href = (el.getAttribute('href') || '').toLowerCase();
+                
+                return text.includes('baixar') || text.includes('download') || 
+                       title.includes('download') || title.includes('baixar') ||
+                       aria.includes('download') || aria.includes('baixar') ||
+                       href.includes('download') || el.className.includes('download');
+              });
+              if (downloadBtn) {
+                downloadBtn.click();
+                return true;
+              }
+              return false;
+            })()
+          `;
+          await webviewRef.current.executeJavaScript(clickDownloadScript);
+
+          // Cooldown de Download de 10 segundos
+          setDownloadStatus(`Salvo (${loop}/${generationsCount})`);
+          setActiveNode(5); // Download
+          for (let s = 10; s > 0; s--) {
+            setDownloadDelayRemaining(s);
+            await new Promise(r => setTimeout(r, 1000));
+          }
+          setDownloadDelayRemaining(0);
+          setActiveNode(4); // Injeção
+        }
+      }
+
+      // Cooldown de Fila de 20 segundos
+      setDownloadStatus("Lote Concluído!");
+      setActiveNode(5);
+      for (let s = 20; s > 0; s--) {
+        setQueueDelayRemaining(s);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setQueueDelayRemaining(0);
+
+      alert("Automação em Lote concluída com sucesso! Todos os vídeos foram salvos na pasta.");
+      window.electronAPI.setCurrentDownloadInfo(null);
+    } catch (err: any) {
+      console.error('Batch automation error:', err);
+      alert(`Houve um erro na automação em lote: ${err.message}`);
+    } finally {
+      setIsAutomating(false);
+      setActiveNode(2);
+      setInjectionProgressText("");
+      setDownloadStatus("Pendente");
+    }
+  };
+
   const scenes = prompts?.generatedScript?.scenes || [];
   const angles = prompts?.generatedAngles || [];
   const currentItem = activeTab === 'scenes' ? scenes[selectedItemIndex] : angles[selectedItemIndex];
@@ -3492,13 +3986,32 @@ function PromptInjector() {
               <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Auto-Configuração da Fila</p>
               <p className="text-xs text-white font-bold truncate mt-0.5">Destino: {injTarget === 'digen' ? 'DIGEN.ai' : 'Google Flow'}</p>
             </div>
-            <button
-              onClick={runAutoConfigure}
-              className="py-1.5 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-teal-600/10"
-              title="Ajustar automaticamente vozes, aspect ratio, etc. mapeados na página"
-            >
-              <Settings2 className="w-3.5 h-3.5" /> Configurar
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={runAutoConfigure}
+                disabled={isAutomating}
+                className="py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                title="Ajustar automaticamente vozes, aspect ratio, etc. mapeados na página"
+              >
+                <Settings2 className="w-3.5 h-3.5" /> Configurar
+              </button>
+              <button
+                onClick={runBatchAutomation}
+                disabled={isAutomating}
+                className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-purple-600/10"
+                title="Executar automação completa de injeção, geração e download em sequência"
+              >
+                {isAutomating ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Rodando
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5" /> Executar Lote
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
@@ -3866,6 +4379,19 @@ function PromptInjector() {
           />
         </div>
       </div>
+
+      {/* Fluxograma N8N de execução flutuante */}
+      <N8NFlowchart
+        queueLength={prompts ? 1 : 0}
+        activeNode={activeNode}
+        isGenerating={false}
+        injectionTarget={injTarget}
+        autoConfigStatus={autoConfigStatus}
+        injectionProgressText={injectionProgressText}
+        downloadStatus={downloadStatus}
+        queueDelayRemaining={queueDelayRemaining}
+        downloadDelayRemaining={downloadDelayRemaining}
+      />
     </div>
   );
 }
