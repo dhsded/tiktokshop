@@ -2147,35 +2147,80 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
                           {/* Se for Flow e o FlowSchema estiver carregado */}
                           {injectionTarget === 'flow' && (
-                            !flowSchema || flowSchema.configs.length === 0 ? (
-                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o Google Flow ainda. Use o Espião para escaneá-lo!</p>
-                            ) : (
-                              flowSchema.configs.map((cfg) => (
-                                <div key={cfg.label} className="space-y-1.5">
-                                  <label className="text-[11px] text-white/60 font-medium block">{cfg.label}</label>
-                                  {cfg.options && cfg.options.length > 0 ? (
-                                    <select
-                                      value={targetConfigs[`flow-${cfg.label}`] || ''}
-                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`flow-${cfg.label}`]: e.target.value }))}
-                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                    >
-                                      <option value="">Selecione...</option>
-                                      {cfg.options.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      value={targetConfigs[`flow-${cfg.label}`] || ''}
-                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`flow-${cfg.label}`]: e.target.value }))}
-                                      placeholder={`Seletor: ${cfg.selector}`}
-                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                    />
-                                  )}
-                                </div>
-                              ))
-                            )
+                            <div className="space-y-4">
+                              {/* 1. Tipo de Geração */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Tipo de Geração</label>
+                                <select
+                                  value={targetConfigs['flow-Tipo'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Tipo': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="Imagem">Imagem</option>
+                                  <option value="Vídeo">Vídeo</option>
+                                </select>
+                              </div>
+
+                              {/* 2. Modo de Geração */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Modo de Vídeo</label>
+                                <select
+                                  value={targetConfigs['flow-Modo'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modo': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="Frames">Frames</option>
+                                  <option value="Elementos">Elementos</option>
+                                </select>
+                              </div>
+
+                              {/* 3. Proporção (Aspect Ratio) */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Proporção (Aspect Ratio)</label>
+                                <select
+                                  value={targetConfigs['flow-Aspecto'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Aspecto': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="9:16">9:16 (Vertical)</option>
+                                  <option value="16:9">16:9 (Horizontal)</option>
+                                </select>
+                              </div>
+
+                              {/* 4. Escala / Upscale */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Upscale / Resolução</label>
+                                <select
+                                  value={targetConfigs['flow-Upscale'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Upscale': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="1x">1x</option>
+                                  <option value="x2">x2</option>
+                                  <option value="x3">x3</option>
+                                  <option value="x4">x4</option>
+                                </select>
+                              </div>
+
+                              {/* 5. Duração */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
+                                <select
+                                  value={targetConfigs['flow-Duração'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Duração': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="4s">4s</option>
+                                  <option value="6s">6s</option>
+                                  <option value="8s">8s</option>
+                                </select>
+                              </div>
+                            </div>
                           )}
                         </div>
                       )}
@@ -3180,8 +3225,60 @@ function PromptInjector() {
   };
 
   const runAutoConfigure = async () => {
-    if (!webviewRef.current || !scanResult) {
-      alert("Aguarde a página terminar de carregar e o scan ser concluído!");
+    if (!webviewRef.current) {
+      alert("Aguarde a página carregar!");
+      return;
+    }
+
+    if (injTarget === 'flow') {
+      const flowConfigsToApply = [
+        injConfigs['flow-Tipo'],
+        injConfigs['flow-Modo'],
+        injConfigs['flow-Aspecto'],
+        injConfigs['flow-Upscale'],
+        injConfigs['flow-Duração']
+      ].filter(Boolean);
+
+      if (flowConfigsToApply.length === 0) {
+        alert("Nenhuma configuração selecionada para o Google Flow na fila.");
+        return;
+      }
+
+      let successCount = 0;
+      try {
+        for (const val of flowConfigsToApply) {
+          const script = `
+            (function() {
+              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
+              const targetEl = els.find(el => {
+                const text = (el.textContent || '').trim();
+                if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
+                if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
+                if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
+                if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
+                return text === '${val}';
+              });
+              if (targetEl) {
+                targetEl.click();
+                targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+              }
+              return false;
+            })()
+          `;
+          const success = await webviewRef.current.executeJavaScript(script);
+          if (success) successCount++;
+        }
+        alert(`Auto-configuração do Google Flow concluída! ${successCount} de ${flowConfigsToApply.length} parâmetros foram aplicados.`);
+      } catch (err: any) {
+        console.error('Error applying Flow configurations:', err);
+        alert('Houve um problema ao aplicar as configurações automáticas.');
+      }
+      return;
+    }
+
+    if (!scanResult) {
+      alert("Aguarde o scan ser concluído!");
       return;
     }
 
