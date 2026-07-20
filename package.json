@@ -2,7 +2,7 @@
   "name": "gerador-tiktok-shop",
   "productName": "Gerador TikTok Shop",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Gerador de Propagandas para TikTok Shop com IA",
   "main": "out/main/index.js",
   "type": "module",

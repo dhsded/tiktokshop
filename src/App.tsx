@@ -2466,20 +2466,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           {/* Se for Flow e o FlowSchema estiver carregado */}
                           {injectionTarget === 'flow' && (
                             <div className="space-y-4">
-                              {/* 1. Tipo de Geração */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Tipo de Geração</label>
-                                <select
-                                  value={targetConfigs['flow-Tipo'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Tipo': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="Imagem">Imagem</option>
-                                  <option value="Vídeo">Vídeo</option>
-                                </select>
-                              </div>
-
                               {/* 2. Modo de Geração */}
                               <div className="space-y-1.5">
                                 <label className="text-[11px] text-white/60 font-medium block">Modo de Vídeo</label>
@@ -3413,12 +3399,20 @@ function PromptInjector() {
           setInjTarget(data.injectionTarget);
           
           // Definir URL inicial com base no target selecionado
-          if (data.injectionTarget === 'flow') {
-            setUrl('https://labs.google/fx/pt/tools/flow');
-            setInputValue('https://labs.google/fx/pt/tools/flow');
-          } else if (data.injectionTarget === 'digen') {
-            setUrl('https://digen.ai/explore');
-            setInputValue('https://digen.ai/explore');
+          const targetUrl = data.injectionTarget === 'flow' 
+            ? 'https://labs.google/fx/pt/tools/flow' 
+            : 'https://digen.ai/explore';
+          
+          setUrl(targetUrl);
+          setInputValue(targetUrl);
+
+          // Forçar navegação/recarregamento caso a URL já seja a mesma
+          if (webviewRef.current) {
+            try {
+              webviewRef.current.loadURL(targetUrl);
+            } catch (err) {
+              webviewRef.current.src = targetUrl;
+            }
           }
         }
         if (data.targetConfigs) {
@@ -3434,7 +3428,7 @@ function PromptInjector() {
   }, []);
 
   useEffect(() => {
-    if (!isAutoRetryActive || !url.includes('labs.google')) return;
+    if (!isAutoRetryActive || !inputValue.includes('labs.google')) return;
 
     const interval = setInterval(async () => {
       if (!webviewRef.current) return;
@@ -3475,12 +3469,43 @@ function PromptInjector() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [url, isAutoRetryActive]);
+  }, [inputValue, isAutoRetryActive]);
 
   const runScan = async () => {
     if (!webviewRef.current) return;
     setIsScanning(true);
     try {
+      // Se for Google Flow e estiver na tela inicial (sem /project), tenta clicar em '+ Novo projeto'
+      const currentUrl = webviewRef.current?.getURL() || url;
+      if (currentUrl.includes('labs.google') && !currentUrl.includes('/project')) {
+        const clickNewProjectScript = `
+          (function() {
+            const elements = Array.from(document.querySelectorAll('button, div, span, [role="button"], [class*="project"], [class*="novo"]'));
+            const btn = elements.find(el => {
+              const text = (el.textContent || '').trim().toLowerCase();
+              return text === '+ novo projeto' || 
+                     text === '+ new project' || 
+                     text.includes('novo projeto') || 
+                     text.includes('new project') ||
+                     text === 'novo projeto' ||
+                     text === 'new project';
+            });
+            if (btn) {
+              btn.click();
+              return true;
+            }
+            return false;
+          })()
+        `;
+        const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
+        if (projectCreated) {
+          console.log("Google Flow Auto-Scan: Clicado em '+ Novo projeto'. Aguardando carregar...");
+          setTimeout(() => runScan(), 3000);
+          setIsScanning(false);
+          return;
+        }
+      }
+
       const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
       const result = JSON.parse(resultStr) as ScanResult;
       setScanResult(result);
@@ -3504,9 +3529,10 @@ function PromptInjector() {
       setTimeout(() => runScan(), 2000);
     };
     const handleNavigate = (e: any) => {
-      setUrl(e.url);
       setInputValue(e.url);
       setScanResult(null); // Limpar resultados antigos
+      // Agendar novo scan após navegação in-page para detectar os novos seletores do editor
+      setTimeout(() => runScan(), 2500);
     };
 
     webview.addEventListener('did-start-loading', handleStartLoad);
@@ -3635,17 +3661,18 @@ function PromptInjector() {
   const getSmartSelector = (type: 'veo' | 'digen' | 'image'): string | undefined => {
     if (!scanResult) return undefined;
     
+    const currentUrl = webviewRef.current?.getURL() || url;
     // DIGEN active
-    if (url.includes('digen.ai')) {
+    if (currentUrl.includes('digen.ai')) {
       if (type === 'digen') {
         return scanResult.prompts[0]?.selector; // Fala vai pro prompt do avatar
       }
     }
     
     // Google Labs Flow active
-    if (url.includes('labs.google')) {
-      if (type === 'veo') {
-        return scanResult.prompts[0]?.selector; // Animação vai pro prompt do VEO
+    if (currentUrl.includes('labs.google')) {
+      if (type === 'veo' || type === 'image') {
+        return scanResult.prompts[0]?.selector; // Vai para o prompt ativo do VEO ou Imagem
       }
     }
     
@@ -3664,8 +3691,9 @@ function PromptInjector() {
     }
 
     if (injTarget === 'flow') {
+      const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
       const flowConfigsToApply = [
-        injConfigs['flow-Tipo'],
+        generationType,
         injConfigs['flow-Modo'],
         injConfigs['flow-Aspecto'],
         injConfigs['flow-Variacoes'],
@@ -3779,10 +3807,45 @@ function PromptInjector() {
     setActiveNode(3); // Auto-Config
 
     try {
+      // 0. Se for Google Flow, garantir criação de novo projeto
+      if (injTarget === 'flow') {
+        setAutoConfigStatus("Novo Projeto...");
+        const clickNewProjectScript = `
+          (function() {
+            const elements = Array.from(document.querySelectorAll('button, div, span, [role="button"], [class*="project"], [class*="novo"]'));
+            const btn = elements.find(el => {
+              const text = (el.textContent || '').trim().toLowerCase();
+              return text === '+ novo projeto' || 
+                     text === '+ new project' || 
+                     text.includes('novo projeto') || 
+                     text.includes('new project') ||
+                     text === 'novo projeto' ||
+                     text === 'new project';
+            });
+            if (btn) {
+              btn.click();
+              return true;
+            }
+            return false;
+          })()
+        `;
+        try {
+          const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
+          if (projectCreated) {
+            console.log("Google Flow: Clicado em '+ Novo projeto' no início do lote. Aguardando UI...");
+            setAutoConfigStatus("Carregando UI...");
+            await new Promise(r => setTimeout(r, 4500)); // Aguarda 4.5 segundos para carregar o editor
+          }
+        } catch (err) {
+          console.error("Erro ao tentar clicar em Novo Projeto no lote:", err);
+        }
+      }
+
       // 1. Auto-configuração Silenciosa
       if (injTarget === 'flow') {
+        const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
         const flowConfigsToApply = [
-          injConfigs['flow-Tipo'],
+          generationType,
           injConfigs['flow-Modo'],
           injConfigs['flow-Aspecto'],
           injConfigs['flow-Variacoes'],
@@ -3870,9 +3933,13 @@ function PromptInjector() {
         const item = itemsToInject[idx];
         const promptText = activeTab === 'scenes' 
           ? (injTarget === 'flow' ? (item as any).veoPrompt : (item as any).digenPrompt)
-          : (item as any).veoPrompt;
+          : (injTarget === 'flow' ? (item as any).imagePrompt : (item as any).veoPrompt);
 
-        const smartSelector = getSmartSelector(injTarget === 'flow' ? 'veo' : 'digen');
+        const smartSelector = getSmartSelector(
+          injTarget === 'flow' 
+            ? (activeTab === 'scenes' ? 'veo' : 'image') 
+            : 'digen'
+        );
 
         for (let loop = 1; loop <= generationsCount; loop++) {
           // Verificar cancelamento/pausa no início da variação
@@ -4446,7 +4513,14 @@ function PromptInjector() {
               {themeMode === 'dark' ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-blue-500" />}
             </button>
             <button
-              onClick={() => { setUrl('https://digen.ai/explore'); setInputValue('https://digen.ai/explore'); }}
+              onClick={() => {
+                const targetUrl = 'https://digen.ai/explore';
+                setUrl(targetUrl);
+                setInputValue(targetUrl);
+                if (webviewRef.current) {
+                  try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
+                }
+              }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
                 url.includes('digen.ai')
                   ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
@@ -4456,7 +4530,14 @@ function PromptInjector() {
               Digen
             </button>
             <button
-              onClick={() => { setUrl('https://labs.google/fx/pt/tools/flow'); setInputValue('https://labs.google/fx/pt/tools/flow'); }}
+              onClick={() => {
+                const targetUrl = 'https://labs.google/fx/pt/tools/flow';
+                setUrl(targetUrl);
+                setInputValue(targetUrl);
+                if (webviewRef.current) {
+                  try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
+                }
+              }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
                 url.includes('labs.google')
                   ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
@@ -4475,6 +4556,7 @@ function PromptInjector() {
             ref={webviewRef}
             src={url}
             partition="persist:injector-session"
+            useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             className="w-full h-full"
             style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
           />
@@ -4815,7 +4897,6 @@ function SpyWindow() {
       setTimeout(() => runScan(), 2000);
     };
     const handleNavigate = (e: any) => {
-      setUrl(e.url);
       setInputValue(e.url);
       setScanResult(null);
       setRecordedActions([]); // Limpar ações ao navegar
@@ -5472,9 +5553,17 @@ function SpyWindow() {
           {/* Quick Links */}
           <div className="flex gap-2">
             <button
-              onClick={() => { setUrl('https://digen.ai/explore'); setInputValue('https://digen.ai/explore'); }}
+              onClick={() => {
+                const targetUrl = 'https://digen.ai/explore';
+                if (url !== targetUrl) {
+                  setUrl(targetUrl);
+                  setInputValue(targetUrl);
+                } else if (webviewRef.current) {
+                  try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
+                }
+              }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                url.includes('digen.ai')
+                inputValue.includes('digen.ai')
                   ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
                   : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
               }`}
@@ -5482,9 +5571,17 @@ function SpyWindow() {
               Digen
             </button>
             <button
-              onClick={() => { setUrl('https://labs.google/fx/pt/tools/flow'); setInputValue('https://labs.google/fx/pt/tools/flow'); }}
+              onClick={() => {
+                const targetUrl = 'https://labs.google/fx/pt/tools/flow';
+                if (url !== targetUrl) {
+                  setUrl(targetUrl);
+                  setInputValue(targetUrl);
+                } else if (webviewRef.current) {
+                  try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
+                }
+              }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                url.includes('labs.google')
+                inputValue.includes('labs.google')
                   ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                   : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
               }`}
@@ -5501,6 +5598,7 @@ function SpyWindow() {
             ref={webviewRef}
             src={url}
             partition="persist:spy-session"
+            useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             className="w-full h-full"
             style={{ width: '100%', height: '100%', border: 'none', background: '#000' }}
           />
