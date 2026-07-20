@@ -2646,26 +2646,50 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           <Save className="w-3.5 h-3.5" /> Salvar Pasta do Projeto
                         </button>
                       )}
-                      <button 
-                        onClick={() => {
-                          if (window.electronAPI) {
-                            window.electronAPI.openInjectorWindow({ 
-                              generatedScript, 
-                              generatedAngles,
-                              injectionTarget,
-                              targetConfigs
-                            });
-                          } else {
+                      {window.electronAPI ? (
+                        <>
+                          <button 
+                            onClick={() => {
+                              window.electronAPI.openInjectorWindow({ 
+                                generatedScript, 
+                                generatedAngles,
+                                injectionTarget: 'flow',
+                                targetConfigs
+                              });
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-blue-500/10"
+                            title="Abrir o injetor de prompts configurado para o Google Labs Flow"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" /> Injetar no Google Flow
+                          </button>
+                          <button 
+                            onClick={() => {
+                              window.electronAPI.openInjectorWindow({ 
+                                generatedScript, 
+                                generatedAngles,
+                                injectionTarget: 'digen',
+                                targetConfigs
+                              });
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-purple-500/10"
+                            title="Abrir o injetor de prompts configurado para o DIGEN.ai"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" /> Injetar no DIGEN.ai
+                          </button>
+                        </>
+                      ) : (
+                        <button 
+                          onClick={() => {
                             setValidationAlert({
                               title: "Recurso Exclusivo",
                               message: "Esta funcionalidade de injeção automática está disponível apenas rodando no aplicativo Electron."
                             });
-                          }
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" /> Injetar Prompts (Digen/Flow)
-                      </button>
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" /> Injetar Prompts (Digen/Flow)
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -3582,13 +3606,36 @@ function PromptInjector() {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return false;
         el.focus();
+        
+        // Selecionar todo o conteúdo para substituir em vez de apenas adicionar no final
         if (el.isContentEditable) {
-          el.innerText = ${escapedText};
-        } else {
-          el.value = ${escapedText};
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else if (typeof el.select === 'function') {
+          el.select();
         }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        // Usar insertText para simular digitação e atualizar estados do React no Flow/Digen
+        let success = false;
+        try {
+          success = document.execCommand('insertText', false, ${escapedText});
+        } catch (e) {}
+        
+        if (!success) {
+          if (el.isContentEditable) {
+            el.innerText = ${escapedText};
+          } else {
+            el.value = ${escapedText};
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         return true;
       })()
       `
@@ -3604,30 +3651,50 @@ function PromptInjector() {
           } catch (e) {}
         }
         
+        target.focus();
         if (target.isContentEditable) {
-          target.focus();
-          target.innerText = ${escapedText};
-          target.dispatchEvent(new Event('input', { bubbles: true }));
-          target.dispatchEvent(new Event('change', { bubbles: true }));
-          return true;
-        } else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-          target.focus();
-          const start = target.selectionStart || 0;
-          const end = target.selectionEnd || 0;
-          const val = target.value || '';
-          
-          target.value = val.slice(0, start) + ${escapedText} + val.slice(end);
-          
-          const newPos = start + ${escapedText}.length;
-          target.setSelectionRange(newPos, newPos);
-          
-          target.dispatchEvent(new Event('input', { bubbles: true }));
-          target.dispatchEvent(new Event('change', { bubbles: true }));
-          
-          const tracker = target._valueTracker;
-          if (tracker) {
-            tracker.setValue(val);
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else if (typeof target.select === 'function') {
+          target.select();
+        }
+        
+        let success = false;
+        try {
+          success = document.execCommand('insertText', false, ${escapedText});
+        } catch (e) {}
+        
+        if (!success) {
+          if (target.isContentEditable) {
+            target.innerText = ${escapedText};
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          } else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+            const start = target.selectionStart || 0;
+            const end = target.selectionEnd || 0;
+            const val = target.value || '';
+            
+            target.value = val.slice(0, start) + ${escapedText} + val.slice(end);
+            
+            const newPos = start + ${escapedText}.length;
+            target.setSelectionRange(newPos, newPos);
+            
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            const tracker = target._valueTracker;
+            if (tracker) {
+              tracker.setValue(val);
+            }
+            return true;
           }
+        } else {
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
           return true;
         }
         return false;
