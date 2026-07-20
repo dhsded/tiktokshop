@@ -558,7 +558,7 @@ function MainApp() {
   const [generatedAngles, setGeneratedAngles] = useState<GeneratedAngle[] | null>(null);
   const [isGeneratingAngles, setIsGeneratingAngles] = useState(false);
   const [numAngles, setNumAngles] = useState(4);
-  const [validationAlert, setValidationAlert] = useState<{ title: string; message: string } | null>(null);
+  const [validationAlert, setValidationAlert] = useState<{ title: string; message: string; buttonText?: string } | null>(null);
 
   // --- Handlers ---
 
@@ -3107,7 +3107,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 onClick={() => setValidationAlert(null)}
                 className="w-full py-4 rounded-2xl bg-orange-500 hover:bg-orange-600 active:scale-[0.98] transition-all text-white font-bold text-sm tracking-wide uppercase shadow-[0_0_20px_rgba(249,115,22,0.25)]"
               >
-                Entendi, vou corrigir
+                {validationAlert.buttonText || "Entendi"}
               </button>
             </motion.div>
           </div>
@@ -3480,7 +3480,7 @@ function PromptInjector() {
       if (currentUrl.includes('labs.google') && !currentUrl.includes('/project')) {
         const clickNewProjectScript = `
           (function() {
-            const elements = Array.from(document.querySelectorAll('button, div, span, [role="button"], [class*="project"], [class*="novo"]'));
+            const elements = Array.from(document.querySelectorAll('button, div, span, p, a, [role="button"], [class*="project"], [class*="novo"]'));
             const btn = elements.find(el => {
               const text = (el.textContent || '').trim().toLowerCase();
               return text === '+ novo projeto' || 
@@ -3491,7 +3491,36 @@ function PromptInjector() {
                      text === 'new project';
             });
             if (btn) {
-              btn.click();
+              // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
+              let clickable = btn;
+              let parent = btn.parentElement;
+              while (parent && parent !== document.body) {
+                const tag = parent.tagName.toLowerCase();
+                const role = parent.getAttribute('role');
+                const isClickable = tag === 'button' || tag === 'a' || role === 'button' || 
+                                    parent.className.includes('card') || parent.className.includes('project') ||
+                                    parent.onclick !== null;
+                if (isClickable) {
+                  clickable = parent;
+                  break;
+                }
+                parent = parent.parentElement;
+              }
+              
+              // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
+              const mouseEvents = ['mousedown', 'mouseup', 'click'];
+              mouseEvents.forEach(eventType => {
+                const ev = new MouseEvent(eventType, {
+                  bubbles: true,
+                  cancelable: true,
+                  view: window
+                });
+                clickable.dispatchEvent(ev);
+              });
+              
+              if (typeof clickable.click === 'function') {
+                clickable.click();
+              }
               return true;
             }
             return false;
@@ -3812,7 +3841,7 @@ function PromptInjector() {
         setAutoConfigStatus("Novo Projeto...");
         const clickNewProjectScript = `
           (function() {
-            const elements = Array.from(document.querySelectorAll('button, div, span, [role="button"], [class*="project"], [class*="novo"]'));
+            const elements = Array.from(document.querySelectorAll('button, div, span, p, a, [role="button"], [class*="project"], [class*="novo"]'));
             const btn = elements.find(el => {
               const text = (el.textContent || '').trim().toLowerCase();
               return text === '+ novo projeto' || 
@@ -3823,7 +3852,36 @@ function PromptInjector() {
                      text === 'new project';
             });
             if (btn) {
-              btn.click();
+              // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
+              let clickable = btn;
+              let parent = btn.parentElement;
+              while (parent && parent !== document.body) {
+                const tag = parent.tagName.toLowerCase();
+                const role = parent.getAttribute('role');
+                const isClickable = tag === 'button' || tag === 'a' || role === 'button' || 
+                                    parent.className.includes('card') || parent.className.includes('project') ||
+                                    parent.onclick !== null;
+                if (isClickable) {
+                  clickable = parent;
+                  break;
+                }
+                parent = parent.parentElement;
+              }
+              
+              // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
+              const mouseEvents = ['mousedown', 'mouseup', 'click'];
+              mouseEvents.forEach(eventType => {
+                const ev = new MouseEvent(eventType, {
+                  bubbles: true,
+                  cancelable: true,
+                  view: window
+                });
+                clickable.dispatchEvent(ev);
+              });
+              
+              if (typeof clickable.click === 'function') {
+                clickable.click();
+              }
               return true;
             }
             return false;
