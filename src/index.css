@@ -254,4 +254,109 @@ select option:focus,
   color: #ffffff !important;
 }
 
+/* ============================================================
+   Regras de Tema Claro (White) para o Injetor de Prompts
+   ============================================================ */
+
+/* Fundo do painel lateral e topo */
+.light.prompt-injector-window .bg-zinc-900\/60,
+.light.prompt-injector-window .bg-zinc-950\/40,
+.light.prompt-injector-window .bg-zinc-950\/60,
+.light.prompt-injector-window .bg-zinc-900\/20,
+.light.prompt-injector-window .bg-zinc-900\/80,
+.light.prompt-injector-window .bg-zinc-900 {
+  background-color: #f8fafc !important; /* slate-50 */
+}
+
+/* Fundo da tela inteira */
+.light.prompt-injector-window {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Bordas dos painéis e separadores */
+.light.prompt-injector-window .border-zinc-800,
+.light.prompt-injector-window .border-zinc-850,
+.light.prompt-injector-window .border-zinc-800\/80,
+.light.prompt-injector-window .border-white\/10 {
+  border-color: #cbd5e1 !important; /* slate-300 */
+}
+
+/* Cards de Cena / Ângulos normais */
+.light.prompt-injector-window .bg-zinc-900\/40 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Cards de Cena / Ângulos - Textos internos */
+.light.prompt-injector-window .bg-zinc-900\/40 span {
+  color: #0f172a !important;
+}
+
+/* Card Selecionado (Cena/Ângulo selecionado) */
+.light.prompt-injector-window .bg-orange-500\/10 {
+  background-color: #ffedd5 !important; /* orange-100 */
+  border-color: #f97316 !important; /* orange-500 */
+}
+.light.prompt-injector-window .bg-orange-500\/10 * {
+  color: #c2410c !important; /* orange-700 */
+}
+
+.light.prompt-injector-window .bg-teal-500\/10 {
+  background-color: #ccfbf1 !important; /* teal-100 */
+  border-color: #14b8a6 !important; /* teal-500 */
+}
+.light.prompt-injector-window .bg-teal-500\/10 * {
+  color: #0f766e !important; /* teal-700 */
+}
+
+/* Foco Selecionado Card */
+.light.prompt-injector-window .bg-zinc-950\/60 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+.light.prompt-injector-window .bg-zinc-950\/60 h4 {
+  color: #64748b !important; /* slate-500 */
+}
+.light.prompt-injector-window .bg-zinc-950\/60 p {
+  color: #0f172a !important;
+}
+
+/* Caixa de texto de exibição do prompt (VEO/DIGEN/Imagem) */
+.light.prompt-injector-window .bg-zinc-950 {
+  background-color: #f8fafc !important; /* slate-50 */
+  border-color: #cbd5e1 !important;
+}
+
+/* Forçar cor do texto dentro das caixas de código dos prompts */
+.light.prompt-injector-window .font-mono.bg-zinc-950 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  color: #1e293b !important; /* slate-800 */
+  border-color: #cbd5e1 !important;
+}
+
+/* Duração e outros pequenos textos */
+.light.prompt-injector-window .text-zinc-400,
+.light.prompt-injector-window .text-zinc-500,
+.light.prompt-injector-window .text-white\/60,
+.light.prompt-injector-window .text-white\/40 {
+  color: #64748b !important; /* slate-500 */
+}
+.light.prompt-injector-window .text-zinc-300 {
+  color: #334155 !important; /* slate-700 */
+}
+.light.prompt-injector-window .text-white {
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Inputs da URL */
+.light.prompt-injector-window input {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+.light.prompt-injector-window input::placeholder {
+  color: #94a3b8 !important;
+}
+
 

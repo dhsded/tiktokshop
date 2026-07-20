@@ -4244,7 +4244,7 @@ function PromptInjector() {
   const currentItem = activeTab === 'scenes' ? scenes[selectedItemIndex] : angles[selectedItemIndex];
 
   return (
-    <div className={`h-screen w-screen ${themeMode} bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none`}>
+    <div className={`h-screen w-screen ${themeMode} prompt-injector-window bg-zinc-950 text-zinc-100 flex overflow-hidden font-sans select-none`}>
       {/* PAINEL ESQUERDO: CONTROLES E PROMPTS */}
       <div className="w-[420px] h-full border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex flex-col flex-shrink-0 overflow-hidden">
         
