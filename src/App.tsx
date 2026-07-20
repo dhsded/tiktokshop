@@ -3084,7 +3084,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', duration: 0.4 }}
-              className="relative bg-[#161618] border border-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl text-center space-y-6 overflow-hidden"
+              style={{
+                backgroundColor: themeMode === 'dark' ? '#161618' : '#ffffff',
+                borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+              }}
+              className="relative border rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl text-center space-y-6 overflow-hidden"
             >
               {/* Top Accent Gradient Line */}
               <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 to-orange-600" />
@@ -3095,10 +3099,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </div>
               
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold font-display text-white tracking-tight">
+                <h3 
+                  style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                  className="text-2xl font-bold font-display tracking-tight"
+                >
                   {validationAlert.title}
                 </h3>
-                <p className="text-sm text-white/60 leading-relaxed">
+                <p 
+                  style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(15,23,42,0.7)' }}
+                  className="text-sm leading-relaxed"
+                >
                   {validationAlert.message}
                 </p>
               </div>
@@ -3286,13 +3296,27 @@ Angulos a variar (escolha os mais relevantes para o produto):
       {/* Modal Alerta Chaves Esgotadas */}
       {isKeysExhaustedAlertOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-red-500/30 rounded-3xl p-6 max-w-sm w-full shadow-2xl shadow-red-500/5 text-center space-y-5">
+          <div 
+            style={{
+              backgroundColor: themeMode === 'dark' ? '#18181b' : '#ffffff',
+              borderColor: themeMode === 'dark' ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.2)'
+            }}
+            className="border rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-5"
+          >
             <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 mx-auto flex items-center justify-center text-3xl">
               ⚠️
             </div>
             <div className="space-y-2">
-              <h3 className="text-base font-bold font-display text-white">Chaves de API Esgotadas!</h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
+              <h3 
+                style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                className="text-base font-bold font-display"
+              >
+                Chaves de API Esgotadas!
+              </h3>
+              <p 
+                style={{ color: themeMode === 'dark' ? '#a1a1aa' : '#4b5563' }}
+                className="text-xs leading-relaxed"
+              >
                 Todas as chaves de API cadastradas falharam ou expiraram durante o processamento da fila. 
                 Carregue novas chaves do Gemini válidas para prosseguir.
               </p>
