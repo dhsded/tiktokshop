@@ -179,7 +179,7 @@ interface GeneratedAngle {
 
 // --- Constants ---
 
-const DURATIONS = ['5s', '6s', '8s', '10s'];
+const DURATIONS = ['4s', '5s', '6s', '8s', '10s'];
 const THEMES = [
   'Roupas Casuais',
   'Coleção de Verão',
@@ -216,8 +216,14 @@ function N8NFlowchart({
   downloadDelayRemaining,
   themeMode
 }: N8NFlowchartProps) {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    if (isGenerating) {
+      setIsMinimized(false);
+    }
+  }, [isGenerating]);
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
 
@@ -2466,19 +2472,35 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           {/* Se for Flow e o FlowSchema estiver carregado */}
                           {injectionTarget === 'flow' && (
                             <div className="space-y-4">
-                              {/* 2. Modo de Geração */}
+                              {/* 1. Tipo de Geração (Vídeo vs Imagem) */}
                               <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Modo de Vídeo</label>
+                                <label className="text-[11px] text-white/60 font-medium block">Tipo de Geração</label>
                                 <select
-                                  value={targetConfigs['flow-Modo'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modo': e.target.value }))}
+                                  value={targetConfigs['flow-Tipo'] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Tipo': e.target.value }))}
                                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                                 >
                                   <option value="">Selecione...</option>
-                                  <option value="Frames">Frames</option>
-                                  <option value="Elementos">Elementos</option>
+                                  <option value="Vídeo">Vídeo (VEO)</option>
+                                  <option value="Imagem">Imagem (Imagen 3)</option>
                                 </select>
                               </div>
+
+                              {/* 2. Modo de Geração (Apenas para Vídeo) */}
+                              {targetConfigs['flow-Tipo'] !== 'Imagem' && (
+                                <div className="space-y-1.5">
+                                  <label className="text-[11px] text-white/60 font-medium block">Modo de Vídeo</label>
+                                  <select
+                                    value={targetConfigs['flow-Modo'] || ''}
+                                    onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modo': e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="Frames">Frames</option>
+                                    <option value="Elementos">Elementos</option>
+                                  </select>
+                                </div>
+                              )}
 
                               {/* 3. Proporção (Aspect Ratio) */}
                               <div className="space-y-1.5">
@@ -2510,20 +2532,22 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 </select>
                               </div>
 
-                              {/* 5. Duração */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
-                                <select
-                                  value={targetConfigs['flow-Duração'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Duração': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="4s">4s</option>
-                                  <option value="6s">6s</option>
-                                  <option value="8s">8s</option>
-                                </select>
-                              </div>
+                              {/* 5. Duração (Apenas para Vídeo) */}
+                              {targetConfigs['flow-Tipo'] !== 'Imagem' && (
+                                <div className="space-y-1.5">
+                                  <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
+                                  <select
+                                    value={targetConfigs['flow-Duração'] || ''}
+                                    onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Duração': e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="4s">4s</option>
+                                    <option value="6s">6s</option>
+                                    <option value="8s">8s</option>
+                                  </select>
+                                </div>
+                              )}
                              </div>
                           )}
 
@@ -3358,7 +3382,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
       <N8NFlowchart
         queueLength={projects.length}
         activeNode={isSequencing ? 1 : (projects.length > 0 ? 0 : 0)}
-        isGenerating={isSequencing}
+        isGenerating={isSequencing || isGenerating}
         injectionTarget={injectionTarget}
         autoConfigStatus="Pendente"
         injectionProgressText=""
@@ -3595,19 +3619,70 @@ function PromptInjector() {
     setInputValue(targetUrl);
   };
 
+  const selectFlowTab = async (tabName: 'Vídeo' | 'Imagem') => {
+    if (injTarget !== 'flow' || !webviewRef.current) return;
+    const script = `
+      (function() {
+        const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
+        const targetEl = els.find(el => {
+          const text = (el.textContent || '').trim().toLowerCase();
+          return text.includes('${tabName.toLowerCase()}');
+        });
+        if (targetEl) {
+          targetEl.click();
+          targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      })()
+    `;
+    await webviewRef.current.executeJavaScript(script);
+    await new Promise(r => setTimeout(r, 800));
+  };
+
   const injectText = (text: string, selector?: string) => {
     if (!webviewRef.current) return;
     
     const escapedText = JSON.stringify(text);
     
-    const script = selector 
-      ? `
+    const script = `
       (function() {
-        const el = document.querySelector(${JSON.stringify(selector)});
+        const isVisible = (el) => {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) return false;
+          const s = window.getComputedStyle(el);
+          return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+        };
+
+        const findField = () => {
+          if (${JSON.stringify(selector || '')}) {
+            const el = document.querySelector(${JSON.stringify(selector || '')});
+            if (el && isVisible(el)) return el;
+          }
+          const textareas = Array.from(document.querySelectorAll('textarea'));
+          const visibleTextarea = textareas.find(t => isVisible(t));
+          if (visibleTextarea) return visibleTextarea;
+
+          const editables = Array.from(document.querySelectorAll('[contenteditable="true"], [contenteditable=""]'));
+          const visibleEditable = editables.find(e => isVisible(e));
+          if (visibleEditable) return visibleEditable;
+
+          const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+          const visibleInput = inputs.find(i => isVisible(i));
+          if (visibleInput) return visibleInput;
+
+          const active = document.activeElement;
+          if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
+            return active;
+          }
+          return null;
+        };
+
+        const el = findField();
         if (!el) return false;
+        
         el.focus();
         
-        // Selecionar todo o conteúdo para substituir em vez de apenas adicionar no final
         if (el.isContentEditable) {
           const range = document.createRange();
           range.selectNodeContents(el);
@@ -3618,7 +3693,6 @@ function PromptInjector() {
           el.select();
         }
         
-        // Usar insertText para simular digitação e atualizar estados do React no Flow/Digen
         let success = false;
         try {
           success = document.execCommand('insertText', false, ${escapedText});
@@ -3638,79 +3712,13 @@ function PromptInjector() {
         }
         return true;
       })()
-      `
-      : `
-      (function() {
-        const el = document.activeElement;
-        if (!el) return false;
-        
-        let target = el;
-        if (target.tagName === 'IFRAME') {
-          try {
-            target = target.contentDocument.activeElement || target.contentDocument.body;
-          } catch (e) {}
-        }
-        
-        target.focus();
-        if (target.isContentEditable) {
-          const range = document.createRange();
-          range.selectNodeContents(target);
-          const sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } else if (typeof target.select === 'function') {
-          target.select();
-        }
-        
-        let success = false;
-        try {
-          success = document.execCommand('insertText', false, ${escapedText});
-        } catch (e) {}
-        
-        if (!success) {
-          if (target.isContentEditable) {
-            target.innerText = ${escapedText};
-            target.dispatchEvent(new Event('input', { bubbles: true }));
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
-          } else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-            const start = target.selectionStart || 0;
-            const end = target.selectionEnd || 0;
-            const val = target.value || '';
-            
-            target.value = val.slice(0, start) + ${escapedText} + val.slice(end);
-            
-            const newPos = start + ${escapedText}.length;
-            target.setSelectionRange(newPos, newPos);
-            
-            target.dispatchEvent(new Event('input', { bubbles: true }));
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            const tracker = target._valueTracker;
-            if (tracker) {
-              tracker.setValue(val);
-            }
-            return true;
-          }
-        } else {
-          target.dispatchEvent(new Event('input', { bubbles: true }));
-          target.dispatchEvent(new Event('change', { bubbles: true }));
-          return true;
-        }
-        return false;
-      })()
     `;
     
     webviewRef.current.executeJavaScript(script)
       .then((success: boolean) => {
         if (!success) {
-          if (selector) {
-            // Tenta fallback com injeção clássica
-            injectText(text);
-          } else {
-            navigator.clipboard.writeText(text);
-            alert("Nenhum campo de texto focado encontrado na página. Copiado para a área de transferência!");
-          }
+          navigator.clipboard.writeText(text);
+          alert("Nenhum campo de texto visível encontrado na página. Copiado para a área de transferência!");
         }
       })
       .catch((err: any) => {
@@ -3753,13 +3761,13 @@ function PromptInjector() {
     }
 
     if (injTarget === 'flow') {
-      const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
+      const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
       const flowConfigsToApply = [
         generationType,
-        injConfigs['flow-Modo'],
+        generationType !== 'Imagem' ? injConfigs['flow-Modo'] : null,
         injConfigs['flow-Aspecto'],
         injConfigs['flow-Variacoes'],
-        injConfigs['flow-Duração']
+        generationType !== 'Imagem' ? injConfigs['flow-Duração'] : null
       ].filter(Boolean);
 
       if (flowConfigsToApply.length === 0) {
@@ -3774,12 +3782,11 @@ function PromptInjector() {
             (function() {
               const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
               const targetEl = els.find(el => {
-                const text = (el.textContent || '').trim();
-                if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
-                if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
-                if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
-                if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
-                return text === '${val}';
+                const text = (el.textContent || '').trim().toLowerCase();
+                const searchVal = '${val}'.toLowerCase();
+                if (searchVal === '9:16') return text.includes('9:16');
+                if (searchVal === '16:9') return text.includes('16:9');
+                return text.includes(searchVal);
               });
               if (targetEl) {
                 targetEl.click();
@@ -3976,13 +3983,13 @@ function PromptInjector() {
 
       // 1. Auto-configuração Silenciosa
       if (injTarget === 'flow') {
-        const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
+        const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
         const flowConfigsToApply = [
           generationType,
-          injConfigs['flow-Modo'],
+          generationType !== 'Imagem' ? injConfigs['flow-Modo'] : null,
           injConfigs['flow-Aspecto'],
           injConfigs['flow-Variacoes'],
-          injConfigs['flow-Duração']
+          generationType !== 'Imagem' ? injConfigs['flow-Duração'] : null
         ].filter(Boolean);
 
         let successCount = 0;
@@ -3991,12 +3998,11 @@ function PromptInjector() {
             (function() {
               const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
               const targetEl = els.find(el => {
-                const text = (el.textContent || '').trim();
-                if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
-                if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
-                if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
-                if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
-                return text === '${val}';
+                const text = (el.textContent || '').trim().toLowerCase();
+                const searchVal = '${val}'.toLowerCase();
+                if (searchVal === '9:16') return text.includes('9:16');
+                if (searchVal === '16:9') return text.includes('16:9');
+                return text.includes(searchVal);
               });
               if (targetEl) {
                 targetEl.click();
@@ -4064,15 +4070,20 @@ function PromptInjector() {
         setActiveNode(4); // Injeção
 
         const item = itemsToInject[idx];
-        const promptText = activeTab === 'scenes' 
-          ? (injTarget === 'flow' ? (item as any).veoPrompt : (item as any).digenPrompt)
-          : (injTarget === 'flow' ? (item as any).imagePrompt : (item as any).veoPrompt);
+        const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
+        const promptText = injTarget === 'flow'
+          ? (generationType === 'Vídeo' ? (item as any).veoPrompt : (item as any).imagePrompt)
+          : (item as any).digenPrompt;
 
         const smartSelector = getSmartSelector(
           injTarget === 'flow' 
-            ? (activeTab === 'scenes' ? 'veo' : 'image') 
+            ? (generationType === 'Vídeo' ? 'veo' : 'image') 
             : 'digen'
         );
+
+        if (injTarget === 'flow') {
+          await selectFlowTab(generationType === 'Vídeo' ? 'Vídeo' : 'Imagem');
+        }
 
         for (let loop = 1; loop <= generationsCount; loop++) {
           // Verificar cancelamento/pausa no início da variação
@@ -4424,7 +4435,10 @@ function PromptInjector() {
                       {currentItem.veoPrompt}
                     </div>
                     <button
-                      onClick={() => injectText(currentItem.veoPrompt, getSmartSelector('veo'))}
+                      onClick={async () => {
+                        await selectFlowTab('Vídeo');
+                        injectText(currentItem.veoPrompt, getSmartSelector('veo'));
+                      }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
                     >
                       Injetar VEO
@@ -4464,7 +4478,10 @@ function PromptInjector() {
                       {currentItem.imagePrompt}
                     </div>
                     <button
-                      onClick={() => injectText(currentItem.imagePrompt, getSmartSelector('image'))}
+                      onClick={async () => {
+                        await selectFlowTab('Imagem');
+                        injectText(currentItem.imagePrompt, getSmartSelector('image'));
+                      }}
                       className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
                     >
                       Injetar Imagem
@@ -4702,7 +4719,7 @@ function PromptInjector() {
       <N8NFlowchart
         queueLength={prompts ? 1 : 0}
         activeNode={activeNode}
-        isGenerating={false}
+        isGenerating={isAutomating}
         injectionTarget={injTarget}
         autoConfigStatus={autoConfigStatus}
         injectionProgressText={injectionProgressText}
