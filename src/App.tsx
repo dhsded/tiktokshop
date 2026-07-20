@@ -3499,65 +3499,7 @@ function PromptInjector() {
     if (!webviewRef.current) return;
     setIsScanning(true);
     try {
-      // Se for Google Flow e estiver na tela inicial (sem /project), tenta clicar em '+ Novo projeto'
-      const currentUrl = webviewRef.current?.getURL() || url;
-      if (currentUrl.includes('labs.google') && !currentUrl.includes('/project')) {
-        const clickNewProjectScript = `
-          (function() {
-            const elements = Array.from(document.querySelectorAll('button, div, span, p, a, [role="button"], [class*="project"], [class*="novo"]'));
-            const btn = elements.find(el => {
-              const text = (el.textContent || '').trim().toLowerCase();
-              return text === '+ novo projeto' || 
-                     text === '+ new project' || 
-                     text.includes('novo projeto') || 
-                     text.includes('new project') ||
-                     text === 'novo projeto' ||
-                     text === 'new project';
-            });
-            if (btn) {
-              // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
-              let clickable = btn;
-              let parent = btn.parentElement;
-              while (parent && parent !== document.body) {
-                const tag = parent.tagName.toLowerCase();
-                const role = parent.getAttribute('role');
-                const isClickable = tag === 'button' || tag === 'a' || role === 'button' || 
-                                    parent.className.includes('card') || parent.className.includes('project') ||
-                                    parent.onclick !== null;
-                if (isClickable) {
-                  clickable = parent;
-                  break;
-                }
-                parent = parent.parentElement;
-              }
-              
-              // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
-              const mouseEvents = ['mousedown', 'mouseup', 'click'];
-              mouseEvents.forEach(eventType => {
-                const ev = new MouseEvent(eventType, {
-                  bubbles: true,
-                  cancelable: true,
-                  view: window
-                });
-                clickable.dispatchEvent(ev);
-              });
-              
-              if (typeof clickable.click === 'function') {
-                clickable.click();
-              }
-              return true;
-            }
-            return false;
-          })()
-        `;
-        const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
-        if (projectCreated) {
-          console.log("Google Flow Auto-Scan: Clicado em '+ Novo projeto'. Aguardando carregar...");
-          setTimeout(() => runScan(), 3000);
-          setIsScanning(false);
-          return;
-        }
-      }
+
 
       const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
       const result = JSON.parse(resultStr) as ScanResult;
@@ -3862,64 +3804,106 @@ function PromptInjector() {
     try {
       // 0. Se for Google Flow, garantir criação de novo projeto
       if (injTarget === 'flow') {
-        setAutoConfigStatus("Novo Projeto...");
-        const clickNewProjectScript = `
-          (function() {
-            const elements = Array.from(document.querySelectorAll('button, div, span, p, a, [role="button"], [class*="project"], [class*="novo"]'));
-            const btn = elements.find(el => {
-              const text = (el.textContent || '').trim().toLowerCase();
-              return text === '+ novo projeto' || 
-                     text === '+ new project' || 
-                     text.includes('novo projeto') || 
-                     text.includes('new project') ||
-                     text === 'novo projeto' ||
-                     text === 'new project';
-            });
-            if (btn) {
-              // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
-              let clickable = btn;
-              let parent = btn.parentElement;
-              while (parent && parent !== document.body) {
-                const tag = parent.tagName.toLowerCase();
-                const role = parent.getAttribute('role');
-                const isClickable = tag === 'button' || tag === 'a' || role === 'button' || 
-                                    parent.className.includes('card') || parent.className.includes('project') ||
-                                    parent.onclick !== null;
-                if (isClickable) {
-                  clickable = parent;
+        const currentUrl = webviewRef.current.getURL() || url;
+        if (!currentUrl.includes('/project')) {
+          setAutoConfigStatus("Novo Projeto...");
+          const clickNewProjectScript = `
+            (function() {
+              const isVisible = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && 
+                       window.getComputedStyle(el).display !== 'none' && 
+                       window.getComputedStyle(el).visibility !== 'hidden';
+              };
+              const elements = Array.from(document.querySelectorAll('button, div, span, p, a, [role="button"], [class*="project"], [class*="novo"]'));
+              const btn = elements.find(el => {
+                if (!isVisible(el)) return false;
+                const text = (el.textContent || '').trim().toLowerCase();
+                return text === '+ novo projeto' || 
+                       text === '+ new project' || 
+                       text === 'novo projeto' || 
+                       text === 'new project' ||
+                       (text.includes('novo projeto') && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button')) ||
+                       (text.includes('new project') && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'));
+              });
+              if (btn) {
+                // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
+                let clickable = btn;
+                let parent = btn.parentElement;
+                while (parent && parent !== document.body) {
+                  const tag = parent.tagName.toLowerCase();
+                  const role = parent.getAttribute('role');
+                  const isClickable = tag === 'button' || tag === 'a' || role === 'button' || 
+                                      parent.className.includes('card') || parent.className.includes('project') ||
+                                      parent.onclick !== null;
+                  if (isClickable) {
+                    clickable = parent;
+                    break;
+                  }
+                  parent = parent.parentElement;
+                }
+                
+                // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
+                const mouseEvents = ['mousedown', 'mouseup', 'click'];
+                mouseEvents.forEach(eventType => {
+                  const ev = new MouseEvent(eventType, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                  });
+                  clickable.dispatchEvent(ev);
+                });
+                
+                if (typeof clickable.click === 'function') {
+                  clickable.click();
+                }
+                return true;
+              }
+              return false;
+            })()
+          `;
+          try {
+            const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
+            if (projectCreated) {
+              console.log("Google Flow: Clicado em '+ Novo projeto' no início do lote. Aguardando UI...");
+              setAutoConfigStatus("Carregando UI...");
+              
+              // Polling para esperar a URL mudar para /project (até 15 segundos)
+              let loaded = false;
+              for (let i = 0; i < 30; i++) {
+                await new Promise(r => setTimeout(r, 500));
+                const updatedUrl = webviewRef.current.getURL();
+                if (updatedUrl.includes('/project')) {
+                  loaded = true;
                   break;
                 }
-                parent = parent.parentElement;
               }
-              
-              // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
-              const mouseEvents = ['mousedown', 'mouseup', 'click'];
-              mouseEvents.forEach(eventType => {
-                const ev = new MouseEvent(eventType, {
-                  bubbles: true,
-                  cancelable: true,
-                  view: window
-                });
-                clickable.dispatchEvent(ev);
-              });
-              
-              if (typeof clickable.click === 'function') {
-                clickable.click();
+              if (!loaded) {
+                alert("Não foi possível carregar o editor do Google Flow automaticamente. Por favor, crie ou abra um projeto manualmente antes de iniciar.");
+                setIsAutomating(false);
+                return;
               }
-              return true;
+              // Dar 2 segundos pro editor carregar os campos e botões
+              await new Promise(r => setTimeout(r, 2000));
+            } else {
+              alert("Botão '+ Novo projeto' não encontrado ou não está visível. Por favor, abra um projeto manualmente antes de clicar em Executar Lote.");
+              setIsAutomating(false);
+              return;
             }
-            return false;
-          })()
-        `;
-        try {
-          const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
-          if (projectCreated) {
-            console.log("Google Flow: Clicado em '+ Novo projeto' no início do lote. Aguardando UI...");
-            setAutoConfigStatus("Carregando UI...");
-            await new Promise(r => setTimeout(r, 4500)); // Aguarda 4.5 segundos para carregar o editor
+          } catch (err: any) {
+            console.error("Erro ao tentar clicar em Novo Projeto no lote:", err);
+            alert("Erro ao criar novo projeto: " + (err.message || err));
+            setIsAutomating(false);
+            return;
           }
-        } catch (err) {
-          console.error("Erro ao tentar clicar em Novo Projeto no lote:", err);
+        }
+      } else if (injTarget === 'digen') {
+        const currentUrl = webviewRef.current.getURL() || url;
+        if (currentUrl.includes('/explore') || currentUrl.includes('/home') || !currentUrl.includes('/create')) {
+          alert("Por favor, abra a tela de criação/edição de vídeo do DIGEN (Editor) antes de iniciar a automação!");
+          setIsAutomating(false);
+          return;
         }
       }
 
@@ -4599,12 +4583,13 @@ function PromptInjector() {
                 const targetUrl = 'https://digen.ai/explore';
                 setUrl(targetUrl);
                 setInputValue(targetUrl);
+                setInjTarget('digen');
                 if (webviewRef.current) {
                   try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
                 }
               }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                url.includes('digen.ai')
+                injTarget === 'digen'
                   ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
                   : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
               }`}
@@ -4616,12 +4601,13 @@ function PromptInjector() {
                 const targetUrl = 'https://labs.google/fx/pt/tools/flow';
                 setUrl(targetUrl);
                 setInputValue(targetUrl);
+                setInjTarget('flow');
                 if (webviewRef.current) {
                   try { webviewRef.current.loadURL(targetUrl); } catch (e) { webviewRef.current.src = targetUrl; }
                 }
               }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                url.includes('labs.google')
+                injTarget === 'flow'
                   ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                   : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
               }`}
