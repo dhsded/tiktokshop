@@ -2323,45 +2323,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                        <FileJson className="w-3 h-3" />
-                        Número de Cenas
-                      </label>
-                      <div className="flex bg-white/5 rounded-2xl border border-white/10 items-center px-4 h-12">
-                        <input 
-                          type="number"
-                          min="1"
-                          max="15"
-                          value={numScenes}
-                          onChange={(e) => setNumScenes(Number(e.target.value) || 1)}
-                          className="w-full bg-transparent text-sm focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {(injectionTarget === 'flow' || injectionTarget === 'digen') && (
-                      <div className="space-y-3">
-                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                          <Settings2 className="w-3 h-3" />
-                          Duração do Vídeo
-                        </label>
-                        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
-                          {DURATIONS.map(d => (
-                            <button
-                              key={d}
-                              onClick={() => setDuration(d)}
-                              className={`flex-1 py-2 text-sm rounded-xl transition-all ${duration === d ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                            >
-                              {d}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-6 pt-6 border-t border-white/5">
-                    <div className="space-y-3">
-                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
                         <User className="w-3 h-3 text-orange-400" />
                         Estilo do Vídeo
                       </label>
@@ -2412,176 +2373,198 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </button>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Seção Inteligente de Plataforma de Injeção */}
-                    <div className="space-y-4 pt-6 border-t border-white/5">
-                      <div className="space-y-3">
-                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                          <Globe className="w-3 h-3 text-teal-400" />
-                          Plataforma de Injeção (Onde rodar o vídeo)
+                  {/* Seção Inteligente de Plataforma de Injeção */}
+                  <div className="space-y-4 pt-6 border-t border-white/5">
+                    <div className="space-y-3">
+                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                        <Globe className="w-3 h-3 text-teal-400" />
+                        Plataforma de Injeção (Onde rodar o vídeo)
+                      </label>
+                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setInjectionTarget('none')}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-lg border border-white/10 dark:border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Apenas Criar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInjectionTarget('digen')}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          DIGEN.ai
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInjectionTarget('flow')}
+                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        >
+                          Google Flow
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bloco de Configurações Gerais de Geração */}
+                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                          Configurações Gerais de Geração
+                        </span>
+                        {injectionTarget !== 'none' && (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-bold tracking-wider">
+                            Conectado
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Campo Comum 1: Número de Cenas / Prompts de Cena */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-white/60 font-medium block">
+                          Número de Cenas / Prompts de Cena
                         </label>
-                        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setInjectionTarget('none')}
-                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-lg border border-white/10 dark:border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
-                          >
-                            Apenas Criar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setInjectionTarget('digen')}
-                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                          >
-                            DIGEN.ai
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setInjectionTarget('flow')}
-                            className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                          >
-                            Google Flow
-                          </button>
+                        <div className="flex bg-white/5 rounded-xl border border-white/10 items-center px-3 h-10">
+                          <input 
+                            type="number"
+                            min="1"
+                            max="15"
+                            value={numScenes}
+                            onChange={(e) => setNumScenes(Number(e.target.value) || 1)}
+                            className="w-full bg-transparent text-xs text-white focus:outline-none"
+                          />
                         </div>
                       </div>
 
-                      {/* Renderização do Formulário Dinâmico com base no schema aprendido */}
-                      {injectionTarget !== 'none' && (
-                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                              Configurações Gerais de Geração
-                            </span>
-                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase font-bold tracking-wider">
-                              Conectado
-                            </span>
-                          </div>
+                      {/* Duração do Vídeo (sempre exibido se for Flow ou None) */}
+                      {injectionTarget !== 'digen' && (
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
+                          <select
+                            value={duration}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDuration(val);
+                              setTargetConfigs(prev => ({ ...prev, 'flow-Duração': val }));
+                            }}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                          >
+                            <option value="4s">4s</option>
+                            <option value="6s">6s</option>
+                            <option value="8s">8s</option>
+                          </select>
+                        </div>
+                      )}
 
-                          {/* Se for Digen e o DigenSchema estiver carregado */}
-                          {injectionTarget === 'digen' && (
-                            !digenSchema || digenSchema.configs.length === 0 ? (
-                              <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o DIGEN ainda.</p>
-                            ) : (
-                              digenSchema.configs.map((cfg) => (
-                                <div key={cfg.label} className="space-y-1.5">
-                                  <label className="text-[11px] text-white/60 font-medium block">{cfg.label}</label>
-                                  {cfg.options && cfg.options.length > 0 ? (
-                                    <select
-                                      value={targetConfigs[`digen-${cfg.label}`] || ''}
-                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
-                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                    >
-                                      <option value="">Selecione...</option>
-                                      {cfg.options.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      value={targetConfigs[`digen-${cfg.label}`] || ''}
-                                      onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
-                                      placeholder={`Seletor: ${cfg.selector}`}
-                                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                    />
-                                  )}
-                                </div>
-                              ))
-                            )
-                          )}
-
-                          {/* Se for Flow e o FlowSchema estiver carregado */}
-                          {injectionTarget === 'flow' && (
-                            <div className="space-y-4">
-
-                              {/* 3. Proporção (Aspect Ratio) */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Proporção (Aspect Ratio)</label>
+                      {/* Configurações Dinâmicas para Digen */}
+                      {injectionTarget === 'digen' && (
+                        !digenSchema || digenSchema.configs.length === 0 ? (
+                          <p className="text-xs text-white/30 italic">Nenhuma configuração mapeada para o DIGEN ainda.</p>
+                        ) : (
+                          digenSchema.configs.map((cfg) => (
+                            <div key={cfg.label} className="space-y-1.5">
+                              <label className="text-[11px] text-white/60 font-medium block">{cfg.label}</label>
+                              {cfg.options && cfg.options.length > 0 ? (
                                 <select
-                                  value={targetConfigs['flow-Aspecto'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Aspecto': e.target.value }))}
+                                  value={targetConfigs[`digen-${cfg.label}`] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
                                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                                 >
                                   <option value="">Selecione...</option>
-                                  <option value="9:16">9:16 (Vertical)</option>
-                                  <option value="16:9">16:9 (Horizontal)</option>
+                                  {cfg.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
                                 </select>
-                              </div>
-
-                              {/* 5. Duração */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
-                                <select
-                                  value={targetConfigs['flow-Duração'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Duração': e.target.value }))}
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={targetConfigs[`digen-${cfg.label}`] || ''}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, [`digen-${cfg.label}`]: e.target.value }))}
+                                  placeholder={`Seletor: ${cfg.selector}`}
                                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="4s">4s</option>
-                                  <option value="6s">6s</option>
-                                  <option value="8s">8s</option>
-                                </select>
-                              </div>
-
-                              {/* 6. Imagens por Cena */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Imagens por Cena</label>
-                                <select
-                                  value={targetConfigs['flow-ImagensPerCena'] || '1'}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-ImagensPerCena': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="1">1 Imagem por cena</option>
-                                  <option value="2">2 Imagens por cena</option>
-                                  <option value="3">3 Imagens por cena</option>
-                                  <option value="4">4 Imagens por cena</option>
-                                </select>
-                              </div>
-
-                              {/* 7. Vídeos por Imagem */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Vídeos por Imagem (Loops)</label>
-                                <select
-                                  value={targetConfigs['flow-VideosPerImagem'] || '1'}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-VideosPerImagem': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="1">1 Vídeo por imagem (A)</option>
-                                  <option value="2">2 Vídeos por imagem (A, B)</option>
-                                  <option value="3">3 Vídeos por imagem (A, B, C)</option>
-                                  <option value="4">4 Vídeos por imagem (A, B, C, D)</option>
-                                </select>
-                              </div>
+                                />
+                              )}
                             </div>
-                          )}
+                          ))
+                        )
+                      )}
 
-                          {/* Campo Compartilhado: Gerações por Prompt */}
-                          <div className="space-y-1.5 pt-3 border-t border-white/5">
-                            <label className="text-[11px] text-white/60 font-medium block flex items-center gap-1.5">
-                              🔁 Gerações por Prompt / Variações
-                            </label>
+                      {/* Configurações Específicas para Flow */}
+                      {injectionTarget === 'flow' && (
+                        <div className="space-y-4">
+                          {/* Proporção (Aspect Ratio) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Proporção (Aspect Ratio)</label>
                             <select
-                              value={targetConfigs['generationsPerPrompt'] || '1'}
-                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'generationsPerPrompt': e.target.value }))}
+                              value={targetConfigs['flow-Aspecto'] || ''}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Aspecto': e.target.value }))}
                               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                             >
-                              <option value="1">1 geração (Padrão)</option>
-                              <option value="2">2 gerações sequenciais</option>
-                              <option value="3">3 gerações sequenciais</option>
-                              <option value="4">4 gerações sequenciais</option>
-                              <option value="5">5 gerações sequenciais</option>
-                              <option value="6">6 gerações sequenciais</option>
-                              <option value="8">8 gerações sequenciais</option>
-                              <option value="10">10 gerações sequenciais</option>
+                              <option value="">Selecione...</option>
+                              <option value="9:16">9:16 (Vertical)</option>
+                              <option value="16:9">16:9 (Horizontal)</option>
                             </select>
-                            <p className="text-[9px] text-white/30 leading-relaxed">
-                              O injetor repetirá a geração sequencialmente o número de vezes escolhido, salvando como cenaX_1.mp4, cenaX_2.mp4, etc.
-                            </p>
+                          </div>
+
+                          {/* Imagens por Cena */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Imagens por Cena</label>
+                            <select
+                              value={targetConfigs['flow-ImagensPerCena'] || '1'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-ImagensPerCena': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="1">1 Imagem por cena</option>
+                              <option value="2">2 Imagens por cena</option>
+                              <option value="3">3 Imagens por cena</option>
+                              <option value="4">4 Imagens por cena</option>
+                            </select>
+                          </div>
+
+                          {/* Vídeos por Imagem */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Vídeos por Imagem (Loops)</label>
+                            <select
+                              value={targetConfigs['flow-VideosPerImagem'] || '1'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-VideosPerImagem': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="1">1 Vídeo por imagem (A)</option>
+                              <option value="2">2 Vídeos por imagem (A, B)</option>
+                              <option value="3">3 Vídeos por imagem (A, B, C)</option>
+                              <option value="4">4 Vídeos por imagem (A, B, C, D)</option>
+                            </select>
                           </div>
                         </div>
                       )}
-                    </div>
 
+                      {/* Campo Compartilhado: Gerações por Prompt */}
+                      {injectionTarget !== 'none' && (
+                        <div className="space-y-1.5 pt-3 border-t border-white/5">
+                          <label className="text-[11px] text-white/60 font-medium block flex items-center gap-1.5">
+                            🔁 Gerações por Prompt / Variações
+                          </label>
+                          <select
+                            value={targetConfigs['generationsPerPrompt'] || '1'}
+                            onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'generationsPerPrompt': e.target.value }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                          >
+                            <option value="1">1 geração (Padrão)</option>
+                            <option value="2">2 gerações sequenciais</option>
+                            <option value="3">3 gerações sequenciais</option>
+                            <option value="4">4 gerações sequenciais</option>
+                            <option value="5">5 gerações sequenciais</option>
+                            <option value="6">6 gerações sequenciais</option>
+                            <option value="8">8 gerações sequenciais</option>
+                            <option value="10">10 gerações sequenciais</option>
+                          </select>
+                          <p className="text-[9px] text-white/30 leading-relaxed">
+                            O injetor repetirá a geração sequencialmente o número de vezes escolhido, salvando como cenaX_1.mp4, cenaX_2.mp4, etc.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </section>
               </>
