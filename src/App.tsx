@@ -11,6 +11,9 @@ import {
   Trash2, 
   Play, 
   Settings2, 
+  Settings,
+  X,
+  Activity,
   Image as ImageIcon, 
   ChevronRight, 
   ChevronLeft,
@@ -116,6 +119,7 @@ declare global {
       loadSiteSchema: (siteName: string) => Promise<any>;
       saveSiteSchema: (payload: any) => Promise<{ success: boolean; error?: string }>;
       setCurrentDownloadInfo: (info: any) => Promise<boolean>;
+      uploadFileToWebview: (payload: { webContentsId: number, projectIndex: number, imageName?: string, sceneIndex?: number, imageIndex?: number, isFinal?: boolean }) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -179,7 +183,7 @@ interface GeneratedAngle {
 
 // --- Constants ---
 
-const DURATIONS = ['5s', '6s', '8s', '10s'];
+const DURATIONS = ['4s', '6s', '8s'];
 const THEMES = [
   'Roupas Casuais',
   'Coleção de Verão',
@@ -545,6 +549,15 @@ function MainApp() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectCounter, setProjectCounter] = useState(1);
   const [showQueue, setShowQueue] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAutomationFlow, setShowAutomationFlow] = useState<boolean>(() => {
+    return localStorage.getItem('show-automation-flow') === 'true';
+  });
+
+  const toggleAutomationFlow = (enabled: boolean) => {
+    setShowAutomationFlow(enabled);
+    localStorage.setItem('show-automation-flow', String(enabled));
+  };
 
   // States do Injetor Auto-adaptável
   const [injectionTarget, setInjectionTarget] = useState<'digen' | 'flow' | 'none'>('none');
@@ -1294,7 +1307,7 @@ Imagens fornecidas:
 1. Modelo/Apresentador(a): ${modelImage ? modelImage.name : "Nenhuma (Vídeo em POV)"}
 2. Fotos do Produto: ${productImages.map(p => p.name).join(', ')}
 
-Duração de cada cena: ${duration}
+Duração de cada vídeo: ${duration}
 Número de cenas a gerar: ${numScenes}
 Observações específicas: ${observations || "INSTRUÇÃO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefício ou característica visível do produto para usar no roteiro e narração."}
 
@@ -1311,7 +1324,7 @@ REGRAS OBRIGATÓRIAS:
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
 6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
-7. CRÍTICO: A narração deve respeitar a duração de ${duration}. Para ${duration}, use no máximo ${parseInt(duration) * 2.5} palavras para garantir uma fala natural e fluida.
+7. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
 8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
 9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
@@ -1458,7 +1471,7 @@ ${configList}
               {
                 text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
 Tema: ${finalTheme}
-Duração de cada cena: ${duration}
+Duração de cada vídeo: ${duration}
 Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
 
 ${platformInstruction}
@@ -1473,6 +1486,7 @@ REGRAS OBRIGATÓRIAS:
 5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
 6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
 7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
+8. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
 
 Retorne em estrutura JSON:
 {
@@ -1924,11 +1938,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   {themeMode === 'dark' ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-blue-500" />}
                 </button>
                 <button 
-                  onClick={() => keysFileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold uppercase tracking-wider"
+                  onClick={() => setShowSettingsModal(true)}
+                  className="p-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white flex items-center justify-center relative group"
+                  title="Configurações (Chaves API e Automação)"
                 >
-                  <Key className="w-4 h-4" />
-                  {apiKeys.length > 0 ? `${apiKeys.length} Chaves` : 'Chaves (.txt)'}
+                  <Settings className="w-4 h-4 text-orange-400 group-hover:rotate-45 transition-transform duration-300" />
+                  {apiKeys.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-zinc-900" />
+                  )}
                 </button>
                 <button 
                   onClick={() => setShowQueue(true)}
@@ -2111,23 +2128,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       )}
                     </div>
 
-                    <div className="space-y-3">
-                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                        <Settings2 className="w-3 h-3" />
-                        Duração da Cena
-                      </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
-                        {DURATIONS.map(d => (
-                          <button
-                            key={d}
-                            onClick={() => setDuration(d)}
-                            className={`flex-1 py-3 text-sm rounded-xl transition-all ${duration === d ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                          >
-                            {d}
-                          </button>
-                        ))}
+                    {(injectionTarget === 'flow' || injectionTarget === 'digen') && (
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Settings2 className="w-3 h-3" />
+                          Duração do Vídeo
+                        </label>
+                        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                          {DURATIONS.map(d => (
+                            <button
+                              key={d}
+                              onClick={() => setDuration(d)}
+                              className={`flex-1 py-3 text-sm rounded-xl transition-all ${duration === d ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="space-y-3 pt-4 border-t border-white/5">
@@ -2313,23 +2332,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                        <Settings2 className="w-3 h-3" />
-                        Duração da Cena
-                      </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
-                        {DURATIONS.map(d => (
-                          <button
-                            key={d}
-                            onClick={() => setDuration(d)}
-                            className={`flex-1 py-2 text-sm rounded-xl transition-all ${duration === d ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
-                          >
-                            {d}
-                          </button>
-                        ))}
+                    {(injectionTarget === 'flow' || injectionTarget === 'digen') && (
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Settings2 className="w-3 h-3" />
+                          Duração do Vídeo
+                        </label>
+                        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                          {DURATIONS.map(d => (
+                            <button
+                              key={d}
+                              onClick={() => setDuration(d)}
+                              className={`flex-1 py-2 text-sm rounded-xl transition-all ${duration === d ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="space-y-6 pt-6 border-t border-white/5">
@@ -2466,20 +2487,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           {/* Se for Flow e o FlowSchema estiver carregado */}
                           {injectionTarget === 'flow' && (
                             <div className="space-y-4">
-                              {/* 2. Modo de Geração */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Modo de Vídeo</label>
-                                <select
-                                  value={targetConfigs['flow-Modo'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modo': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="Frames">Frames</option>
-                                  <option value="Elementos">Elementos</option>
-                                </select>
-                              </div>
-
                               {/* 3. Proporção (Aspect Ratio) */}
                               <div className="space-y-1.5">
                                 <label className="text-[11px] text-white/60 font-medium block">Proporção (Aspect Ratio)</label>
@@ -2491,22 +2498,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                   <option value="">Selecione...</option>
                                   <option value="9:16">9:16 (Vertical)</option>
                                   <option value="16:9">16:9 (Horizontal)</option>
-                                </select>
-                              </div>
-
-                              {/* 4. Quantidade de Variações */}
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] text-white/60 font-medium block">Quantidade de Variações</label>
-                                <select
-                                  value={targetConfigs['flow-Variacoes'] || ''}
-                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Variacoes': e.target.value }))}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="1x">1x (Gerar 1)</option>
-                                  <option value="x2">x2 (Gerar 2)</option>
-                                  <option value="x3">x3 (Gerar 3)</option>
-                                  <option value="x4">x4 (Gerar 4)</option>
                                 </select>
                               </div>
 
@@ -2524,7 +2515,37 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                   <option value="8s">8s</option>
                                 </select>
                               </div>
-                             </div>
+
+                              {/* 6. Imagens por Cena */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Imagens por Cena</label>
+                                <select
+                                  value={targetConfigs['flow-ImagensPerCena'] || '1'}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-ImagensPerCena': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="1">1 Imagem por cena</option>
+                                  <option value="2">2 Imagens por cena</option>
+                                  <option value="3">3 Imagens por cena</option>
+                                  <option value="4">4 Imagens por cena</option>
+                                </select>
+                              </div>
+
+                              {/* 7. Vídeos por Imagem */}
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] text-white/60 font-medium block">Vídeos por Imagem (Loops)</label>
+                                <select
+                                  value={targetConfigs['flow-VideosPerImagem'] || '1'}
+                                  onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-VideosPerImagem': e.target.value }))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                                >
+                                  <option value="1">1 Vídeo por imagem (A)</option>
+                                  <option value="2">2 Vídeos por imagem (A, B)</option>
+                                  <option value="3">3 Vídeos por imagem (A, B, C)</option>
+                                  <option value="4">4 Vídeos por imagem (A, B, C, D)</option>
+                                </select>
+                              </div>
+                            </div>
                           )}
 
                           {/* Campo Compartilhado: Gerações por Prompt */}
@@ -2650,11 +2671,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <>
                           <button 
                             onClick={() => {
+                              const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+                              const pIndex = proj ? proj.projectIndex : projectCounter;
                               window.electronAPI.openInjectorWindow({ 
                                 generatedScript, 
                                 generatedAngles,
                                 injectionTarget: 'flow',
-                                targetConfigs
+                                targetConfigs,
+                                projectIndex: pIndex
                               });
                             }}
                             className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-blue-500/10"
@@ -2664,11 +2688,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           </button>
                           <button 
                             onClick={() => {
+                              const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+                              const pIndex = proj ? proj.projectIndex : projectCounter;
                               window.electronAPI.openInjectorWindow({ 
                                 generatedScript, 
                                 generatedAngles,
                                 injectionTarget: 'digen',
-                                targetConfigs
+                                targetConfigs,
+                                projectIndex: pIndex
                               });
                             }}
                             className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-purple-500/10"
@@ -3354,19 +3381,211 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </div>
         </div>
       )}
-      {/* Fluxograma N8N de execução flutuante no painel principal */}
-      <N8NFlowchart
-        queueLength={projects.length}
-        activeNode={isSequencing ? 1 : (projects.length > 0 ? 0 : 0)}
-        isGenerating={isSequencing}
-        injectionTarget={injectionTarget}
-        autoConfigStatus="Pendente"
-        injectionProgressText=""
-        downloadStatus="Pendente"
-        queueDelayRemaining={0}
-        downloadDelayRemaining={0}
-        themeMode={themeMode}
-      />
+      {/* Modal de Configurações (Engrenagem) */}
+      <AnimatePresence>
+        {showSettingsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md rounded-2xl border shadow-2xl p-6 overflow-hidden"
+              style={{
+                backgroundColor: themeMode === 'light' ? '#ffffff' : '#18181b',
+                borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a',
+                color: themeMode === 'light' ? '#0f172a' : '#ffffff'
+              }}
+            >
+              {/* Cabeçalho do Modal */}
+              <div 
+                className="flex items-center justify-between pb-4 mb-5 border-b"
+                style={{ borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' }}
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="p-2.5 rounded-xl border flex items-center justify-center"
+                    style={{
+                      backgroundColor: themeMode === 'light' ? 'rgba(249,115,22,0.1)' : 'rgba(249,115,22,0.15)',
+                      borderColor: themeMode === 'light' ? 'rgba(249,115,22,0.2)' : 'rgba(249,115,22,0.3)',
+                      color: '#ea580c'
+                    }}
+                  >
+                    <Settings className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 
+                      className="font-bold text-base font-display"
+                      style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                    >
+                      Configurações do Sistema
+                    </h3>
+                    <p 
+                      className="text-xs"
+                      style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
+                    >
+                      Gerencie chaves API e opções do fluxo
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="p-2 rounded-xl transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Opção 1: Chaves API */}
+                <div 
+                  className="p-4 rounded-xl border space-y-3"
+                  style={{
+                    backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                    borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Key className="w-4 h-4" style={{ color: '#ea580c' }} />
+                      <div>
+                        <h4 
+                          className="text-xs font-bold uppercase tracking-wider"
+                          style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                        >
+                          Chaves de API Gemini
+                        </h4>
+                        <p 
+                          className="text-[11px]"
+                          style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
+                        >
+                          Carregar arquivo .txt com chaves
+                        </p>
+                      </div>
+                    </div>
+                    {apiKeys.length > 0 && (
+                      <span 
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                        style={{
+                          backgroundColor: themeMode === 'light' ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.1)',
+                          borderColor: themeMode === 'light' ? 'rgba(22,163,74,0.2)' : 'rgba(74,222,128,0.3)',
+                          color: themeMode === 'light' ? '#16a34a' : '#4ade80'
+                        }}
+                      >
+                        {apiKeys.length} {apiKeys.length === 1 ? 'Chave' : 'Chaves'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => keysFileInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-500/10"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      {apiKeys.length > 0 ? 'Substituir Chaves (.txt)' : 'Carregar Chaves (.txt)'}
+                    </button>
+                    {apiKeys.length > 0 && (
+                      <button
+                        onClick={() => setApiKeys([])}
+                        className="p-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
+                        title="Remover Chaves"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {apiKeys.length > 0 && (
+                    <p 
+                      className="text-[10px] font-mono flex items-center gap-1"
+                      style={{ color: themeMode === 'light' ? '#16a34a' : '#4ade80' }}
+                    >
+                      <Check className="w-3.5 h-3.5" /> Chaves ativas prontas para rotação automática.
+                    </p>
+                  )}
+                </div>
+
+                {/* Opção 2: Fluxo de Automação Ativo */}
+                <div 
+                  className="p-4 rounded-xl border flex items-center justify-between gap-4"
+                  style={{
+                    backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                    borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                  }}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Activity className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#a855f7' }} />
+                    <div>
+                      <h4 
+                        className="text-xs font-bold uppercase tracking-wider"
+                        style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                      >
+                        Fluxo de Automação Ativo
+                      </h4>
+                      <p 
+                        className="text-[11px] leading-snug"
+                        style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
+                      >
+                        Exibir o painel visual flutuante com o progresso do fluxo.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle switch */}
+                  <button
+                    onClick={() => toggleAutomationFlow(!showAutomationFlow)}
+                    className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                    style={{
+                      backgroundColor: showAutomationFlow 
+                        ? '#a855f7' 
+                        : (themeMode === 'light' ? '#d4d4d8' : '#3f3f46')
+                    }}
+                  >
+                    <span
+                      className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      style={{
+                        transform: showAutomationFlow ? 'translateX(20px)' : 'translateX(0)'
+                      }}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Rodapé do Modal */}
+              <div 
+                className="mt-6 pt-4 border-t flex justify-end"
+                style={{ borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' }}
+              >
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="px-4 py-2 text-white rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    backgroundColor: themeMode === 'light' ? '#0f172a' : '#27272a'
+                  }}
+                >
+                  Concluído
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Fluxograma N8N de execução flutuante no painel principal (apenas se habilitado) */}
+      {showAutomationFlow && (
+        <N8NFlowchart
+          queueLength={projects.length}
+          activeNode={isSequencing ? 1 : (projects.length > 0 ? 0 : 0)}
+          isGenerating={isSequencing}
+          injectionTarget={injectionTarget}
+          autoConfigStatus="Pendente"
+          injectionProgressText=""
+          downloadStatus="Pendente"
+          queueDelayRemaining={0}
+          downloadDelayRemaining={0}
+          themeMode={themeMode}
+        />
+      )}
     </div>
   );
 }
@@ -3756,10 +3975,9 @@ function PromptInjector() {
       const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
       const flowConfigsToApply = [
         generationType,
-        injConfigs['flow-Modo'],
+        injConfigs['flow-Modo'] || 'Frames',
         injConfigs['flow-Aspecto'],
-        injConfigs['flow-Variacoes'],
-        injConfigs['flow-Duração']
+        injConfigs['flow-Duração'] || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
       ].filter(Boolean);
 
       if (flowConfigsToApply.length === 0) {
@@ -3772,17 +3990,22 @@ function PromptInjector() {
         for (const val of flowConfigsToApply) {
           const script = `
             (function() {
-              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
+              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option, [role="button"]'));
               const targetEl = els.find(el => {
                 const text = (el.textContent || '').trim();
                 if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
                 if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
                 if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
                 if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
+                if ('${val}' === 'Frames') return text === 'Frames' || text.toLowerCase() === 'frames' || text.includes('Frames');
                 return text === '${val}';
               });
               if (targetEl) {
-                targetEl.click();
+                let clickable = targetEl;
+                while (clickable && clickable.tagName !== 'BUTTON' && clickable.getAttribute('role') !== 'button' && clickable.parentElement) {
+                  clickable = clickable.parentElement;
+                }
+                (clickable || targetEl).click();
                 targetEl.dispatchEvent(new Event('change', { bubbles: true }));
                 return true;
               }
@@ -3979,27 +4202,31 @@ function PromptInjector() {
         const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
         const flowConfigsToApply = [
           generationType,
-          injConfigs['flow-Modo'],
+          injConfigs['flow-Modo'] || 'Frames',
           injConfigs['flow-Aspecto'],
-          injConfigs['flow-Variacoes'],
-          injConfigs['flow-Duração']
+          injConfigs['flow-Duração'] || (itemsToInject[0] as any)?.duration || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
         ].filter(Boolean);
 
         let successCount = 0;
         for (const val of flowConfigsToApply) {
           const script = `
             (function() {
-              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
+              const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option, [role="button"]'));
               const targetEl = els.find(el => {
                 const text = (el.textContent || '').trim();
                 if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
                 if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
                 if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
                 if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
+                if ('${val}' === 'Frames') return text === 'Frames' || text.toLowerCase() === 'frames' || text.includes('Frames');
                 return text === '${val}';
               });
               if (targetEl) {
-                targetEl.click();
+                let clickable = targetEl;
+                while (clickable && clickable.tagName !== 'BUTTON' && clickable.getAttribute('role') !== 'button' && clickable.parentElement) {
+                  clickable = clickable.parentElement;
+                }
+                (clickable || targetEl).click();
                 targetEl.dispatchEvent(new Event('change', { bubbles: true }));
                 return true;
               }
@@ -4050,6 +4277,9 @@ function PromptInjector() {
 
       // 2. Loop de Geração Sequencial
       const generationsCount = Number(injConfigs['generationsPerPrompt']) || 1;
+      const isFlowScenes = (injTarget === 'flow' && activeTab === 'scenes');
+      const imagesPerScene = isFlowScenes ? (Number(injConfigs['flow-ImagensPerCena']) || 1) : 1;
+      const videosPerImage = isFlowScenes ? (Number(injConfigs['flow-VideosPerImagem']) || 1) : generationsCount;
 
       for (let idx = 0; idx < itemsToInject.length; idx++) {
         // Verificar cancelamento/pausa no início da cena
@@ -4074,139 +4304,180 @@ function PromptInjector() {
             : 'digen'
         );
 
-        for (let loop = 1; loop <= generationsCount; loop++) {
-          // Verificar cancelamento/pausa no início da variação
-          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-          while (pauseControllerRef.current) {
-            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            setDownloadStatus("Pausado...");
-            await new Promise(r => setTimeout(r, 500));
-          }
-
-          setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Gerando ${loop}/${generationsCount})`);
-          setDownloadStatus("Aguardando Geração...");
-
-          // Metadados de interceptação de download com await síncrono no Main process
-          await window.electronAPI.setCurrentDownloadInfo({
-            projectIndex: prompts?.projectIndex || 1,
-            sceneIndex: idx + 1,
-            generationLoop: loop
-          });
-
-          // Injeta prompt
-          await injectText(promptText, smartSelector);
-          await new Promise(r => setTimeout(r, 1500));
-
-          // Verificar cancelamento/pausa antes de clicar em Criar
-          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-          while (pauseControllerRef.current) {
-            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            setDownloadStatus("Pausado...");
-            await new Promise(r => setTimeout(r, 500));
-          }
-
-          // Clica em Criar
-          const clickGenerateScript = `
-            (function() {
-              const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
-              const btn = els.find(el => {
-                const text = (el.textContent || '').trim();
-                return text === 'Criar' || text === 'Generate' || text === 'Create' || text.includes('Gerar');
-              });
-              if (btn && !btn.disabled) {
-                btn.click();
-                return true;
-              }
-              return false;
-            })()
-          `;
-          await webviewRef.current.executeJavaScript(clickGenerateScript);
-
-          // Espera conclusão do render
-          setDownloadStatus("Renderizando...");
-          let isDone = false;
-          for (let check = 0; check < 60; check++) { // Timeout de 3 minutos
-            // Verificar cancelamento/pausa durante render
-            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            while (pauseControllerRef.current) {
-              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-              setDownloadStatus("Pausado durante render...");
-              await new Promise(r => setTimeout(r, 500));
-            }
-
-            await new Promise(r => setTimeout(r, 3000));
-            try {
-              const checkScript = `
-                (function() {
-                  const hasLoader = document.querySelector('.loader, .loading, [class*="progress"], [class*="loading"]') !== null;
-                  const buttons = Array.from(document.querySelectorAll('button'));
-                  const generateBtn = buttons.find(b => b.textContent.includes('Criar') || b.textContent.includes('Generate') || b.textContent.includes('Create'));
-                  
-                  if (generateBtn && !generateBtn.disabled && !hasLoader) {
-                    return "ready";
-                  }
-                  return "generating";
-                })()
-              `;
-              const status = await webviewRef.current.executeJavaScript(checkScript);
-              if (status === 'ready') {
-                isDone = true;
-                break;
-              }
-            } catch (err) {
-              // Silencia erros
-            }
-          }
-
-          // Verificar cancelamento/pausa antes de baixar
-          if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-          while (pauseControllerRef.current) {
-            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            setDownloadStatus("Pausado...");
-            await new Promise(r => setTimeout(r, 500));
-          }
-
-          // Clica em Baixar
-          setDownloadStatus("Baixando...");
-          const clickDownloadScript = `
-            (function() {
-              const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
-              const downloadBtn = els.find(el => {
-                const text = (el.textContent || '').trim().toLowerCase();
-                const title = (el.getAttribute('title') || '').toLowerCase();
-                const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                const href = (el.getAttribute('href') || '').toLowerCase();
-                
-                return text.includes('baixar') || text.includes('download') || 
-                       title.includes('download') || title.includes('baixar') ||
-                       aria.includes('download') || aria.includes('baixar') ||
-                       href.includes('download') || el.className.includes('download');
-              });
-              if (downloadBtn) {
-                downloadBtn.click();
-                return true;
-              }
-              return false;
-            })()
-          `;
-          await webviewRef.current.executeJavaScript(clickDownloadScript);
-
-          // Cooldown de Download de 10 segundos
-          setDownloadStatus(`Salvo (${loop}/${generationsCount})`);
-          setActiveNode(5); // Download
-          for (let s = 10; s > 0; s--) {
-            // Verificar cancelamento/pausa no cooldown de download
+        for (let imgIdx = 1; imgIdx <= imagesPerScene; imgIdx++) {
+          for (let vidIdx = 1; vidIdx <= videosPerImage; vidIdx++) {
+            // Verificar cancelamento/pausa no início da variação
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
             while (pauseControllerRef.current) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
               setDownloadStatus("Pausado...");
               await new Promise(r => setTimeout(r, 500));
             }
-            setDownloadDelayRemaining(s);
-            await new Promise(r => setTimeout(r, 1000));
+
+            const letter = String.fromCharCode(64 + vidIdx); // 1->A, 2->B, etc.
+            const progressText = isFlowScenes
+              ? `Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene} - Víd ${letter})`
+              : `Cena ${idx + 1}/${itemsToInject.length} (Gerando ${vidIdx}/${generationsCount})`;
+
+            setInjectionProgressText(progressText);
+            setDownloadStatus("Aguardando Geração...");
+
+            // Gerar customFileName correspondente ao fluxograma:
+            // "img1 cena01A"
+            const sceneStr2 = String(idx + 1).padStart(2, '0');
+            const customFileName = isFlowScenes
+              ? `img${imgIdx} cena${sceneStr2}${letter}`
+              : `cena${idx + 1}_${vidIdx}`;
+
+            // Metadados de interceptação de download com await síncrono no Main process
+            await window.electronAPI.setCurrentDownloadInfo({
+              projectIndex: prompts?.projectIndex || 1,
+              sceneIndex: idx + 1,
+              generationLoop: vidIdx,
+              customFileName
+            });
+
+            // Se o destino for Google Flow e estivermos processando cenas, fazer upload da imagem de referência no campo 'Inicial'
+            if (isFlowScenes) {
+              setDownloadStatus(`Fazendo upload da imagem ${imgIdx}...`);
+              try {
+                const webContentsId = webviewRef.current.getWebContentsId();
+                const uploadResult = await window.electronAPI.uploadFileToWebview({
+                  webContentsId,
+                  projectIndex: prompts?.projectIndex || 1,
+                  sceneIndex: idx + 1,
+                  imageIndex: imgIdx,
+                  isFinal: false
+                });
+                if (uploadResult.success) {
+                  console.log(`[Electron Upload] Upload da imagem ${imgIdx} da Cena ${idx + 1} no campo Inicial concluído.`);
+                } else {
+                  console.warn(`[Electron Upload] Falha no upload da imagem ${imgIdx} no campo Inicial: ${uploadResult.error}`);
+                }
+              } catch (err) {
+                console.error(`[Electron Upload] Erro durante o upload da imagem ${imgIdx} no campo Inicial:`, err);
+              }
+              await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Injeta prompt
+            await injectText(promptText, smartSelector);
+            await new Promise(r => setTimeout(r, 1500));
+
+            // Verificar cancelamento/pausa antes de clicar em Criar
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            while (pauseControllerRef.current) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              setDownloadStatus("Pausado...");
+              await new Promise(r => setTimeout(r, 500));
+            }
+
+            // Clica em Criar
+            const clickGenerateScript = `
+              (function() {
+                const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
+                const btn = els.find(el => {
+                  const text = (el.textContent || '').trim();
+                  return text === 'Criar' || text === 'Generate' || text === 'Create' || text.includes('Gerar');
+                });
+                if (btn && !btn.disabled) {
+                  btn.click();
+                  return true;
+                }
+                return false;
+              })()
+            `;
+            await webviewRef.current.executeJavaScript(clickGenerateScript);
+
+            // Espera conclusão do render
+            setDownloadStatus("Renderizando...");
+            let isDone = false;
+            for (let check = 0; check < 60; check++) { // Timeout de 3 minutos
+              // Verificar cancelamento/pausa durante render
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              while (pauseControllerRef.current) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                setDownloadStatus("Pausado durante render...");
+                await new Promise(r => setTimeout(r, 500));
+              }
+
+              await new Promise(r => setTimeout(r, 3000));
+              try {
+                const checkScript = `
+                  (function() {
+                    const hasLoader = document.querySelector('.loader, .loading, [class*="progress"], [class*="loading"]') !== null;
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const generateBtn = buttons.find(b => b.textContent.includes('Criar') || b.textContent.includes('Generate') || b.textContent.includes('Create'));
+                    
+                    if (generateBtn && !generateBtn.disabled && !hasLoader) {
+                      return "ready";
+                    }
+                    return "generating";
+                  })()
+                `;
+                const status = await webviewRef.current.executeJavaScript(checkScript);
+                if (status === 'ready') {
+                  isDone = true;
+                  break;
+                }
+              } catch (err) {
+                // Silencia erros
+              }
+            }
+
+            // Verificar cancelamento/pausa antes de baixar
+            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+            while (pauseControllerRef.current) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              setDownloadStatus("Pausado...");
+              await new Promise(r => setTimeout(r, 500));
+            }
+
+            // Clica em Baixar
+            setDownloadStatus("Baixando...");
+            const clickDownloadScript = `
+              (function() {
+                const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
+                const downloadBtn = els.find(el => {
+                  const text = (el.textContent || '').trim().toLowerCase();
+                  const title = (el.getAttribute('title') || '').toLowerCase();
+                  const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                  const href = (el.getAttribute('href') || '').toLowerCase();
+                  
+                  return text.includes('baixar') || text.includes('download') || 
+                         title.includes('download') || title.includes('baixar') ||
+                         aria.includes('download') || aria.includes('baixar') ||
+                         href.includes('download') || el.className.includes('download');
+                });
+                if (downloadBtn) {
+                  downloadBtn.click();
+                  return true;
+                }
+                return false;
+              })()
+            `;
+            await webviewRef.current.executeJavaScript(clickDownloadScript);
+
+            // Cooldown de Download de 10 segundos
+            const statusMsg = isFlowScenes
+              ? `Salvo (Img ${imgIdx} - Víd ${letter})`
+              : `Salvo (${vidIdx}/${generationsCount})`;
+            setDownloadStatus(statusMsg);
+            setActiveNode(5); // Download
+            for (let s = 10; s > 0; s--) {
+              // Verificar cancelamento/pausa no cooldown de download
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              while (pauseControllerRef.current) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                setDownloadStatus("Pausado...");
+                await new Promise(r => setTimeout(r, 500));
+              }
+              setDownloadDelayRemaining(s);
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            setDownloadDelayRemaining(0);
+            setActiveNode(4); // Injeção
           }
-          setDownloadDelayRemaining(0);
-          setActiveNode(4); // Injeção
         }
       }
 

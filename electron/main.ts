@@ -251,6 +251,184 @@ ipcMain.handle('set-current-download-info', (_event, info: any) => {
   return true;
 });
 
+ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, projectIndex, imageName, sceneIndex, imageIndex, isFinal }) => {
+  const { webContents } = require('electron');
+  const path = require('path');
+  const fs = require('fs');
+
+  const targetWebContents = webContents.fromId(webContentsId);
+  if (!targetWebContents) throw new Error("WebContents not found");
+
+  const downloadsPath = app.getPath('downloads');
+  let filePath = '';
+
+  if (imageName) {
+    filePath = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`, 'imagens_referencia', imageName);
+  } else if (sceneIndex !== undefined && imageIndex !== undefined) {
+    const imgDir = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`, 'imagens_referencia');
+    if (!fs.existsSync(imgDir)) {
+      console.warn(`[Electron Upload] Directory not found: ${imgDir}`);
+      return { success: false, error: `Directory not found: ${imgDir}` };
+    }
+
+    const files = fs.readdirSync(imgDir);
+    const sceneStr2 = String(sceneIndex).padStart(2, '0');
+    const sceneStr = String(sceneIndex);
+
+    // Padrões de busca por nome de arquivo (e.g. img1 cena01, img1-cena01, cena01_1, cena1_1)
+    const targetPattern1 = `img${imageIndex} cena${sceneStr2}`;
+    const targetPattern2 = `img${imageIndex}-cena${sceneStr2}`;
+    const targetPattern3 = `cena${sceneStr2}_${imageIndex}`;
+    const targetPattern4 = `cena${sceneStr}_${imageIndex}`;
+    const targetPattern5 = `cena ${sceneStr2} - imagem ${imageIndex}`;
+    const targetPattern6 = `cena ${sceneStr} - imagem ${imageIndex}`;
+
+    let matchedFile = files.find(f => {
+      const lf = f.toLowerCase();
+      return lf.includes(targetPattern1.toLowerCase()) ||
+             lf.includes(targetPattern2.toLowerCase()) ||
+             lf.includes(targetPattern3.toLowerCase()) ||
+             lf.includes(targetPattern4.toLowerCase()) ||
+             lf.includes(targetPattern5.toLowerCase()) ||
+             lf.includes(targetPattern6.toLowerCase());
+    });
+
+    if (!matchedFile) {
+      matchedFile = files.find(f => {
+        const lf = f.toLowerCase();
+        return (lf.includes(`cena${sceneStr2}`) || lf.includes(`cena${sceneStr}`) || lf.includes(`cena ${sceneStr}`)) && 
+               (lf.includes(`img${imageIndex}`) || lf.includes(`_${imageIndex}`) || lf.includes(`-${imageIndex}`) || lf.includes(` ${imageIndex}`) || lf.includes(`imagem ${imageIndex}`));
+      });
+    }
+
+    if (!matchedFile) {
+      matchedFile = files.find(f => {
+        const lf = f.toLowerCase();
+        return (lf.includes(`cena${sceneStr2}`) || lf.includes(`cena${sceneStr}`)) && lf.includes(String(imageIndex));
+      });
+    }
+
+    if (!matchedFile) {
+      console.warn(`[Electron Upload] No reference image found for scene ${sceneIndex}, image index ${imageIndex} in ${imgDir}`);
+      return { success: false, error: `No reference image found for scene ${sceneIndex}, image index ${imageIndex}` };
+    }
+
+    filePath = path.join(imgDir, matchedFile);
+  } else {
+    return { success: false, error: "Neither imageName nor sceneIndex/imageIndex provided" };
+  }
+
+  if (!fs.existsSync(filePath)) {
+    console.warn(`[Electron Upload] File not found at path: ${filePath}`);
+    return { success: false, error: `File not found: ${filePath}` };
+  }
+
+  // 1. Script para encontrar e retornar um seletor CSS único para o campo de upload (input[type="file"]) do "Inicial" ou "Final"
+  const findInputSelectorScript = `
+    (function() {
+      const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      if (inputs.length === 0) return null;
+      
+      function getUniqueSelector(el) {
+        if (el.id) return '#' + el.id;
+        let path = [];
+        while (el && el.nodeType === Node.ELEMENT_NODE) {
+          let selector = el.nodeName.toLowerCase();
+          if (el.className) {
+            const classes = el.className.split(/\\s+/).filter(c => c && !c.includes(':'));
+            if (classes.length > 0) {
+              selector += '.' + classes.join('.');
+            }
+          }
+          let sibling = el.previousElementSibling;
+          let nth = 1;
+          while (sibling) {
+            if (sibling.nodeName === el.nodeName) nth++;
+            sibling = sibling.previousElementSibling;
+          }
+          selector += ':nth-of-type(' + nth + ')';
+          path.unshift(selector);
+          el = el.parentNode;
+        }
+        return path.join(' > ');
+      }
+
+      const targetLabel = ${isFinal ? '"Final"' : '"Inicial"'};
+      for (const input of inputs) {
+        let parent = input.parentElement;
+        while (parent && parent !== document.body) {
+          const text = (parent.textContent || '');
+          if (text.includes(targetLabel) || text.includes('Start') || text.includes('First')) {
+            return getUniqueSelector(input);
+          }
+          parent = parent.parentElement;
+        }
+      }
+      
+      const fallbackIndex = ${isFinal ? '1' : '0'};
+      if (inputs[fallbackIndex]) {
+        return getUniqueSelector(inputs[fallbackIndex]);
+      }
+      return getUniqueSelector(inputs[0]);
+    })()
+  `;
+
+  try {
+    const selector = await targetWebContents.executeJavaScript(findInputSelectorScript);
+    if (!selector) {
+      console.warn("[Electron Upload] No file input element found in Google Flow webview");
+      return { success: false, error: "No file input element found" };
+    }
+
+    console.log(`[Electron Upload] Uploading ${filePath} to input: ${selector}`);
+
+    // 2. Anexar o debugger do Chromium DevTools Protocol (CDP)
+    try {
+      if (!targetWebContents.debugger.isAttached()) {
+        targetWebContents.debugger.attach('1.3');
+      }
+    } catch (err) {
+      console.error("[Electron Upload] Failed to attach debugger:", err);
+    }
+
+    // 3. Obter o documento, localizar o nodeId e definir os arquivos no input
+    const { root } = await targetWebContents.debugger.sendCommand('DOM.getDocument');
+    const { nodeId } = await targetWebContents.debugger.sendCommand('DOM.querySelector', {
+      nodeId: root.nodeId,
+      selector: selector
+    });
+
+    if (nodeId) {
+      await targetWebContents.debugger.sendCommand('DOM.setFileInputFiles', {
+        files: [filePath],
+        nodeId: nodeId
+      });
+
+      // Disparar eventos DOM para garantir que a UI reativa do React do Flow capture o arquivo
+      await targetWebContents.executeJavaScript(`
+        (function() {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (el) {
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        })()
+      `);
+
+      return { success: true };
+    } else {
+      return { success: false, error: `NodeId not found for selector: ${selector}` };
+    }
+  } catch (err: any) {
+    console.error("[Electron Upload] Failed to upload file via CDP:", err);
+    return { success: false, error: err.message };
+  } finally {
+    try {
+      targetWebContents.debugger.detach();
+    } catch (e) {}
+  }
+});
+
 // ============================================================
 // App Lifecycle
 // ============================================================
