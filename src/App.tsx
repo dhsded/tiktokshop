@@ -2160,27 +2160,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <Volume2 className="w-3 h-3 text-purple-400" />
                       Gênero da Voz / Narrador
                     </label>
-                    <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                    <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                       <button
                         type="button"
                         onClick={() => setVoiceGender('female')}
-                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          voiceGender === 'female' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                        }`}
                       >
-                        Feminino
+                        <span className="truncate">Feminino</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setVoiceGender('male')}
-                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          voiceGender === 'male' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                        }`}
                       >
-                        Masculino
+                        <span className="truncate">Masculino</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setVoiceGender('none')}
-                        className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                        className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          voiceGender === 'none' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                        }`}
                       >
-                        Sem Narração
+                        <span className="truncate">Sem Narração</span>
                       </button>
                     </div>
                   </div>
@@ -2326,20 +2332,24 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <User className="w-3 h-3 text-orange-400" />
                         Estilo do Vídeo
                       </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+                      <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setVideoStyle('standard')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-2 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
+                            videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Apresentador
+                          <span className="truncate">Apresentador</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVideoStyle('pov')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-2 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
+                            videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          POV (Mãos)
+                          <span className="truncate">POV (Mãos)</span>
                         </button>
                       </div>
                     </div>
@@ -2349,27 +2359,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <Volume2 className="w-3 h-3 text-purple-400" />
                         Gênero da Voz / Narrador
                       </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                      <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setVoiceGender('female')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'female' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            voiceGender === 'female' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Feminino
+                          <span className="truncate">Feminino</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVoiceGender('male')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'male' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            voiceGender === 'male' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Masculino
+                          <span className="truncate">Masculino</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVoiceGender('none')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${voiceGender === 'none' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            voiceGender === 'none' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Sem Narração
+                          <span className="truncate">Sem Narração</span>
                         </button>
                       </div>
                     </div>
@@ -2382,27 +2398,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <Globe className="w-3 h-3 text-teal-400" />
                         Plataforma de Injeção (Onde rodar o vídeo)
                       </label>
-                      <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                      <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('none')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-lg border border-white/10 dark:border-zinc-700' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-md border border-white/10 dark:border-zinc-700' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Apenas Criar
+                          <span className="truncate">Apenas Criar</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('digen')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          DIGEN.ai
+                          <span className="truncate">DIGEN.ai</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('flow')}
-                          className={`flex-1 py-3 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white/60'}`}
+                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                            injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
+                          }`}
                         >
-                          Google Flow
+                          <span className="truncate">Google Flow</span>
                         </button>
                       </div>
                     </div>
@@ -3047,7 +3069,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 {/* Presets de Proporção */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Proporção</span>
-                  <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                  <div className="grid grid-cols-5 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                     {[
                       { label: 'Livre', value: undefined },
                       { label: '9:16', value: 9/16 },
@@ -3058,13 +3080,13 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <button
                         key={preset.label}
                         onClick={() => setCropAspect(preset.value)}
-                        className={`flex-1 py-2 text-xs rounded-xl font-bold uppercase tracking-wider transition-all ${
+                        className={`h-9 px-1 rounded-xl text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
                           cropAspect === preset.value
-                            ? 'bg-orange-500 text-white shadow-lg'
-                            : 'text-white/40 hover:text-white/60'
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : 'text-white/50 hover:text-white/80'
                         }`}
                       >
-                        {preset.label}
+                        <span className="truncate">{preset.label}</span>
                       </button>
                     ))}
                   </div>
