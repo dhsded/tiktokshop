@@ -2444,42 +2444,43 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         )}
                       </div>
 
-                      {/* Campo Comum 1: Número de Cenas / Prompts de Cena */}
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] text-white/60 font-medium block">
-                          Número de Cenas / Prompts de Cena
-                        </label>
-                        <div className="flex bg-white/5 rounded-xl border border-white/10 items-center px-3 h-10">
-                          <input 
-                            type="number"
-                            min="1"
-                            max="15"
-                            value={numScenes}
-                            onChange={(e) => setNumScenes(Number(e.target.value) || 1)}
-                            className="w-full bg-transparent text-xs text-white focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Duração do Vídeo (sempre exibido se for Flow ou None) */}
-                      {injectionTarget !== 'digen' && (
+                      {/* Campos Comuns Lado a Lado: Número de Cenas e Duração */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
-                          <select
-                            value={duration}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setDuration(val);
-                              setTargetConfigs(prev => ({ ...prev, 'flow-Duração': val }));
-                            }}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                          >
-                            <option value="4s">4s</option>
-                            <option value="6s">6s</option>
-                            <option value="8s">8s</option>
-                          </select>
+                          <label className="text-[11px] text-white/60 font-medium block">
+                            Número de Cenas / Prompts de Cena
+                          </label>
+                          <div className="flex bg-white/5 rounded-xl border border-white/10 items-center px-3 h-10">
+                            <input 
+                              type="number"
+                              min="1"
+                              max="15"
+                              value={numScenes}
+                              onChange={(e) => setNumScenes(Number(e.target.value) || 1)}
+                              className="w-full bg-transparent text-xs text-white focus:outline-none"
+                            />
+                          </div>
                         </div>
-                      )}
+
+                        {injectionTarget !== 'digen' && (
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
+                            <select
+                              value={duration}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDuration(val);
+                                setTargetConfigs(prev => ({ ...prev, 'flow-Duração': val }));
+                              }}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 h-10 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="4s">4s</option>
+                              <option value="6s">6s</option>
+                              <option value="8s">8s</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Configurações Dinâmicas para Digen */}
                       {injectionTarget === 'digen' && (
