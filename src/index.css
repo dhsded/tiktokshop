@@ -135,19 +135,32 @@
   border-color: var(--border-primary) !important;
 }
 
-/* Manter o texto e ícones brancos absolutos sobre botões laranjas, roxos ou verdes ativos */
+/* Manter o texto e ícones brancos absolutos sobre botões laranjas, roxos, escuros ou ativos */
 .light .bg-orange-500,
 .light .bg-purple-600,
 .light .bg-orange-600,
 .light .bg-purple-500,
 .light .bg-emerald-600,
 .light .bg-teal-600,
+.light .bg-blue-600,
+.light .bg-zinc-900,
+.light .bg-zinc-800,
+.light .bg-slate-900,
+.light .bg-slate-800,
+.light .text-white-force,
+.text-white-force,
 .light .bg-orange-500 *,
 .light .bg-purple-600 *,
 .light .bg-orange-600 *,
 .light .bg-purple-500 *,
 .light .bg-emerald-600 *,
-.light .bg-teal-600 * {
+.light .bg-teal-600 *,
+.light .bg-blue-600 *,
+.light .bg-zinc-900 *,
+.light .bg-zinc-800 *,
+.light .bg-slate-900 *,
+.light .bg-slate-800 *,
+.light .text-white-force * {
   color: #ffffff !important;
 }
 

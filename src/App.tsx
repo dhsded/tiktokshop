@@ -3573,10 +3573,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
               >
                 <button
                   onClick={() => setShowSettingsModal(false)}
-                  className="px-4 py-2 text-white rounded-xl text-xs font-bold transition-all"
-                  style={{
-                    backgroundColor: themeMode === 'light' ? '#0f172a' : '#27272a'
-                  }}
+                  className="px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-orange-500/20 text-white-force"
                 >
                   Concluído
                 </button>
