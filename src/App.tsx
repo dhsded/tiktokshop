@@ -2326,66 +2326,68 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     Configuração
                   </h2>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
+                  <div className="space-y-5">
+                    {/* Estilo do Vídeo */}
+                    <div className="space-y-2.5">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                        <User className="w-3 h-3 text-orange-400" />
+                        <User className="w-3.5 h-3.5 text-orange-400" />
                         Estilo do Vídeo
                       </label>
                       <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setVideoStyle('standard')}
-                          className={`h-10 px-2 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             videoStyle === 'standard' ? 'bg-orange-500 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Apresentador</span>
+                          <span>Apresentador</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVideoStyle('pov')}
-                          className={`h-10 px-2 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             videoStyle === 'pov' ? 'bg-orange-500 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">POV (Mãos)</span>
+                          <span>POV (Mãos)</span>
                         </button>
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                    {/* Gênero da Voz / Narrador */}
+                    <div className="space-y-2.5 pt-2 border-t border-white/5">
                       <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                        <Volume2 className="w-3 h-3 text-purple-400" />
+                        <Volume2 className="w-3.5 h-3.5 text-purple-400" />
                         Gênero da Voz / Narrador
                       </label>
                       <div className="grid grid-cols-3 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => setVoiceGender('female')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             voiceGender === 'female' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Feminino</span>
+                          <span>Feminino</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVoiceGender('male')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             voiceGender === 'male' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Masculino</span>
+                          <span>Masculino</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setVoiceGender('none')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             voiceGender === 'none' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Sem Narração</span>
+                          <span>Sem Narração</span>
                         </button>
                       </div>
                     </div>
@@ -2402,29 +2404,29 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('none')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             injectionTarget === 'none' ? 'bg-white text-black dark:bg-zinc-800 dark:text-white shadow-md border border-white/10 dark:border-zinc-700' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Apenas Criar</span>
+                          <span>Apenas Criar</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('digen')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             injectionTarget === 'digen' ? 'bg-purple-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">DIGEN.ai</span>
+                          <span>DIGEN.ai</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setInjectionTarget('flow')}
-                          className={`h-10 px-1 rounded-xl text-[11px] font-bold uppercase tracking-tight transition-all flex items-center justify-center text-center min-w-0 ${
+                          className={`h-11 px-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center text-center ${
                             injectionTarget === 'flow' ? 'bg-blue-600 text-white shadow-md' : 'text-white/50 hover:text-white/80'
                           }`}
                         >
-                          <span className="truncate">Google Flow</span>
+                          <span>Google Flow</span>
                         </button>
                       </div>
                     </div>
