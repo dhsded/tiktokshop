@@ -5,7 +5,15 @@
 
 import React, { useState, useRef, useCallback, useEffect, ChangeEvent, DragEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import Cropper, { Point, Area } from 'react-easy-crop';
+import ReactCrop, { type Crop as ReactCropType, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+
+interface Area {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 import { 
   Upload, 
   Trash2, 
@@ -134,7 +142,7 @@ interface SceneImage {
   preview: string;
   name: string;
   cropState?: {
-    crop: Point;
+    crop?: any;
     zoom: number;
     aspect?: number;
     cropSize?: { width: number; height: number };
@@ -516,17 +524,14 @@ function MainApp() {
   const keysFileInputRef = useRef<HTMLInputElement>(null);
   const [isKeysExhaustedAlertOpen, setIsKeysExhaustedAlertOpen] = useState(false);
 
-  // Cropping State
+  // Cropping State (ReactCrop Interativo)
   const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string } | null>(null);
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+  const [crop, setCrop] = useState<ReactCropType>();
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isCropping, setIsCropping] = useState(false);
   const [cropAspect, setCropAspect] = useState<number | undefined>(undefined); // undefined = livre
-
-  // Custom Crop Dimensions (Livre)
-  const [cropWidth, setCropWidth] = useState(300);
-  const [cropHeight, setCropHeight] = useState(300);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   // Fila de Produtos (Multi-Project Queue)
   interface ProjectItem {
@@ -581,9 +586,102 @@ function MainApp() {
 
   // --- Handlers ---
 
-  const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(croppedAreaPixels);
+  const getPixelCrop = useCallback((cropObj: PixelCrop | ReactCropType | null | undefined, image: HTMLImageElement): Area | null => {
+    if (!cropObj || !image) return null;
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+
+    let pxX = cropObj.x;
+    let pxY = cropObj.y;
+    let pxW = cropObj.width;
+    let pxH = cropObj.height;
+
+    if (cropObj.unit === '%') {
+      pxX = (cropObj.x / 100) * image.width;
+      pxY = (cropObj.y / 100) * image.height;
+      pxW = (cropObj.width / 100) * image.width;
+      pxH = (cropObj.height / 100) * image.height;
+    }
+
+    const result = {
+      x: Math.round(pxX * scaleX),
+      y: Math.round(pxY * scaleY),
+      width: Math.round(pxW * scaleX),
+      height: Math.round(pxH * scaleY),
+    };
+
+    if (result.width <= 0 || result.height <= 0) return null;
+    return result;
   }, []);
+
+  const onCropperImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { width, height } = e.currentTarget;
+    imgRef.current = e.currentTarget;
+
+    const initialCrop = centerCrop(
+      makeAspectCrop(
+        { unit: '%', width: 90 },
+        cropAspect || (width / height),
+        width,
+        height
+      ),
+      width,
+      height
+    );
+    setCrop(initialCrop);
+    setCompletedCrop(null);
+  }, [cropAspect]);
+
+  const handleAspectChange = useCallback((aspectValue: number | undefined) => {
+    setCropAspect(aspectValue);
+    if (imgRef.current) {
+      const { width, height } = imgRef.current;
+      if (aspectValue) {
+        setCrop(
+          centerCrop(
+            makeAspectCrop(
+              { unit: '%', width: 90 },
+              aspectValue,
+              width,
+              height
+            ),
+            width,
+            height
+          )
+        );
+      }
+    }
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setCropAspect(undefined);
+    setCrop({
+      unit: '%',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    });
+  }, []);
+
+  const handleCenterCrop = useCallback(() => {
+    if (imgRef.current) {
+      const { width, height } = imgRef.current;
+      const currentWidth = crop?.width || 80;
+      setCrop(
+        centerCrop(
+          makeAspectCrop(
+            { unit: '%', width: typeof currentWidth === 'number' ? currentWidth : 80 },
+            cropAspect || (width / height),
+            width,
+            height
+          ),
+          width,
+          height
+        )
+      );
+    }
+  }, [crop, cropAspect]);
 
   const createImage = (url: string): Promise<HTMLImageElement> =>
     new Promise((resolve, reject) => {
@@ -623,31 +721,62 @@ function MainApp() {
     });
   };
 
-  const saveCrop = async () => {
-    if (!imageToCrop || !croppedAreaPixels) return;
+  const saveCrop = useCallback(async () => {
+    if (!imageToCrop || !imgRef.current) return;
+    setIsCropping(true);
 
-    const cropState = {
-      crop,
-      zoom,
-      aspect: cropAspect,
-      cropSize: cropAspect === undefined ? { width: cropWidth, height: cropHeight } : undefined,
-      croppedAreaPixels
+    try {
+      const pixelCropResult = getPixelCrop(completedCrop || crop, imgRef.current);
+      if (!pixelCropResult) {
+        console.warn("Nenhuma área de corte válida selecionada.");
+        setIsCropping(false);
+        return;
+      }
+
+      const cropState = {
+        crop,
+        zoom,
+        aspect: cropAspect,
+        croppedAreaPixels: pixelCropResult
+      };
+
+      if (imageToCrop.type === 'collection') {
+        setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+      } else if (imageToCrop.type === 'model') {
+        setModelImage(prev => prev ? { ...prev, cropState } : null);
+      } else if (imageToCrop.type === 'product') {
+        setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+      }
+
+      setImageToCrop(null);
+      setCrop(undefined);
+      setCompletedCrop(null);
+      setZoom(1);
+    } catch (err) {
+      console.error("Erro ao salvar corte:", err);
+    } finally {
+      setIsCropping(false);
+    }
+  }, [imageToCrop, completedCrop, crop, zoom, cropAspect, getPixelCrop]);
+
+  useEffect(() => {
+    if (!imageToCrop) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveCrop();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setImageToCrop(null);
+        setCrop(undefined);
+        setCompletedCrop(null);
+      }
     };
 
-    if (imageToCrop.type === 'collection') {
-      setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
-    } else if (imageToCrop.type === 'model') {
-      setModelImage(prev => prev ? { ...prev, cropState } : null);
-    } else if (imageToCrop.type === 'product') {
-      setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
-    }
-
-    setImageToCrop(null);
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
-    setCropWidth(300);
-    setCropHeight(300);
-  };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imageToCrop, saveCrop]);
 
   const downloadCroppedImage = async (img: SceneImage) => {
     if (!img.cropState) return;
@@ -3046,47 +3175,88 @@ Angulos a variar (escolha os mais relevantes para o produto):
             className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col"
           >
             <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <h3 className="text-xl font-bold font-display text-white">Cortar Imagem</h3>
+              <div>
+                <h3 className="text-xl font-bold font-display text-white flex items-center gap-2">
+                  <Crop className="w-5 h-5 text-orange-500" />
+                  Editor de Corte Interativo
+                </h3>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Arraste as bordas e cantos para ajustar. Pressione <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 text-white font-mono text-[10px]">ENTER</kbd> para confirmar ou <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 text-white font-mono text-[10px]">ESC</kbd> para cancelar.
+                </p>
+              </div>
               <button 
-                onClick={() => setImageToCrop(null)}
+                onClick={() => { setImageToCrop(null); setCrop(undefined); setCompletedCrop(null); }}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
               >
-                <Trash2 className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="flex-1 relative bg-black/20">
-              <Cropper
-                image={imageToCrop.preview}
-                crop={crop}
-                zoom={zoom}
-                aspect={cropAspect}
-                onCropChange={setCrop}
-                onCropComplete={onCropComplete}
-                onZoomChange={setZoom}
-              />
+            <div className="flex-1 relative bg-black/40 flex items-center justify-center p-6 overflow-auto">
+              <div className="relative max-h-[60vh] flex items-center justify-center">
+                <ReactCrop
+                  crop={crop}
+                  onChange={(c, percentCrop) => setCrop(percentCrop)}
+                  onComplete={(c) => setCompletedCrop(c)}
+                  aspect={cropAspect}
+                  className="max-h-[60vh] select-none"
+                >
+                  <img
+                    ref={imgRef}
+                    src={imageToCrop.preview}
+                    alt="Preview para corte"
+                    onLoad={onCropperImageLoad}
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: 'center center',
+                      maxHeight: '60vh',
+                      objectFit: 'contain',
+                      transition: 'transform 0.1s ease-out'
+                    }}
+                  />
+                </ReactCrop>
+              </div>
             </div>
 
-            <div className="p-8 space-y-6 border-t border-white/10 bg-[#0a0a0b]">
-              <div className="max-w-lg mx-auto space-y-4">
-                {/* Presets de Proporção */}
+            <div className="p-6 space-y-5 border-t border-white/10 bg-[#0a0a0b]">
+              <div className="max-w-2xl mx-auto space-y-4">
+                {/* Presets de Proporção e Ações Rápidas */}
                 <div className="space-y-2">
-                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Proporção</span>
-                  <div className="grid grid-cols-5 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Modo & Proporção</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSelectAll}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/10"
+                        title="Selecionar imagem inteira"
+                      >
+                        🔳 Selecionar Tudo
+                      </button>
+                      <button
+                        onClick={handleCenterCrop}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/10"
+                        title="Centralizar seleção"
+                      >
+                        🎯 Centralizar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-6 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
                     {[
                       { label: 'Livre', value: undefined },
                       { label: '9:16', value: 9/16 },
                       { label: '16:9', value: 16/9 },
                       { label: '1:1', value: 1 },
                       { label: '4:5', value: 4/5 },
+                      { label: '3:4', value: 3/4 },
                     ].map((preset) => (
                       <button
                         key={preset.label}
-                        onClick={() => setCropAspect(preset.value)}
+                        onClick={() => handleAspectChange(preset.value)}
                         className={`h-9 px-1 rounded-xl text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center text-center min-w-0 ${
                           cropAspect === preset.value
-                            ? 'bg-orange-500 text-white shadow-md'
-                            : 'text-white/50 hover:text-white/80'
+                            ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20'
+                            : 'text-white/50 hover:text-white/80 hover:bg-white/5'
                         }`}
                       >
                         <span className="truncate">{preset.label}</span>
@@ -3095,34 +3265,37 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   </div>
                 </div>
 
-                {/* Zoom */}
-                <div className="flex items-center gap-4">
-                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Zoom</span>
+                {/* Controle de Zoom */}
+                <div className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                  <span className="text-xs font-bold text-white/40 uppercase tracking-widest min-w-[50px]">Zoom</span>
                   <input
                     type="range"
                     value={zoom}
                     min={1}
-                    max={3}
-                    step={0.1}
+                    max={2.5}
+                    step={0.05}
                     aria-label="Zoom"
                     onChange={(e) => setZoom(Number(e.target.value))}
                     className="flex-1 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-orange-500"
                   />
+                  <span className="text-xs font-mono font-bold text-orange-400 w-10 text-right">
+                    {zoom.toFixed(2)}x
+                  </span>
                 </div>
                 
-                <div className="flex gap-4">
+                <div className="flex gap-4 pt-1">
                   <button
-                    onClick={() => setImageToCrop(null)}
-                    className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-all text-white"
+                    onClick={() => { setImageToCrop(null); setCrop(undefined); setCompletedCrop(null); }}
+                    className="flex-1 py-3.5 bg-white/5 border border-white/10 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-all text-white"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={saveCrop}
                     disabled={isCropping}
-                    className="flex-1 py-4 bg-orange-500 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-orange-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] disabled:opacity-50 text-white"
+                    className="flex-1 py-3.5 bg-orange-500 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-orange-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] disabled:opacity-50 text-white flex items-center justify-center gap-2"
                   >
-                    {isCropping ? <Loader2 className="w-4 h-4 animate-spin mx-auto text-white" /> : 'Salvar Corte'}
+                    {isCropping ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : 'Salvar Corte (Enter ↵)'}
                   </button>
                 </div>
               </div>

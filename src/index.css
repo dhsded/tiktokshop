@@ -368,8 +368,41 @@ select option:focus,
   color: #0f172a !important;
   border-color: #cbd5e1 !important;
 }
-.light.prompt-injector-window input::placeholder {
-  color: #94a3b8 !important;
+
+/* Customizações para o ReactCrop (Corte Livre Interativo) */
+.ReactCrop__crop-selection {
+  border: 2px dashed #f97316 !important;
+  box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.7) !important;
 }
+
+.ReactCrop__drag-handle {
+  width: 14px !important;
+  height: 14px !important;
+  background-color: #f97316 !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6) !important;
+}
+
+.ReactCrop__drag-handle::after {
+  content: none !important;
+}
+
+.ReactCrop__drag-handle.ord-n,
+.ReactCrop__drag-handle.ord-s {
+  border-radius: 4px !important;
+  width: 28px !important;
+  height: 8px !important;
+  margin-left: -14px !important;
+}
+
+.ReactCrop__drag-handle.ord-e,
+.ReactCrop__drag-handle.ord-w {
+  border-radius: 4px !important;
+  width: 8px !important;
+  height: 28px !important;
+  margin-top: -14px !important;
+}
+
 
 

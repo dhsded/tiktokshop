@@ -66,6 +66,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-easy-crop": "^5.5.7",
+    "react-image-crop": "^11.1.2",
     "vite": "^6.2.3"
   },
   "devDependencies": {
