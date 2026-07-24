@@ -2261,29 +2261,29 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 ✂️ Cortada
                               </div>
                             )}
-                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1 z-20">
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center justify-center gap-1 p-1 z-20">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'collection', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
-                                className="p-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md"
+                                className="w-6 h-6 shrink-0 bg-blue-600/90 hover:bg-blue-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                 title="Recortar Imagem"
                               >
-                                <Crop className="w-3.5 h-3.5" />
+                                <Crop className="w-3 h-3" />
                               </button>
                               {img.cropState && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); downloadCroppedImage(img); }}
-                                  className="p-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-md"
+                                  className="w-6 h-6 shrink-0 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                   title="Baixar Imagem Cortada"
                                 >
-                                  <Save className="w-3.5 h-3.5" />
+                                  <Save className="w-3 h-3" />
                                 </button>
                               )}
                               <button 
                                 onClick={(e) => { e.stopPropagation(); removeImage(img.id); }}
-                                className="p-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-lg transition-all shadow-md"
+                                className="w-6 h-6 shrink-0 bg-red-600/90 hover:bg-red-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                 title="Remover Imagem"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                             <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-mono z-10">
@@ -2490,29 +2490,29 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                     <span>✂️</span> Cortada
                                   </div>
                                 )}
-                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 p-1 z-20">
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center justify-center gap-1 p-1 z-20">
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'product', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
-                                    className="p-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md"
+                                    className="w-6 h-6 shrink-0 bg-blue-600/90 hover:bg-blue-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                     title="Recortar Imagem"
                                   >
-                                    <Crop className="w-3.5 h-3.5" />
+                                    <Crop className="w-3 h-3" />
                                   </button>
                                   {img.cropState && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); downloadCroppedImage(img); }}
-                                      className="p-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-md"
+                                      className="w-6 h-6 shrink-0 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                       title="Baixar Imagem Cortada"
                                     >
-                                      <Save className="w-3.5 h-3.5" />
+                                      <Save className="w-3 h-3" />
                                     </button>
                                   )}
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); removeSingleImage('product', img.id); }} 
-                                    className="p-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-lg transition-all shadow-md"
+                                    className="w-6 h-6 shrink-0 bg-red-600/90 hover:bg-red-500 text-white rounded-md transition-all shadow-md flex items-center justify-center"
                                     title="Remover Imagem"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Trash2 className="w-3 h-3" />
                                   </button>
                                 </div>
                               </div>
