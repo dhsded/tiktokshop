@@ -3248,21 +3248,21 @@ Angulos a variar (escolha os mais relevantes para o produto):
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col"
+            className="crop-modal-overlay fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col"
           >
-            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#0a0a0b]">
+            <div className="crop-modal-header flex items-center justify-between p-6 border-b border-white/10 bg-[#0f1219]">
               <div>
-                <h3 className="text-xl font-bold font-display text-white-force flex items-center gap-2">
+                <h3 className="text-xl font-bold font-display flex items-center gap-2">
                   <Crop className="w-5 h-5 text-orange-500" />
                   Editor de Corte Interativo
                 </h3>
-                <p className="text-xs text-white-force opacity-80 mt-0.5">
-                  Arraste as bordas e cantos para ajustar. Pressione <kbd className="px-1.5 py-0.5 bg-white/20 rounded border border-white/30 text-white-force font-mono text-[10px]">ENTER</kbd> para confirmar ou <kbd className="px-1.5 py-0.5 bg-white/20 rounded border border-white/30 text-white-force font-mono text-[10px]">ESC</kbd> para cancelar.
+                <p className="text-xs mt-0.5 opacity-85">
+                  Arraste as bordas e cantos para ajustar. Pressione <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]">ENTER</kbd> para confirmar ou <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px]">ESC</kbd> para cancelar.
                 </p>
               </div>
               <button 
                 onClick={() => { setImageToCrop(null); setCrop(undefined); setCompletedCrop(null); }}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white-force"
+                className="p-2 hover:bg-white/10 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3294,7 +3294,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </div>
             </div>
 
-            <div className="p-6 space-y-5 border-t border-white/10 bg-[#0a0a0b]">
+            <div className="crop-modal-footer p-6 space-y-5 border-t border-white/10 bg-[#0f1219]">
               <div className="max-w-2xl mx-auto space-y-4">
                 {/* Presets de Proporção e Ações Rápidas */}
                 <div className="space-y-2">

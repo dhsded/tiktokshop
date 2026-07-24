@@ -408,5 +408,45 @@ select option:focus,
   margin-top: -14px !important;
 }
 
+/* ============================================================
+   Crop Modal - Ambiente Escuro Forçado & Legibilidade Garantida
+   ============================================================ */
+.crop-modal-overlay,
+.light .crop-modal-overlay,
+.light.crop-modal-overlay {
+  background-color: rgba(9, 9, 11, 0.96) !important;
+  color: #ffffff !important;
+}
+
+.crop-modal-header,
+.light .crop-modal-header,
+.light.crop-modal-header,
+.crop-modal-footer,
+.light .crop-modal-footer,
+.light.crop-modal-footer {
+  background-color: #0f1219 !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.crop-modal-header *,
+.light .crop-modal-header *,
+.crop-modal-footer *,
+.light .crop-modal-footer * {
+  color: #ffffff !important;
+}
+
+.crop-modal-header p,
+.light .crop-modal-header p {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.crop-modal-header kbd,
+.light .crop-modal-header kbd {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: #ffffff !important;
+}
+
 
 
