@@ -2753,18 +2753,34 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             </select>
                           </div>
 
-                          {/* Vídeos por Imagem */}
+                          {/* Modelo VEO */}
                           <div className="space-y-1.5">
-                            <label className="text-[11px] text-white/60 font-medium block">Vídeos por Imagem (Loops)</label>
+                            <label className="text-[11px] text-white/60 font-medium block">Modelo de Geração (VEO)</label>
                             <select
-                              value={targetConfigs['flow-VideosPerImagem'] || '1'}
-                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-VideosPerImagem': e.target.value }))}
+                              value={targetConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modelo': e.target.value }))}
                               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                             >
-                              <option value="1">1 Vídeo por imagem (A)</option>
-                              <option value="2">2 Vídeos por imagem (A, B)</option>
-                              <option value="3">3 Vídeos por imagem (A, B, C)</option>
-                              <option value="4">4 Vídeos por imagem (A, B, C, D)</option>
+                              <option value="Omni Flash">Omni Flash</option>
+                              <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
+                              <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+                              <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
+                              <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [Lower Priority]</option>
+                            </select>
+                          </div>
+
+                          {/* Quantidade de Vídeos por Geração */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Quantidade por Geração</label>
+                            <select
+                              value={targetConfigs['flow-Quantidade'] || 'x4'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Quantidade': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="x1">x1 (1 vídeo)</option>
+                              <option value="x2">x2 (2 vídeos)</option>
+                              <option value="x3">x3 (3 vídeos)</option>
+                              <option value="x4">x4 (4 vídeos simultâneos)</option>
                             </select>
                           </div>
                         </div>
@@ -4181,17 +4197,29 @@ function PromptInjector() {
             if (el && isVisible(el)) return el;
           }
 
+          // Prioridade 1: campo "O que você quer criar?" da barra inferior do Google Flow
+          const allInputs = Array.from(document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"], [contenteditable=""]'));
+          const flowPromptField = allInputs.find(el => {
+            if (!isVisible(el)) return false;
+            const placeholder = (el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '').toLowerCase();
+            return placeholder.includes('criar') || placeholder.includes('create') || placeholder.includes('want') || placeholder.includes('quer');
+          });
+          if (flowPromptField) return flowPromptField;
+
+          // Prioridade 2: elemento atualmente focado (campo aberto por interação)
           const active = document.activeElement;
           if (active && isVisible(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
             return active;
           }
 
-          const activeContainer = document.querySelector('[class*="active"], [class*="selected"], [class*="animate"], [class*="prompt"], [class*="editor"]');
+          // Prioridade 3: campo dentro de container ativo
+          const activeContainer = document.querySelector('[class*="active"], [class*="selected"], [class*="prompt"], [class*="editor"], [class*="input"]');
           if (activeContainer) {
             const innerField = activeContainer.querySelector('textarea, [contenteditable="true"], input[type="text"]');
             if (innerField && isVisible(innerField)) return innerField;
           }
 
+          // Prioridade 4: primeira textarea visível
           const textareas = Array.from(document.querySelectorAll('textarea'));
           const visibleTextarea = textareas.find(t => isVisible(t));
           if (visibleTextarea) return visibleTextarea;
@@ -4297,8 +4325,9 @@ function PromptInjector() {
       const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
       const flowConfigsToApply = [
         generationType,
-        injConfigs['flow-Modo'] || 'Frames',
         injConfigs['flow-Aspecto'],
+        injConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]',
+        injConfigs['flow-Quantidade'] || 'x4',
         injConfigs['flow-Duração'] || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
       ].filter(Boolean);
 
@@ -4319,7 +4348,8 @@ function PromptInjector() {
                 if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
                 if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
                 if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
-                if ('${val}' === 'Frames') return text === 'Frames' || text.toLowerCase() === 'frames' || text.includes('Frames');
+                if ('${val}'.startsWith('Veo') || '${val}' === 'Omni Flash') return text === '${val}' || text.includes('${val}');
+                if ('${val}'.startsWith('x') && ['x1','x2','x3','x4'].includes('${val}')) return text === '${val}';
                 return text === '${val}';
               });
               if (targetEl) {
@@ -4523,13 +4553,13 @@ function PromptInjector() {
         }
       }
 
-      // 1. Auto-configuração Silenciosa
       if (injTarget === 'flow') {
         const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
         const flowConfigsToApply = [
           generationType,
-          injConfigs['flow-Modo'] || 'Frames',
           injConfigs['flow-Aspecto'],
+          injConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]',
+          injConfigs['flow-Quantidade'] || 'x4',
           injConfigs['flow-Duração'] || (itemsToInject[0] as any)?.duration || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
         ].filter(Boolean);
 
@@ -4617,7 +4647,10 @@ function PromptInjector() {
       const generationsCount = Number(injConfigs['generationsPerPrompt']) || 1;
       const isFlowScenes = (injTarget === 'flow' && activeTab === 'scenes');
       const imagesPerScene = isFlowScenes ? (Number(injConfigs['flow-ImagensPerCena']) || 1) : 1;
-      const videosPerImage = isFlowScenes ? (Number(injConfigs['flow-VideosPerImagem']) || 1) : generationsCount;
+      // x4 no Flow gera 4 vídeos de uma vez — videosPerImage representa quantos baixar após cada geração
+      const flowQtd = injConfigs['flow-Quantidade'] || 'x4';
+      const flowVideosCount = isFlowScenes ? (parseInt(flowQtd.replace('x','')) || 4) : generationsCount;
+      const videosPerImage = isFlowScenes ? flowVideosCount : generationsCount;
 
       for (let idx = 0; idx < itemsToInject.length; idx++) {
         if (abortControllerRef.current) {
@@ -4681,82 +4714,10 @@ function PromptInjector() {
               customFileName
             });
 
+            // FLOW SCENES: upload imagem e selecionar como Inicial na barra inferior
             if (isFlowScenes && vidIdx === 1) {
-              addSpyLog('info', 'Seleção de Imagem', `Procurando botão "Animar" da imagem ${imgIdx} (da esquerda para a direita)...`);
-              const animateScript = `
-                (function(targetIdx) {
-                  const isVisible = (el) => {
-                    if (!el) return false;
-                    const r = el.getBoundingClientRect();
-                    return r.width > 0 && r.height > 0 && 
-                           window.getComputedStyle(el).display !== 'none' && 
-                           window.getComputedStyle(el).visibility !== 'hidden';
-                  };
-
-                  const animateButtons = Array.from(document.querySelectorAll('button, div, span, [role="button"], a'))
-                    .filter(el => {
-                      if (!isVisible(el)) return false;
-                      const text = (el.textContent || '').trim().toLowerCase();
-                      const title = (el.getAttribute('title') || '').toLowerCase();
-                      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                      return text === 'animar' || text === 'animate' || text.includes('animar') || text.includes('animate') ||
-                             title.includes('animar') || title.includes('animate') || aria.includes('animar') || aria.includes('animate');
-                    })
-                    .sort((a, b) => {
-                      const rA = a.getBoundingClientRect();
-                      const rB = b.getBoundingClientRect();
-                      if (Math.abs(rA.top - rB.top) > 60) return rA.top - rB.top;
-                      return rA.left - rB.left;
-                    });
-
-                  if (animateButtons[targetIdx - 1]) {
-                    const btn = animateButtons[targetIdx - 1];
-                    btn.click();
-                    return true;
-                  }
-
-                  const cards = Array.from(document.querySelectorAll('[class*="card"], [class*="image"], [class*="asset"], [class*="item"], img'))
-                    .filter(el => {
-                      if (!isVisible(el)) return false;
-                      const r = el.getBoundingClientRect();
-                      return r.width >= 60 && r.height >= 60;
-                    })
-                    .sort((a, b) => {
-                      const rA = a.getBoundingClientRect();
-                      const rB = b.getBoundingClientRect();
-                      if (Math.abs(rA.top - rB.top) > 60) return rA.top - rB.top;
-                      return rA.left - rB.left;
-                    });
-
-                  if (cards[targetIdx - 1]) {
-                    const card = cards[targetIdx - 1];
-                    card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                    card.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                    card.click();
-                    const innerBtn = card.querySelector('button, [role="button"]');
-                    if (innerBtn) innerBtn.click();
-                    return true;
-                  }
-
-                  return false;
-                })(${imgIdx});
-              `;
-              try {
-                const clickedAnimate = await webviewRef.current.executeJavaScript(animateScript);
-                if (clickedAnimate) {
-                  addSpyLog('success', 'Seleção de Imagem', `Botão "Animar" da imagem ${imgIdx} acionado com sucesso.`);
-                } else {
-                  addSpyLog('warning', 'Seleção de Imagem', `Botão "Animar" da imagem ${imgIdx} não localizado diretamente; prosseguindo para o campo visível.`);
-                }
-              } catch (err: any) {
-                addSpyLog('error', 'Seleção de Imagem', `Erro ao clicar no botão "Animar" da imagem ${imgIdx}`, err.message);
-              }
-              await new Promise(r => setTimeout(r, 1200));
-            }
-
-            if (isFlowScenes) {
               setDownloadStatus(`Fazendo upload da imagem ${imgIdx}...`);
-              addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} no campo Inicial da Cena ${idx + 1}...`);
+              addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} para a Cena ${idx + 1}...`);
               try {
                 const webContentsId = webviewRef.current.getWebContentsId();
                 const uploadResult = await window.electronAPI.uploadFileToWebview({
@@ -4767,14 +4728,53 @@ function PromptInjector() {
                   isFinal: false
                 });
                 if (uploadResult.success) {
-                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído no campo Inicial.`);
+                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
                 } else {
                   addSpyLog('warning', 'Upload de Imagem', `Falha no upload da imagem ${imgIdx}: ${uploadResult.error}`);
                 }
               } catch (err: any) {
                 addSpyLog('error', 'Upload de Imagem', `Erro durante o upload da imagem ${imgIdx}`, err.message);
               }
-              await new Promise(r => setTimeout(r, 2000));
+              await new Promise(r => setTimeout(r, 1500));
+
+              // Clicar no slot "Inicial" da barra inferior para selecionar imagem
+              addSpyLog('info', 'Slot Inicial', `Clicando no campo "Inicial" na barra inferior para selecionar imagem ${imgIdx}...`);
+              const clickInicialScript = `
+                (function() {
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 &&
+                           window.getComputedStyle(el).display !== 'none' &&
+                           window.getComputedStyle(el).visibility !== 'hidden';
+                  };
+                  // Procurar o slot/botão "Inicial" na barra inferior
+                  const allEls = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
+                  const inicialBtn = allEls.find(el => {
+                    if (!isVisible(el)) return false;
+                    const rect = el.getBoundingClientRect();
+                    if (rect.bottom < window.innerHeight * 0.6) return false; // apenas área inferior
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    return text === 'inicial' || text === 'initial' || text === 'start';
+                  });
+                  if (inicialBtn) {
+                    inicialBtn.click();
+                    return 'inicial-clicked';
+                  }
+                  return 'not-found';
+                })();
+              `;
+              try {
+                const inicialResult = await webviewRef.current.executeJavaScript(clickInicialScript);
+                if (inicialResult === 'inicial-clicked') {
+                  addSpyLog('success', 'Slot Inicial', 'Slot "Inicial" clicado — imagem selecionada como referência.');
+                } else {
+                  addSpyLog('warning', 'Slot Inicial', 'Slot "Inicial" não encontrado diretamente; prosseguindo para injeção de prompt.');
+                }
+              } catch (err: any) {
+                addSpyLog('error', 'Slot Inicial', 'Erro ao clicar no slot Inicial', err.message);
+              }
+              await new Promise(r => setTimeout(r, 800));
             }
 
             // Injeta prompt
@@ -4788,27 +4788,50 @@ function PromptInjector() {
               await new Promise(r => setTimeout(r, 500));
             }
 
-            // Clica em Criar
-            addSpyLog('info', 'Disparo de Geração', 'Procurando botão "Criar" / "Generate" no DOM...');
+            // Clica no botão → (seta) da barra inferior do Google Flow
+            addSpyLog('info', 'Disparo de Geração', 'Procurando botão → (seta) na barra inferior do Flow...');
             const clickGenerateScript = `
               (function() {
-                const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
-                const btn = els.find(el => {
-                  const text = (el.textContent || '').trim();
-                  return text === 'Criar' || text === 'Generate' || text === 'Create' || text.includes('Gerar');
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const r = el.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0 &&
+                         window.getComputedStyle(el).display !== 'none' &&
+                         window.getComputedStyle(el).visibility !== 'hidden' &&
+                         !el.disabled;
+                };
+                // Botão → fica no canto direito da barra inferior
+                const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+                // Prioridade 1: botões na região inferior da tela
+                const bottomBtns = btns.filter(btn => {
+                  if (!isVisible(btn)) return false;
+                  const r = btn.getBoundingClientRect();
+                  return r.bottom > window.innerHeight * 0.65 && r.top < window.innerHeight;
                 });
-                if (btn && !btn.disabled) {
-                  btn.click();
+                // Prioridade 2: botão de envio/seta (último botão enabled na barra inferior)
+                const sendBtn = bottomBtns.find(btn => {
+                  const text = (btn.textContent || '').trim();
+                  const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+                  return text === '→' || aria.includes('criar') || aria.includes('generate') || aria.includes('send') || aria.includes('submit');
+                }) || (bottomBtns.length > 0 ? bottomBtns[bottomBtns.length - 1] : null);
+                if (sendBtn) {
+                  sendBtn.click();
                   return true;
                 }
+                // Fallback: buscar por texto Criar / Generate
+                const fallback = btns.find(b => {
+                  const text = (b.textContent || '').trim();
+                  return (text === 'Criar' || text === 'Generate' || text === 'Create') && isVisible(b);
+                });
+                if (fallback) { fallback.click(); return true; }
                 return false;
               })()
             `;
             const generateClicked = await webviewRef.current.executeJavaScript(clickGenerateScript);
             if (generateClicked) {
-              addSpyLog('success', 'Disparo de Geração', 'Botão "Criar" acionado!');
+              addSpyLog('success', 'Disparo de Geração', 'Botão → acionado! Geração iniciada.');
             } else {
-              addSpyLog('warning', 'Disparo de Geração', 'Botão "Criar" não encontrado ou estava desabilitado.');
+              addSpyLog('warning', 'Disparo de Geração', 'Botão → não encontrado. Verifique se o Flow está pronto.');
             }
 
             // Espera conclusão do render
@@ -4827,20 +4850,27 @@ function PromptInjector() {
               try {
                 const checkScript = `
                   (function() {
-                    const hasLoader = document.querySelector('.loader, .loading, [class*="progress"], [class*="loading"]') !== null;
-                    const buttons = Array.from(document.querySelectorAll('button'));
-                    const generateBtn = buttons.find(b => b.textContent.includes('Criar') || b.textContent.includes('Generate') || b.textContent.includes('Create'));
-                    
-                    if (generateBtn && !generateBtn.disabled && !hasLoader) {
-                      return "ready";
-                    }
-                    return "generating";
+                    // Verifica se ainda há cards com percentual de progresso (ex: "3%", "25%")
+                    const progressTexts = Array.from(document.querySelectorAll('*'))
+                      .filter(el => {
+                        const text = (el.textContent || '').trim();
+                        return /^\d{1,3}%$/.test(text) && el.children.length === 0;
+                      });
+                    if (progressTexts.length > 0) return 'generating';
+                    // Verificar se o botão → está habilitado (indica que geração terminou)
+                    const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+                    const bottomBtns = btns.filter(btn => {
+                      const r = btn.getBoundingClientRect();
+                      return r.bottom > window.innerHeight * 0.65 && !btn.disabled;
+                    });
+                    if (bottomBtns.length > 0) return 'ready';
+                    return 'generating';
                   })()
                 `;
                 const status = await webviewRef.current.executeJavaScript(checkScript);
                 if (status === 'ready') {
                   isDone = true;
-                  addSpyLog('success', 'Renderização', `Renderização concluída em ${(check + 1) * 3} segundos.`);
+                  addSpyLog('success', 'Renderização', `Todos os vídeos renderizados em ${(check + 1) * 3}s.`);
                   break;
                 }
               } catch (err) {}
@@ -4857,35 +4887,46 @@ function PromptInjector() {
               await new Promise(r => setTimeout(r, 500));
             }
 
-            // Clica em Baixar
-            setDownloadStatus("Baixando...");
-            addSpyLog('info', 'Download', `Procurando botão de download para salvar "${customFileName}"...`);
+            // Download: para Flow com x4, baixar o N-ésimo vídeo da grade (esquerda→direita)
+            setDownloadStatus(`Baixando ${isFlowScenes ? `vídeo ${vidIdx}/${videosPerImage}` : customFileName}...`);
+            addSpyLog('info', 'Download', `Procurando botão ⬇ para salvar "${customFileName}"...`);
             const clickDownloadScript = `
-              (function() {
-                const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
-                const downloadBtn = els.find(el => {
+              (function(videoIndex) {
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const r = el.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0 &&
+                         window.getComputedStyle(el).display !== 'none' &&
+                         window.getComputedStyle(el).visibility !== 'hidden';
+                };
+
+                // Opção 1: botões de download ⬇ no painel lateral direito (top→bottom = ordem de geração)
+                const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="download"]'));
+                const dlBtns = allBtns.filter(el => {
+                  if (!isVisible(el)) return false;
                   const text = (el.textContent || '').trim().toLowerCase();
                   const title = (el.getAttribute('title') || '').toLowerCase();
                   const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                  const href = (el.getAttribute('href') || '').toLowerCase();
-                  
-                  return text.includes('baixar') || text.includes('download') || 
+                  return text.includes('baixar') || text.includes('download') ||
                          title.includes('download') || title.includes('baixar') ||
                          aria.includes('download') || aria.includes('baixar') ||
-                         href.includes('download') || el.className.includes('download');
-                });
-                if (downloadBtn) {
-                  downloadBtn.click();
+                         el.className.toString().includes('download');
+                }).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+                if (dlBtns[videoIndex - 1]) {
+                  dlBtns[videoIndex - 1].click();
                   return true;
                 }
+                // Fallback: qualquer botão de download visível
+                if (dlBtns.length > 0) { dlBtns[0].click(); return true; }
                 return false;
-              })()
+              })(${vidIdx})
             `;
             const downloaded = await webviewRef.current.executeJavaScript(clickDownloadScript);
             if (downloaded) {
-              addSpyLog('success', 'Download', `Botão de download ativado com sucesso para "${customFileName}"`);
+              addSpyLog('success', 'Download', `⬇ Ativado para "${customFileName}" (vídeo ${vidIdx})`);
             } else {
-              addSpyLog('warning', 'Download', `Botão de download não localizado automaticamente no DOM.`);
+              addSpyLog('warning', 'Download', `Botão ⬇ não encontrado para o vídeo ${vidIdx}. Verifique o painel lateral.`);
             }
 
             const statusMsg = isFlowScenes
