@@ -2574,12 +2574,12 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
 
                       {/* Campos Comuns Lado a Lado: Número de Cenas e Duração */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                         <div className="space-y-1.5">
-                          <label className="text-[11px] text-white/60 font-medium block">
+                          <label className="text-[11px] text-white/60 font-medium block leading-tight">
                             Número de Cenas / Prompts de Cena
                           </label>
-                          <div className="flex bg-white/5 rounded-xl border border-white/10 items-center px-3 h-10">
+                          <div className="flex bg-white/5 rounded-xl border border-white/10 items-center px-3 h-10 focus-within:border-white/20">
                             <input 
                               type="number"
                               min="1"
@@ -2593,7 +2593,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
                         {injectionTarget !== 'digen' && (
                           <div className="space-y-1.5">
-                            <label className="text-[11px] text-white/60 font-medium block">Duração do Vídeo</label>
+                            <label className="text-[11px] text-white/60 font-medium block leading-tight">Duração do Vídeo</label>
                             <select
                               value={duration}
                               onChange={(e) => {
@@ -2693,8 +2693,8 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </div>
                       )}
 
-                      {/* Campo Compartilhado: Gerações por Prompt */}
-                      {injectionTarget !== 'none' && (
+                      {/* Campo Compartilhado: Gerações por Prompt (Exibido para DIGEN ou outros destinos onde 'Vídeos por Imagem' não se aplica) */}
+                      {injectionTarget !== 'none' && injectionTarget !== 'flow' && (
                         <div className="space-y-1.5 pt-3 border-t border-white/5">
                           <label className="text-[11px] text-white/60 font-medium block flex items-center gap-1.5">
                             🔁 Gerações por Prompt / Variações

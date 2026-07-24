@@ -56,7 +56,11 @@
 :root .text-white\/30, .dark .text-white\/30 { color: rgba(255, 255, 255, 0.70) !important; }
 :root .text-white\/25, .dark .text-white\/25 { color: rgba(255, 255, 255, 0.65) !important; }
 :root .text-white\/20, .dark .text-white\/20 { color: rgba(255, 255, 255, 0.60) !important; }
-:root .text-white\/10, .dark .text-white\/10 { color: rgba(255, 255, 255, 0.45) !important; }
+/* Opções dos selects para tema escuro por padrão */
+select option {
+  background-color: #18181b;
+  color: #ffffff;
+}
 
 .light {
   /* Tema Claro - Cores Invertidas */
