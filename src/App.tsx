@@ -50,7 +50,10 @@ import {
   GripHorizontal,
   EyeOff,
   Pause,
-  Square
+  Square,
+  Eye,
+  Terminal,
+  Filter
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -3851,6 +3854,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
   );
 }
 
+interface InjectorSpyLog {
+  id: string;
+  time: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  step: string;
+  message: string;
+  details?: string;
+}
+
 function PromptInjector() {
   const [prompts, setPrompts] = useState<{
     generatedScript: ScriptResponse | null;
@@ -3864,6 +3876,26 @@ function PromptInjector() {
   const [isLoading, setIsLoading] = useState(false);
   const webviewRef = useRef<any>(null);
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+
+  // Modo do Painel Lateral: Prompts do Roteiro vs Espiar Etapas da Sequência
+  const [sidebarMode, setSidebarMode] = useState<'prompts' | 'spy'>('prompts');
+  const [spyLogs, setSpyLogs] = useState<InjectorSpyLog[]>([]);
+  const [spyFilter, setSpyFilter] = useState<'all' | 'alerts'>('all');
+
+  const addSpyLog = useCallback((type: 'info' | 'success' | 'warning' | 'error', step: string, message: string, details?: string) => {
+    const now = new Date();
+    const time = now.toTimeString().split(' ')[0];
+    const newLog: InjectorSpyLog = {
+      id: Math.random().toString(36).substring(2, 9),
+      time,
+      type,
+      step,
+      message,
+      details
+    };
+    setSpyLogs(prev => [newLog, ...prev].slice(0, 300));
+    console.log(`[INJECTOR SPY ${type.toUpperCase()}] [${step}] ${message}`, details || '');
+  }, []);
 
   // Auto-Scan States no Injetor
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -4002,16 +4034,17 @@ function PromptInjector() {
   const runScan = async () => {
     if (!webviewRef.current) return;
     setIsScanning(true);
+    addSpyLog('info', 'Escaneamento DOM', 'Iniciando escaneamento de seletores interativos na página...');
     try {
-
-
       const resultStr = await webviewRef.current.executeJavaScript(SPY_SCAN_SCRIPT);
       const result = JSON.parse(resultStr) as ScanResult;
       setScanResult(result);
+      addSpyLog('success', 'Escaneamento DOM', `Scan concluído: ${result.prompts.length} prompts, ${result.uploads.length} uploads, ${result.configs.length} configs detectados.`);
       // Auto-highlight fields inside injector for clarity
       await webviewRef.current.executeJavaScript(SPY_HIGHLIGHT_CSS);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Injector auto-scan error:', err);
+      addSpyLog('error', 'Escaneamento DOM', 'Falha ao escanear a página web', err.message);
     } finally {
       setIsScanning(false);
     }
@@ -4030,6 +4063,7 @@ function PromptInjector() {
     const handleNavigate = (e: any) => {
       setInputValue(e.url);
       setScanResult(null); // Limpar resultados antigos
+      addSpyLog('info', 'Navegação Web', `Navegando para: ${e.url}`);
       // Agendar novo scan após navegação in-page para detectar os novos seletores do editor
       setTimeout(() => runScan(), 2500);
     };
@@ -4077,6 +4111,7 @@ function PromptInjector() {
 
   const selectFlowTab = async (tabName: 'Vídeo' | 'Imagem') => {
     if (injTarget !== 'flow' || !webviewRef.current) return;
+    addSpyLog('info', 'Google Flow Tab', `Alternando para a aba "${tabName}" no Google Flow...`);
     const script = `
       (function() {
         const els = Array.from(document.querySelectorAll('button, span, div, [role="option"], option'));
@@ -4092,12 +4127,18 @@ function PromptInjector() {
         return false;
       })()
     `;
-    await webviewRef.current.executeJavaScript(script);
+    const ok = await webviewRef.current.executeJavaScript(script);
+    if (ok) {
+      addSpyLog('success', 'Google Flow Tab', `Aba "${tabName}" ativada!`);
+    } else {
+      addSpyLog('warning', 'Google Flow Tab', `Não foi possível encontrar o botão da aba "${tabName}".`);
+    }
     await new Promise(r => setTimeout(r, 800));
   };
 
   const injectText = (text: string, selector?: string) => {
     if (!webviewRef.current) return;
+    addSpyLog('info', 'Injeção de Prompt', `Iniciando injeção ("${text.slice(0, 40)}...")`, `Seletor alvo: ${selector || 'automático'}`);
     
     const escapedText = JSON.stringify(text);
     
@@ -4173,11 +4214,15 @@ function PromptInjector() {
     webviewRef.current.executeJavaScript(script)
       .then((success: boolean) => {
         if (!success) {
+          addSpyLog('warning', 'Injeção de Prompt', 'Nenhum campo editável visível encontrado na página. Copiado para a área de transferência!');
           navigator.clipboard.writeText(text);
           alert("Nenhum campo de texto visível encontrado na página. Copiado para a área de transferência!");
+        } else {
+          addSpyLog('success', 'Injeção de Prompt', 'Prompt injetado com sucesso no campo visível!');
         }
       })
       .catch((err: any) => {
+        addSpyLog('error', 'Injeção de Prompt', 'Erro durante a execução do script de injeção', err.message);
         console.error("Erro na injeção:", err);
         navigator.clipboard.writeText(text);
         alert("Copiado para área de transferência (Injeção falhou).");
@@ -4335,6 +4380,7 @@ function PromptInjector() {
     setIsAutomating(true);
     setAutoConfigStatus("Aplicando...");
     setActiveNode(3); // Auto-Config
+    addSpyLog('info', 'Automação em Lote', `Iniciando automação em lote para ${itemsToInject.length} item(ns)...`);
 
     try {
       // 0. Se for Google Flow, garantir criação de novo projeto
@@ -4342,6 +4388,7 @@ function PromptInjector() {
         const currentUrl = webviewRef.current.getURL() || url;
         if (!currentUrl.includes('/project')) {
           setAutoConfigStatus("Novo Projeto...");
+          addSpyLog('info', 'Google Flow Project', 'Página fora do editor (/project). Procurando botão "+ Novo projeto"...');
           const clickNewProjectScript = `
             (function() {
               const isVisible = (el) => {
@@ -4363,7 +4410,6 @@ function PromptInjector() {
                        (text.includes('new project') && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'));
               });
               if (btn) {
-                // Encontrar o ancestral clicável mais próximo (button, a, role=button ou div correspondente)
                 let clickable = btn;
                 let parent = btn.parentElement;
                 while (parent && parent !== document.body) {
@@ -4379,7 +4425,6 @@ function PromptInjector() {
                   parent = parent.parentElement;
                 }
                 
-                // Simular clique completo com eventos de mouse para garantir o trigger no React do Flow
                 const mouseEvents = ['mousedown', 'mouseup', 'click'];
                 mouseEvents.forEach(eventType => {
                   const ev = new MouseEvent(eventType, {
@@ -4402,9 +4447,9 @@ function PromptInjector() {
             const projectCreated = await webviewRef.current.executeJavaScript(clickNewProjectScript);
             if (projectCreated) {
               console.log("Google Flow: Clicado em '+ Novo projeto' no início do lote. Aguardando UI...");
+              addSpyLog('success', 'Google Flow Project', 'Botão "+ Novo projeto" clicado! Aguardando o carregamento do editor...');
               setAutoConfigStatus("Carregando UI...");
               
-              // Polling para esperar a URL mudar para /project (até 15 segundos)
               let loaded = false;
               for (let i = 0; i < 30; i++) {
                 await new Promise(r => setTimeout(r, 500));
@@ -4415,19 +4460,22 @@ function PromptInjector() {
                 }
               }
               if (!loaded) {
+                addSpyLog('error', 'Google Flow Project', 'Timeout: URL do projeto (/project) não foi carregada em 15s.');
                 alert("Não foi possível carregar o editor do Google Flow automaticamente. Por favor, crie ou abra um projeto manualmente antes de iniciar.");
                 setIsAutomating(false);
                 return;
               }
-              // Dar 2 segundos pro editor carregar os campos e botões
+              addSpyLog('success', 'Google Flow Project', 'Editor do projeto (/project) carregado!');
               await new Promise(r => setTimeout(r, 2000));
             } else {
+              addSpyLog('error', 'Google Flow Project', 'Botão "+ Novo projeto" não encontrado ou desabilitado.');
               alert("Botão '+ Novo projeto' não encontrado ou não está visível. Por favor, abra um projeto manualmente antes de clicar em Executar Lote.");
               setIsAutomating(false);
               return;
             }
           } catch (err: any) {
             console.error("Erro ao tentar clicar em Novo Projeto no lote:", err);
+            addSpyLog('error', 'Google Flow Project', 'Erro de script ao criar projeto', err.message);
             alert("Erro ao criar novo projeto: " + (err.message || err));
             setIsAutomating(false);
             return;
@@ -4436,6 +4484,7 @@ function PromptInjector() {
       } else if (injTarget === 'digen') {
         const currentUrl = webviewRef.current.getURL() || url;
         if (currentUrl.includes('/explore') || currentUrl.includes('/home') || !currentUrl.includes('/create')) {
+          addSpyLog('warning', 'DIGEN', 'Navegação fora da tela de criação/editor.');
           alert("Por favor, abra a tela de criação/edição de vídeo do DIGEN (Editor) antes de iniciar a automação!");
           setIsAutomating(false);
           return;
@@ -4452,6 +4501,7 @@ function PromptInjector() {
           injConfigs['flow-Duração'] || (itemsToInject[0] as any)?.duration || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
         ].filter(Boolean);
 
+        addSpyLog('info', 'Auto-Configuração', `Aplicando ${flowConfigsToApply.length} opções de configuração no Flow...`);
         let successCount = 0;
         for (const val of flowConfigsToApply) {
           const script = `
@@ -4479,10 +4529,16 @@ function PromptInjector() {
             })()
           `;
           const success = await webviewRef.current.executeJavaScript(script);
-          if (success) successCount++;
+          if (success) {
+            successCount++;
+            addSpyLog('success', 'Auto-Configuração', `Opção "${val}" configurada com sucesso.`);
+          } else {
+            addSpyLog('warning', 'Auto-Configuração', `Opção "${val}" não foi encontrada no DOM.`);
+          }
         }
         setAutoConfigStatus(`Sucesso (${successCount}/${flowConfigsToApply.length})`);
       } else if (injTarget === 'digen' && scanResult) {
+        addSpyLog('info', 'Auto-Configuração', `Aplicando configurações no DIGEN...`);
         let successCount = 0;
         for (const cfg of scanResult.configs) {
           if (!cfg.label) continue;
@@ -4510,7 +4566,12 @@ function PromptInjector() {
               })()
             `;
             const success = await webviewRef.current.executeJavaScript(script);
-            if (success) successCount++;
+            if (success) {
+              successCount++;
+              addSpyLog('success', 'Auto-Configuração', `Campo "${cfg.label}" ajustado para "${selectedValue}".`);
+            } else {
+              addSpyLog('warning', 'Auto-Configuração', `Campo "${cfg.label}" não pôde ser ajustado.`);
+            }
           }
         }
         setAutoConfigStatus(`Sucesso (${successCount} campos)`);
@@ -4527,8 +4588,10 @@ function PromptInjector() {
       const videosPerImage = isFlowScenes ? (Number(injConfigs['flow-VideosPerImagem']) || 1) : generationsCount;
 
       for (let idx = 0; idx < itemsToInject.length; idx++) {
-        // Verificar cancelamento/pausa no início da cena
-        if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+        if (abortControllerRef.current) {
+          addSpyLog('warning', 'Controle da Fila', 'Automação interrompida a pedido do usuário.');
+          throw new Error("Automação cancelada pelo usuário.");
+        }
         while (pauseControllerRef.current) {
           if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
           setDownloadStatus("Pausado...");
@@ -4537,6 +4600,7 @@ function PromptInjector() {
 
         setSelectedItemIndex(idx);
         setActiveNode(4); // Injeção
+        addSpyLog('info', 'Execução da Cena', `Iniciando Cena ${idx + 1}/${itemsToInject.length}...`);
 
         const item = itemsToInject[idx];
         const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
@@ -4556,7 +4620,6 @@ function PromptInjector() {
 
         for (let imgIdx = 1; imgIdx <= imagesPerScene; imgIdx++) {
           for (let vidIdx = 1; vidIdx <= videosPerImage; vidIdx++) {
-            // Verificar cancelamento/pausa no início da variação
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
             while (pauseControllerRef.current) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4564,7 +4627,7 @@ function PromptInjector() {
               await new Promise(r => setTimeout(r, 500));
             }
 
-            const letter = String.fromCharCode(64 + vidIdx); // 1->A, 2->B, etc.
+            const letter = String.fromCharCode(64 + vidIdx);
             const progressText = isFlowScenes
               ? `Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene} - Víd ${letter})`
               : `Cena ${idx + 1}/${itemsToInject.length} (Gerando ${vidIdx}/${generationsCount})`;
@@ -4572,14 +4635,13 @@ function PromptInjector() {
             setInjectionProgressText(progressText);
             setDownloadStatus("Aguardando Geração...");
 
-            // Gerar customFileName correspondente ao fluxograma:
-            // "img1 cena01A"
             const sceneStr2 = String(idx + 1).padStart(2, '0');
             const customFileName = isFlowScenes
               ? `img${imgIdx} cena${sceneStr2}${letter}`
               : `cena${idx + 1}_${vidIdx}`;
 
-            // Metadados de interceptação de download com await síncrono no Main process
+            addSpyLog('info', 'Metadados de Download', `Registrado nome de arquivo alvo: "${customFileName}"`);
+
             await window.electronAPI.setCurrentDownloadInfo({
               projectIndex: prompts?.projectIndex || 1,
               sceneIndex: idx + 1,
@@ -4587,9 +4649,9 @@ function PromptInjector() {
               customFileName
             });
 
-            // Se o destino for Google Flow e estivermos processando cenas, fazer upload da imagem de referência no campo 'Inicial'
             if (isFlowScenes) {
               setDownloadStatus(`Fazendo upload da imagem ${imgIdx}...`);
+              addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} no campo Inicial da Cena ${idx + 1}...`);
               try {
                 const webContentsId = webviewRef.current.getWebContentsId();
                 const uploadResult = await window.electronAPI.uploadFileToWebview({
@@ -4600,12 +4662,12 @@ function PromptInjector() {
                   isFinal: false
                 });
                 if (uploadResult.success) {
-                  console.log(`[Electron Upload] Upload da imagem ${imgIdx} da Cena ${idx + 1} no campo Inicial concluído.`);
+                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído no campo Inicial.`);
                 } else {
-                  console.warn(`[Electron Upload] Falha no upload da imagem ${imgIdx} no campo Inicial: ${uploadResult.error}`);
+                  addSpyLog('warning', 'Upload de Imagem', `Falha no upload da imagem ${imgIdx}: ${uploadResult.error}`);
                 }
-              } catch (err) {
-                console.error(`[Electron Upload] Erro durante o upload da imagem ${imgIdx} no campo Inicial:`, err);
+              } catch (err: any) {
+                addSpyLog('error', 'Upload de Imagem', `Erro durante o upload da imagem ${imgIdx}`, err.message);
               }
               await new Promise(r => setTimeout(r, 2000));
             }
@@ -4614,7 +4676,6 @@ function PromptInjector() {
             await injectText(promptText, smartSelector);
             await new Promise(r => setTimeout(r, 1500));
 
-            // Verificar cancelamento/pausa antes de clicar em Criar
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
             while (pauseControllerRef.current) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4623,6 +4684,7 @@ function PromptInjector() {
             }
 
             // Clica em Criar
+            addSpyLog('info', 'Disparo de Geração', 'Procurando botão "Criar" / "Generate" no DOM...');
             const clickGenerateScript = `
               (function() {
                 const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
@@ -4637,13 +4699,18 @@ function PromptInjector() {
                 return false;
               })()
             `;
-            await webviewRef.current.executeJavaScript(clickGenerateScript);
+            const generateClicked = await webviewRef.current.executeJavaScript(clickGenerateScript);
+            if (generateClicked) {
+              addSpyLog('success', 'Disparo de Geração', 'Botão "Criar" acionado!');
+            } else {
+              addSpyLog('warning', 'Disparo de Geração', 'Botão "Criar" não encontrado ou estava desabilitado.');
+            }
 
             // Espera conclusão do render
             setDownloadStatus("Renderizando...");
+            addSpyLog('info', 'Renderização', 'Monitorando conclusão da renderização...');
             let isDone = false;
-            for (let check = 0; check < 60; check++) { // Timeout de 3 minutos
-              // Verificar cancelamento/pausa durante render
+            for (let check = 0; check < 60; check++) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
               while (pauseControllerRef.current) {
                 if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4668,14 +4735,16 @@ function PromptInjector() {
                 const status = await webviewRef.current.executeJavaScript(checkScript);
                 if (status === 'ready') {
                   isDone = true;
+                  addSpyLog('success', 'Renderização', `Renderização concluída em ${(check + 1) * 3} segundos.`);
                   break;
                 }
-              } catch (err) {
-                // Silencia erros
-              }
+              } catch (err) {}
             }
 
-            // Verificar cancelamento/pausa antes de baixar
+            if (!isDone) {
+              addSpyLog('warning', 'Renderização', 'Timeout de renderização (3 minutos). Prosseguindo para tentativa de download...');
+            }
+
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
             while (pauseControllerRef.current) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4685,6 +4754,7 @@ function PromptInjector() {
 
             // Clica em Baixar
             setDownloadStatus("Baixando...");
+            addSpyLog('info', 'Download', `Procurando botão de download para salvar "${customFileName}"...`);
             const clickDownloadScript = `
               (function() {
                 const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
@@ -4706,16 +4776,19 @@ function PromptInjector() {
                 return false;
               })()
             `;
-            await webviewRef.current.executeJavaScript(clickDownloadScript);
+            const downloaded = await webviewRef.current.executeJavaScript(clickDownloadScript);
+            if (downloaded) {
+              addSpyLog('success', 'Download', `Botão de download ativado com sucesso para "${customFileName}"`);
+            } else {
+              addSpyLog('warning', 'Download', `Botão de download não localizado automaticamente no DOM.`);
+            }
 
-            // Cooldown de Download de 10 segundos
             const statusMsg = isFlowScenes
               ? `Salvo (Img ${imgIdx} - Víd ${letter})`
               : `Salvo (${vidIdx}/${generationsCount})`;
             setDownloadStatus(statusMsg);
-            setActiveNode(5); // Download
+            setActiveNode(5);
             for (let s = 10; s > 0; s--) {
-              // Verificar cancelamento/pausa no cooldown de download
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
               while (pauseControllerRef.current) {
                 if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4726,16 +4799,15 @@ function PromptInjector() {
               await new Promise(r => setTimeout(r, 1000));
             }
             setDownloadDelayRemaining(0);
-            setActiveNode(4); // Injeção
+            setActiveNode(4);
           }
         }
       }
 
-      // Cooldown de Fila de 20 segundos
       setDownloadStatus("Lote Concluído!");
       setActiveNode(5);
+      addSpyLog('success', 'Automação em Lote', 'Lote de automação concluído com sucesso!');
       for (let s = 20; s > 0; s--) {
-        // Verificar cancelamento/pausa no cooldown de fila
         if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
         while (pauseControllerRef.current) {
           if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
@@ -4751,6 +4823,7 @@ function PromptInjector() {
       await window.electronAPI.setCurrentDownloadInfo(null);
     } catch (err: any) {
       console.error('Batch automation error:', err);
+      addSpyLog('error', 'Automação em Lote', 'Erro durante a automação em lote', err.message);
       alert(`Houve um erro na automação em lote: ${err.message}`);
     } finally {
       setIsAutomating(false);
@@ -4770,14 +4843,45 @@ function PromptInjector() {
       <div className="w-[420px] h-full border-r border-zinc-800 bg-zinc-900/60 backdrop-blur-md flex flex-col flex-shrink-0 overflow-hidden">
         
         {/* Topo do Painel */}
-        <div className="p-5 border-b border-zinc-800 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-teal-500 flex items-center justify-center shadow-lg shadow-orange-500/10 flex-shrink-0">
-            <Sparkles className="w-5 h-5 text-white" />
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-orange-500 to-teal-500 flex items-center justify-center shadow-lg shadow-orange-500/10 flex-shrink-0">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold font-display text-sm bg-gradient-to-r from-orange-400 to-teal-400 bg-clip-text text-transparent">Injetor de Prompts</h1>
+              <p className="text-[9px] text-zinc-400 uppercase tracking-widest font-semibold">Digen & Google Labs Flow</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold font-display text-base bg-gradient-to-r from-orange-400 to-teal-400 bg-clip-text text-transparent">Injetor de Prompts</h1>
-            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Digen & Google Labs Flow</p>
-          </div>
+        </div>
+
+        {/* Seletor do Modo do Painel: Prompts x Espião de Etapas */}
+        <div className="px-4 py-2 border-b border-zinc-800 bg-zinc-950/40 flex gap-1 flex-shrink-0">
+          <button
+            onClick={() => setSidebarMode('prompts')}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 ${
+              sidebarMode === 'prompts'
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Roteiro & Prompts
+          </button>
+          <button
+            onClick={() => setSidebarMode('spy')}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 relative ${
+              sidebarMode === 'spy'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Espiar Etapas
+            {spyLogs.some(l => l.type === 'error' || l.type === 'warning') && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse absolute top-1 right-1" />
+            )}
+          </button>
         </div>
 
         {/* Banner de Auto-configuração */}
@@ -4844,281 +4948,415 @@ function PromptInjector() {
           </div>
         )}
 
-        {/* Abas */}
-        <div className="p-3 border-b border-zinc-800 bg-zinc-900/20 flex gap-2 flex-shrink-0">
-          <button
-            onClick={() => { setActiveTab('scenes'); setSelectedItemIndex(0); }}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'scenes'
-                ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Cenas ({scenes.length})
-          </button>
-          <button
-            onClick={() => { setActiveTab('angles'); setSelectedItemIndex(0); }}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'angles'
-                ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            Ângulos ({angles.length})
-          </button>
-        </div>
-
-        {/* Lista de Itens */}
-        <div className="flex-shrink-0 overflow-y-auto p-4 space-y-2 border-b border-zinc-800 max-h-[30vh]">
-          {activeTab === 'scenes' ? (
-            scenes.length === 0 ? (
-              <div className="text-center py-6 text-zinc-500 text-xs">Nenhuma cena gerada.</div>
-            ) : (
-              scenes.map((scene, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedItemIndex(i)}
-                  className={`w-full text-left p-3 rounded-xl transition-all border ${
-                    selectedItemIndex === i
-                      ? 'bg-orange-500/10 border-orange-500/30 text-white'
-                      : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs">Cena {i + 1}</span>
-                    <span className="text-[10px] text-zinc-500 font-semibold">{scene.duration}</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 truncate">{scene.description || 'Sem descrição'}</p>
-                </button>
-              ))
-            )
-          ) : (
-            angles.length === 0 ? (
-              <div className="text-center py-6 text-zinc-500 text-xs">Nenhum ângulo gerado.</div>
-            ) : (
-              angles.map((angle, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedItemIndex(i)}
-                  className={`w-full text-left p-3 rounded-xl transition-all border ${
-                    selectedItemIndex === i
-                      ? 'bg-teal-500/10 border-teal-500/30 text-white'
-                      : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
-                  }`}
-                >
-                  <span className="font-bold text-xs block mb-1">{angle.angleName}</span>
-                  <p className="text-[11px] text-zinc-400 truncate">{angle.imagePrompt}</p>
-                </button>
-              ))
-            )
-          )}
-        </div>
-
-        {/* Detalhes do Item Selecionado & Prompts */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {currentItem ? (
-            <>
-              <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80">
-                <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mb-1">Foco Selecionado</h4>
-                <p className="font-bold text-sm text-white">
-                  {activeTab === 'scenes' ? `Cena ${selectedItemIndex + 1}` : (currentItem as GeneratedAngle).angleName}
+        {/* Conteúdo Dinâmico do Painel: Prompts vs Espião de Etapas */}
+        {sidebarMode === 'spy' ? (
+          <div className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+            {/* Cabeçalho do Espião */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-cyan-400" /> Espião de Etapas da Sequência
+                </h3>
+                <p className="text-[10px] text-zinc-400 mt-0.5">
+                  Inspeção ao vivo de uploads, injeções, renders e erros.
                 </p>
-                {activeTab === 'scenes' && (currentItem as GeneratedScene).description && (
-                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
-                    {(currentItem as GeneratedScene).description}
-                  </p>
-                )}
+              </div>
+            </div>
+
+            {/* Contadores de Métricas */}
+            <div className="grid grid-cols-4 gap-1.5 bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800 text-center">
+              <div className="p-1">
+                <span className="text-[9px] text-zinc-400 block font-bold uppercase">Total</span>
+                <span className="text-xs font-mono font-bold text-white">{spyLogs.length}</span>
+              </div>
+              <div className="p-1">
+                <span className="text-[9px] text-emerald-400 block font-bold uppercase">Sucessos</span>
+                <span className="text-xs font-mono font-bold text-emerald-400">{spyLogs.filter(l => l.type === 'success').length}</span>
+              </div>
+              <div className="p-1">
+                <span className="text-[9px] text-amber-400 block font-bold uppercase">Avisos</span>
+                <span className="text-xs font-mono font-bold text-amber-400">{spyLogs.filter(l => l.type === 'warning').length}</span>
+              </div>
+              <div className="p-1">
+                <span className="text-[9px] text-red-400 block font-bold uppercase">Erros</span>
+                <span className="text-xs font-mono font-bold text-red-400">{spyLogs.filter(l => l.type === 'error').length}</span>
+              </div>
+            </div>
+
+            {/* Barra de Ações & Filtros */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                <button
+                  onClick={() => setSpyFilter('all')}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
+                    spyFilter === 'all' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  Todos ({spyLogs.length})
+                </button>
+                <button
+                  onClick={() => setSpyFilter('alerts')}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
+                    spyFilter === 'alerts' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  Alertas ({spyLogs.filter(l => l.type === 'warning' || l.type === 'error').length})
+                </button>
               </div>
 
-              <div className="space-y-3">
-                {/* 1. Prompt VEO */}
-                {currentItem.veoPrompt && (
-                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-orange-400 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo)
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                      {currentItem.veoPrompt}
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await selectFlowTab('Vídeo');
-                        injectText(currentItem.veoPrompt, getSmartSelector('veo'));
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
-                    >
-                      Injetar VEO
-                    </button>
-                  </div>
-                )}
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    const formatted = spyLogs.map(l => `[${l.time}] [${l.type.toUpperCase()}] [${l.step}] ${l.message} ${l.details ? '(' + l.details + ')' : ''}`).join('\n');
+                    navigator.clipboard.writeText(formatted);
+                    alert("Diagnóstico completo do Espião copiado para a área de transferência!");
+                  }}
+                  className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] font-bold transition-all flex items-center gap-1"
+                  title="Copiar relatório completo de diagnóstico"
+                >
+                  <Copy className="w-3 h-3" /> Copiar
+                </button>
+                <button
+                  onClick={() => setSpyLogs([])}
+                  className="px-2 py-1 bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 rounded text-[10px] font-bold transition-all"
+                  title="Limpar histórico do espião"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
 
-                {/* 2. Prompt DIGEN */}
-                {currentItem.digenPrompt && (
-                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5" /> Prompt DIGEN (Avatar)
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                      {currentItem.digenPrompt}
-                    </div>
-                    <button
-                      onClick={() => injectText(currentItem.digenPrompt, getSmartSelector('digen'))}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/10 transition-all hover:scale-[1.02]"
-                    >
-                      Injetar DIGEN
-                    </button>
-                  </div>
-                )}
+            {/* Lista com Rolagem do Espião */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 select-text">
+              {spyLogs.length === 0 ? (
+                <div className="text-center py-16 text-zinc-500 text-xs bg-zinc-950/40 rounded-2xl border border-zinc-900 border-dashed">
+                  <Eye className="w-8 h-8 mx-auto text-zinc-600 mb-2 opacity-50 animate-pulse" />
+                  <p className="font-bold text-zinc-400">Nenhum evento registrado no momento.</p>
+                  <p className="text-[10px] text-zinc-600 max-w-[220px] mx-auto mt-1 leading-relaxed">
+                    Clique em "Executar Lote" ou navegue na webview para que o Espião rastreie todas as etapas e seletores em tempo real.
+                  </p>
+                </div>
+              ) : (
+                spyLogs
+                  .filter(l => spyFilter === 'all' || l.type === 'warning' || l.type === 'error')
+                  .map((log) => {
+                    const isError = log.type === 'error';
+                    const isWarning = log.type === 'warning';
+                    const isSuccess = log.type === 'success';
 
-                {/* 3. Prompt de Imagem */}
-                {currentItem.imagePrompt && (
-                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                        <ImageIcon className="w-3.5 h-3.5" /> Prompt de Imagem
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                      {currentItem.imagePrompt}
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await selectFlowTab('Imagem');
-                        injectText(currentItem.imagePrompt, getSmartSelector('image'));
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
-                    >
-                      Injetar Imagem
-                    </button>
-                  </div>
-                )}
+                    const badgeStyle = isError
+                      ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                      : isWarning
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      : isSuccess
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300';
 
-                {/* 4. Narração */}
-                {currentItem.narration && (
-                  <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5" /> Narração (Falas)
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                      {currentItem.narration}
-                    </div>
-                    <button
-                      onClick={() => injectText(currentItem.narration)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-xs font-bold shadow-md shadow-yellow-600/10 transition-all hover:scale-[1.02]"
-                    >
-                      Injetar Narração
-                    </button>
-                  </div>
-                )}
+                    const icon = isError ? '❌' : isWarning ? '⚠️' : isSuccess ? '✅' : 'ℹ️';
 
-                {/* Configurações Dinâmicas Detectadas (DIGEN/Flow) */}
-                {scanResult && (scanResult.configs.length > 0 || scanResult.actions.length > 0) && (
-                  <div className="bg-zinc-950/40 p-4.5 rounded-2xl border border-zinc-800/80 space-y-4 mt-4">
-                    <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold flex items-center gap-1.5">
-                      <Settings2 className="w-3.5 h-3.5" /> Painel de Controle Remoto
-                    </h4>
-                    
-                    {/* Selects e Dropdowns mapeados */}
-                    {scanResult.configs.map((cfg, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <label className="text-[10px] text-zinc-500 font-bold uppercase">{cfg.label || 'Opção'}</label>
-                        {cfg.options && cfg.options.length > 0 ? (
-                          <select
-                            onChange={(e) => {
-                              const optionIndex = cfg.options.indexOf(e.target.value);
-                              const script = `
-                                (function() {
-                                  const el = document.querySelector(${JSON.stringify(cfg.selector)});
-                                  if (!el) return false;
-                                  el.focus();
-                                  if (el.tagName === 'SELECT') {
-                                    el.value = ${JSON.stringify(e.target.value)};
-                                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                                  } else {
-                                    const options = el.querySelectorAll('[role="option"], option');
-                                    if (options[${optionIndex}]) {
-                                      options[${optionIndex}].click();
-                                    } else {
-                                      el.click();
-                                    }
-                                  }
-                                  return true;
-                                })()
-                              `;
-                              webviewRef.current?.executeJavaScript(script);
-                            }}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700"
-                          >
-                            <option value="">Selecione...</option>
-                            {cfg.options.map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              const script = `
-                                (function() {
-                                  const el = document.querySelector(${JSON.stringify(cfg.selector)});
-                                  if (el) { el.click(); return true; }
-                                  return false;
-                                })()
-                              `;
-                              webviewRef.current?.executeJavaScript(script);
-                            }}
-                            className="w-full py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl text-xs font-bold transition-all text-left px-3 truncate"
-                          >
-                            Ajustar: {cfg.label || cfg.type}
-                          </button>
+                    return (
+                      <div
+                        key={log.id}
+                        className={`p-2.5 rounded-xl border text-xs transition-all ${badgeStyle}`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <span>{icon}</span>
+                            <span className="text-[11px] font-mono">{log.step}</span>
+                          </div>
+                          <span className="text-[9px] font-mono opacity-60">{log.time}</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-zinc-200">{log.message}</p>
+                        {log.details && (
+                          <p className="text-[10px] font-mono text-zinc-400 mt-1.5 bg-black/50 p-2 rounded-lg border border-white/5 break-all">
+                            {log.details}
+                          </p>
                         )}
                       </div>
-                    ))}
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Abas */}
+            <div className="p-3 border-b border-zinc-800 bg-zinc-900/20 flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => { setActiveTab('scenes'); setSelectedItemIndex(0); }}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'scenes'
+                    ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Cenas ({scenes.length})
+              </button>
+              <button
+                onClick={() => { setActiveTab('angles'); setSelectedItemIndex(0); }}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'angles'
+                    ? 'bg-zinc-805 bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Ângulos ({angles.length})
+              </button>
+            </div>
 
-                    {/* Ações Mapeadas */}
-                    {scanResult.actions.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-zinc-800/40">
-                        <span className="text-[10px] text-zinc-500 font-bold uppercase block">Disparar Ações</span>
-                        <div className="grid grid-cols-2 gap-2">
-                          {scanResult.actions.map((act, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => {
-                                const script = `
-                                  (function() {
-                                    const el = document.querySelector(${JSON.stringify(act.selector)});
-                                    if (el) { el.click(); return true; }
-                                    return false;
-                                  })()
-                                `;
-                                webviewRef.current?.executeJavaScript(script);
-                              }}
-                              className="py-2 bg-emerald-600/15 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all truncate"
-                              title={`Disparar clique no elemento: ${act.label}`}
-                            >
-                              🚀 {act.label || act.type}
-                            </button>
-                          ))}
+            {/* Lista de Itens */}
+            <div className="flex-shrink-0 overflow-y-auto p-4 space-y-2 border-b border-zinc-800 max-h-[30vh]">
+              {activeTab === 'scenes' ? (
+                scenes.length === 0 ? (
+                  <div className="text-center py-6 text-zinc-500 text-xs">Nenhuma cena gerada.</div>
+                ) : (
+                  scenes.map((scene, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedItemIndex(i)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border ${
+                        selectedItemIndex === i
+                          ? 'bg-orange-500/10 border-orange-500/30 text-white'
+                          : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs">Cena {i + 1}</span>
+                        <span className="text-[10px] text-zinc-500 font-semibold">{scene.duration}</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 truncate">{scene.description || 'Sem descrição'}</p>
+                    </button>
+                  ))
+                )
+              ) : (
+                angles.length === 0 ? (
+                  <div className="text-center py-6 text-zinc-500 text-xs">Nenhum ângulo gerado.</div>
+                ) : (
+                  angles.map((angle, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedItemIndex(i)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border ${
+                        selectedItemIndex === i
+                          ? 'bg-teal-500/10 border-teal-500/30 text-white'
+                          : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800/40 text-zinc-300'
+                      }`}
+                    >
+                      <span className="font-bold text-xs block mb-1">{angle.angleName}</span>
+                      <p className="text-[11px] text-zinc-400 truncate">{angle.imagePrompt}</p>
+                    </button>
+                  ))
+                )
+              )}
+            </div>
+
+            {/* Detalhes do Item Selecionado & Prompts */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {currentItem ? (
+                <>
+                  <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80">
+                    <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold mb-1">Foco Selecionado</h4>
+                    <p className="font-bold text-sm text-white">
+                      {activeTab === 'scenes' ? `Cena ${selectedItemIndex + 1}` : (currentItem as GeneratedAngle).angleName}
+                    </p>
+                    {activeTab === 'scenes' && (currentItem as GeneratedScene).description && (
+                      <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
+                        {(currentItem as GeneratedScene).description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* 1. Prompt VEO */}
+                    {currentItem.veoPrompt && (
+                      <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-orange-400 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo)
+                          </span>
                         </div>
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                          {currentItem.veoPrompt}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await selectFlowTab('Vídeo');
+                            injectText(currentItem.veoPrompt, getSmartSelector('veo'));
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
+                        >
+                          Injetar VEO
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 2. Prompt DIGEN */}
+                    {currentItem.digenPrompt && (
+                      <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5" /> Prompt DIGEN (Avatar)
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                          {currentItem.digenPrompt}
+                        </div>
+                        <button
+                          onClick={() => injectText(currentItem.digenPrompt, getSmartSelector('digen'))}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/10 transition-all hover:scale-[1.02]"
+                        >
+                          Injetar DIGEN
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 3. Prompt de Imagem */}
+                    {currentItem.imagePrompt && (
+                      <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <ImageIcon className="w-3.5 h-3.5" /> Prompt de Imagem
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                          {currentItem.imagePrompt}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await selectFlowTab('Imagem');
+                            injectText(currentItem.imagePrompt, getSmartSelector('image'));
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
+                        >
+                          Injetar Imagem
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 4. Narração */}
+                    {currentItem.narration && (
+                      <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
+                            <Volume2 className="w-3.5 h-3.5" /> Narração (Falas)
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
+                          {currentItem.narration}
+                        </div>
+                        <button
+                          onClick={() => injectText(currentItem.narration)}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-yellow-600 hover:bg-yellow-500 text-white rounded-xl text-xs font-bold shadow-md shadow-yellow-600/10 transition-all hover:scale-[1.02]"
+                        >
+                          Injetar Narração
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Configurações Dinâmicas Detectadas (DIGEN/Flow) */}
+                    {scanResult && (scanResult.configs.length > 0 || scanResult.actions.length > 0) && (
+                      <div className="bg-zinc-950/40 p-4.5 rounded-2xl border border-zinc-800/80 space-y-4 mt-4">
+                        <h4 className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold flex items-center gap-1.5">
+                          <Settings2 className="w-3.5 h-3.5" /> Painel de Controle Remoto
+                        </h4>
+                        
+                        {/* Selects e Dropdowns mapeados */}
+                        {scanResult.configs.map((cfg, idx) => (
+                          <div key={idx} className="space-y-1">
+                            <label className="text-[10px] text-zinc-500 font-bold uppercase">{cfg.label || 'Opção'}</label>
+                            {cfg.options && cfg.options.length > 0 ? (
+                              <select
+                                onChange={(e) => {
+                                  const optionIndex = cfg.options.indexOf(e.target.value);
+                                  const script = `
+                                    (function() {
+                                      const el = document.querySelector(${JSON.stringify(cfg.selector)});
+                                      if (!el) return false;
+                                      el.focus();
+                                      if (el.tagName === 'SELECT') {
+                                        el.value = ${JSON.stringify(e.target.value)};
+                                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                                      } else {
+                                        const options = el.querySelectorAll('[role="option"], option');
+                                        if (options[${optionIndex}]) {
+                                          options[${optionIndex}].click();
+                                        } else {
+                                          el.click();
+                                        }
+                                      }
+                                      return true;
+                                    })()
+                                  `;
+                                  webviewRef.current?.executeJavaScript(script);
+                                }}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-700"
+                              >
+                                <option value="">Selecione...</option>
+                                {cfg.options.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  const script = `
+                                    (function() {
+                                      const el = document.querySelector(${JSON.stringify(cfg.selector)});
+                                      if (el) { el.click(); return true; }
+                                      return false;
+                                    })()
+                                  `;
+                                  webviewRef.current?.executeJavaScript(script);
+                                }}
+                                className="w-full py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl text-xs font-bold transition-all text-left px-3 truncate"
+                              >
+                                Ajustar: {cfg.label || cfg.type}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Ações Mapeadas */}
+                        {scanResult.actions.length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-zinc-800/40">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase block">Disparar Ações</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              {scanResult.actions.map((act, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={() => {
+                                    const script = `
+                                      (function() {
+                                        const el = document.querySelector(${JSON.stringify(act.selector)});
+                                        if (el) { el.click(); return true; }
+                                        return false;
+                                      })()
+                                    `;
+                                    webviewRef.current?.executeJavaScript(script);
+                                  }}
+                                  className="py-2 bg-emerald-600/15 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all truncate"
+                                  title={`Disparar clique no elemento: ${act.label}`}
+                                >
+                                  🚀 {act.label || act.type}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="h-full flex items-center justify-center text-zinc-500 text-xs py-10">
-              Nenhuma cena ou ângulo selecionado.
+                </>
+              ) : (
+                <div className="h-full flex items-center justify-center text-zinc-500 text-xs py-10">
+                  Nenhuma cena ou ângulo selecionado.
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* PAINEL DIREITO: NAVEGADOR WEB */}
