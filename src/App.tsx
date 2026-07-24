@@ -235,12 +235,6 @@ function N8NFlowchart({
 }: N8NFlowchartProps) {
   const [isMinimized, setIsMinimized] = useState(true);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (isGenerating) {
-      setIsMinimized(false);
-    }
-  }, [isGenerating]);
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
 
@@ -4186,6 +4180,18 @@ function PromptInjector() {
             const el = document.querySelector(${JSON.stringify(selector || '')});
             if (el && isVisible(el)) return el;
           }
+
+          const active = document.activeElement;
+          if (active && isVisible(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
+            return active;
+          }
+
+          const activeContainer = document.querySelector('[class*="active"], [class*="selected"], [class*="animate"], [class*="prompt"], [class*="editor"]');
+          if (activeContainer) {
+            const innerField = activeContainer.querySelector('textarea, [contenteditable="true"], input[type="text"]');
+            if (innerField && isVisible(innerField)) return innerField;
+          }
+
           const textareas = Array.from(document.querySelectorAll('textarea'));
           const visibleTextarea = textareas.find(t => isVisible(t));
           if (visibleTextarea) return visibleTextarea;
@@ -4198,10 +4204,6 @@ function PromptInjector() {
           const visibleInput = inputs.find(i => isVisible(i));
           if (visibleInput) return visibleInput;
 
-          const active = document.activeElement;
-          if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
-            return active;
-          }
           return null;
         };
 
@@ -4678,6 +4680,79 @@ function PromptInjector() {
               generationLoop: vidIdx,
               customFileName
             });
+
+            if (isFlowScenes && vidIdx === 1) {
+              addSpyLog('info', 'Seleção de Imagem', `Procurando botão "Animar" da imagem ${imgIdx} (da esquerda para a direita)...`);
+              const animateScript = `
+                (function(targetIdx) {
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 && 
+                           window.getComputedStyle(el).display !== 'none' && 
+                           window.getComputedStyle(el).visibility !== 'hidden';
+                  };
+
+                  const animateButtons = Array.from(document.querySelectorAll('button, div, span, [role="button"], a'))
+                    .filter(el => {
+                      if (!isVisible(el)) return false;
+                      const text = (el.textContent || '').trim().toLowerCase();
+                      const title = (el.getAttribute('title') || '').toLowerCase();
+                      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                      return text === 'animar' || text === 'animate' || text.includes('animar') || text.includes('animate') ||
+                             title.includes('animar') || title.includes('animate') || aria.includes('animar') || aria.includes('animate');
+                    })
+                    .sort((a, b) => {
+                      const rA = a.getBoundingClientRect();
+                      const rB = b.getBoundingClientRect();
+                      if (Math.abs(rA.top - rB.top) > 60) return rA.top - rB.top;
+                      return rA.left - rB.left;
+                    });
+
+                  if (animateButtons[targetIdx - 1]) {
+                    const btn = animateButtons[targetIdx - 1];
+                    btn.click();
+                    return true;
+                  }
+
+                  const cards = Array.from(document.querySelectorAll('[class*="card"], [class*="image"], [class*="asset"], [class*="item"], img'))
+                    .filter(el => {
+                      if (!isVisible(el)) return false;
+                      const r = el.getBoundingClientRect();
+                      return r.width >= 60 && r.height >= 60;
+                    })
+                    .sort((a, b) => {
+                      const rA = a.getBoundingClientRect();
+                      const rB = b.getBoundingClientRect();
+                      if (Math.abs(rA.top - rB.top) > 60) return rA.top - rB.top;
+                      return rA.left - rB.left;
+                    });
+
+                  if (cards[targetIdx - 1]) {
+                    const card = cards[targetIdx - 1];
+                    card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                    card.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                    card.click();
+                    const innerBtn = card.querySelector('button, [role="button"]');
+                    if (innerBtn) innerBtn.click();
+                    return true;
+                  }
+
+                  return false;
+                })(${imgIdx});
+              `;
+              try {
+                const clickedAnimate = await webviewRef.current.executeJavaScript(animateScript);
+                if (clickedAnimate) {
+                  addSpyLog('success', 'Seleção de Imagem', `Botão "Animar" da imagem ${imgIdx} acionado com sucesso.`);
+                } else {
+                  addSpyLog('warning', 'Seleção de Imagem', `Botão "Animar" da imagem ${imgIdx} não localizado diretamente; prosseguindo para o campo visível.`);
+                }
+              } catch (err: any) {
+                addSpyLog('error', 'Seleção de Imagem', `Erro ao clicar no botão "Animar" da imagem ${imgIdx}`, err.message);
+              }
+              await new Promise(r => setTimeout(r, 1200));
+            }
 
             if (isFlowScenes) {
               setDownloadStatus(`Fazendo upload da imagem ${imgIdx}...`);
