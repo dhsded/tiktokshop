@@ -2724,6 +2724,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {/* Configurações Específicas para Flow */}
                       {injectionTarget === 'flow' && (
                         <div className="space-y-4">
+                          {/* Tipo de Geração (Vídeo / Imagem) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Tipo de Geração</label>
+                            <select
+                              value={targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Tipo': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="Vídeo">Vídeo (VEO)</option>
+                              <option value="Imagem">Imagem (Nano Banana)</option>
+                            </select>
+                          </div>
+
                           {/* Proporção (Aspect Ratio) */}
                           <div className="space-y-1.5">
                             <label className="text-[11px] text-white/60 font-medium block">Proporção (Aspect Ratio)</label>
@@ -2735,6 +2748,37 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               <option value="">Selecione...</option>
                               <option value="9:16">9:16 (Vertical)</option>
                               <option value="16:9">16:9 (Horizontal)</option>
+                              <option value="1:1">1:1 (Quadrado)</option>
+                              <option value="4:3">4:3 (Padrão)</option>
+                              <option value="3:4">3:4 (Retrato)</option>
+                            </select>
+                          </div>
+
+                          {/* Modelo de Geração (Dinâmico: Nano Banana para Imagem, VEO para Vídeo) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">
+                              {(targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? 'Modelo de Imagem (Nano Banana)' : 'Modelo de Vídeo (VEO)'}
+                            </label>
+                            <select
+                              value={targetConfigs['flow-Modelo'] || ((targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? 'Nano Banana 2' : 'Veo 3.1 - Lite [Lower Priority]')}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modelo': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              {(targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? (
+                                <>
+                                  <option value="Nano Banana Pro">🍌 Nano Banana Pro</option>
+                                  <option value="Nano Banana 2">🍌 Nano Banana 2</option>
+                                  <option value="Nano Banana 2 Lite">🍌 Nano Banana 2 Lite</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [Lower Priority]</option>
+                                  <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
+                                  <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+                                  <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
+                                  <option value="Omni Flash">Omni Flash</option>
+                                </>
+                              )}
                             </select>
                           </div>
 
@@ -2753,23 +2797,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             </select>
                           </div>
 
-                          {/* Modelo VEO */}
-                          <div className="space-y-1.5">
-                            <label className="text-[11px] text-white/60 font-medium block">Modelo de Geração (VEO)</label>
-                            <select
-                              value={targetConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]'}
-                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modelo': e.target.value }))}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                            >
-                              <option value="Omni Flash">Omni Flash</option>
-                              <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
-                              <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
-                              <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
-                              <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [Lower Priority]</option>
-                            </select>
-                          </div>
-
-                          {/* Quantidade de Vídeos por Geração */}
+                          {/* Quantidade por Geração */}
                           <div className="space-y-1.5">
                             <label className="text-[11px] text-white/60 font-medium block">Quantidade por Geração</label>
                             <select
@@ -2777,10 +2805,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Quantidade': e.target.value }))}
                               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                             >
-                              <option value="x1">x1 (1 vídeo)</option>
-                              <option value="x2">x2 (2 vídeos)</option>
-                              <option value="x3">x3 (3 vídeos)</option>
-                              <option value="x4">x4 (4 vídeos simultâneos)</option>
+                              <option value="x1">x1 (1 variação)</option>
+                              <option value="x2">x2 (2 variações)</option>
+                              <option value="x3">x3 (3 variações)</option>
+                              <option value="x4">x4 (4 variações simultâneas)</option>
                             </select>
                           </div>
                         </div>
@@ -4348,9 +4376,9 @@ function PromptInjector() {
                 if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
                 if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
                 if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
-                if ('${val}'.startsWith('Veo') || '${val}' === 'Omni Flash') return text === '${val}' || text.includes('${val}');
+                if ('${val}'.startsWith('Veo') || '${val}'.includes('Banana') || '${val}' === 'Omni Flash') return text === '${val}' || text.includes('${val}') || text.includes('${val}'.replace('🍌 ',''));
                 if ('${val}'.startsWith('x') && ['x1','x2','x3','x4'].includes('${val}')) return text === '${val}';
-                return text === '${val}';
+                return text === '${val}' || text.includes('${val}');
               });
               if (targetEl) {
                 let clickable = targetEl;
@@ -4574,9 +4602,9 @@ function PromptInjector() {
                 if ('${val}' === '9:16') return text === '9:16' || text.includes('9:16');
                 if ('${val}' === '16:9') return text === '16:9' || text.includes('16:9');
                 if ('${val}' === 'Vídeo') return text === 'Vídeo' || text.toLowerCase() === 'vídeo';
-                if ('${val}' === 'Imagem') return text === 'Imagem' || text.toLowerCase() === 'imagem';
-                if ('${val}' === 'Frames') return text === 'Frames' || text.toLowerCase() === 'frames' || text.includes('Frames');
-                return text === '${val}';
+                if ('${val}'.startsWith('Veo') || '${val}'.includes('Banana') || '${val}' === 'Omni Flash') return text === '${val}' || text.includes('${val}') || text.includes('${val}'.replace('🍌 ',''));
+                if ('${val}'.startsWith('x') && ['x1','x2','x3','x4'].includes('${val}')) return text === '${val}';
+                return text === '${val}' || text.includes('${val}');
               });
               if (targetEl) {
                 let clickable = targetEl;
