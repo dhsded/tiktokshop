@@ -4698,8 +4698,67 @@ function PromptInjector() {
             setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene})`);
             setDownloadStatus("Preparando...");
 
-            // PASSO 1: Upload da imagem de referência via IPC
-            addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} para a Cena ${idx + 1}...`);
+            // PASSO 1: Abrir Modal de Mídia (se não estiver aberto) e clicar em "Enviar Mídia"
+            addSpyLog('info', 'Anexo de Mídia', `Abrindo modal de mídia para upload da imagem ${imgIdx}...`);
+            setDownloadStatus(`Abrindo modal de mídia...`);
+            const openMediaModalScript = `
+              (function() {
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const r = el.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0 &&
+                         window.getComputedStyle(el).display !== 'none' &&
+                         window.getComputedStyle(el).visibility !== 'hidden';
+                };
+
+                // Verificar se o modal de mídia já está aberto
+                let modal = document.querySelector('[role="dialog"], [id*="radix"]');
+                if (!modal || !isVisible(modal)) {
+                  // Clicar no botão (+) / add_2 do campo de prompt ou no slot Inicial
+                  const plusBtn = Array.from(document.querySelectorAll('button, div.sc-26b30722-2 button, [role="button"]')).find(b => {
+                    if (!isVisible(b)) return false;
+                    const text = (b.textContent || '').trim();
+                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                    return text.includes('add') || text.includes('+') || aria.includes('criar') || aria.includes('adicionar') || text.includes('Inicial');
+                  });
+                  if (plusBtn) plusBtn.click();
+                }
+                return 'modal-opened';
+              })();
+            `;
+            try {
+              await webviewRef.current.executeJavaScript(openMediaModalScript);
+            } catch (err: any) {
+              console.warn("Media modal trigger warning:", err);
+            }
+            await new Promise(r => setTimeout(r, 600));
+
+            // Clicar em "Enviar Mídia" dentro do modal se visível
+            const clickUploadBtnScript = `
+              (function() {
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const r = el.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0 &&
+                         window.getComputedStyle(el).display !== 'none' &&
+                         window.getComputedStyle(el).visibility !== 'hidden';
+                };
+                const uploadBtn = Array.from(document.querySelectorAll('button, button.sc-559b4cd2-4')).find(b => {
+                  if (!isVisible(b)) return false;
+                  const text = (b.textContent || '').trim().toLowerCase();
+                  return text.includes('enviar mídia') || text.includes('enviar midia') || text.includes('upload');
+                });
+                if (uploadBtn) { uploadBtn.click(); return 'upload-btn-clicked'; }
+                return 'not-found';
+              })();
+            `;
+            try {
+              await webviewRef.current.executeJavaScript(clickUploadBtnScript);
+            } catch (err: any) {}
+            await new Promise(r => setTimeout(r, 500));
+
+            // PASSO 2: Upload da imagem via IPC (CDP setFileInputFiles)
+            addSpyLog('info', 'Upload de Imagem', `Enviando arquivo da imagem ${imgIdx}...`);
             setDownloadStatus(`Upload imagem ${imgIdx}...`);
             try {
               const webContentsId = webviewRef.current.getWebContentsId();
@@ -4718,11 +4777,11 @@ function PromptInjector() {
             } catch (err: any) {
               addSpyLog('error', 'Upload de Imagem', `Erro no upload da imagem ${imgIdx}`, err.message);
             }
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
 
-            // PASSO 2: Clicar no slot "Inicial" para selecionar a imagem
-            addSpyLog('info', 'Slot Inicial', `Clicando em "Inicial" na barra inferior para imagem ${imgIdx}...`);
-            const clickInicialScript = `
+            // PASSO 3: Selecionar o item recém-enviado e Clicar em "Incluir no comando"
+            addSpyLog('info', 'Anexo de Mídia', `Incluindo imagem ${imgIdx} no comando...`);
+            const includeImageScript = `
               (function() {
                 const isVisible = (el) => {
                   if (!el) return false;
@@ -4731,31 +4790,40 @@ function PromptInjector() {
                          window.getComputedStyle(el).display !== 'none' &&
                          window.getComputedStyle(el).visibility !== 'hidden';
                 };
-                const allEls = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
-                const inicialBtn = allEls.find(el => {
-                  if (!isVisible(el)) return false;
-                  const rect = el.getBoundingClientRect();
-                  if (rect.bottom < window.innerHeight * 0.6) return false;
-                  const text = (el.textContent || '').trim().toLowerCase();
-                  return text === 'inicial' || text === 'initial' || text === 'start';
+
+                // A. Clicar no primeiro item da lista virtuoso de mídias enviadas
+                const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
+                if (listItems.length > 0) {
+                  listItems[0].click();
+                }
+
+                // B. Clicar no botão "Incluir no comando"
+                const includeBtn = Array.from(document.querySelectorAll('button, div.sc-4da33547-5 button')).find(b => {
+                  if (!isVisible(b)) return false;
+                  const text = (b.textContent || '').trim().toLowerCase();
+                  return text.includes('incluir no comando') || text.includes('incluir') || text.includes('add to prompt');
                 });
-                if (inicialBtn) { inicialBtn.click(); return 'inicial-clicked'; }
-                return 'not-found';
+
+                if (includeBtn) {
+                  includeBtn.click();
+                  return 'image-included';
+                }
+                return 'include-btn-not-found';
               })();
             `;
             try {
-              const inicialResult = await webviewRef.current.executeJavaScript(clickInicialScript);
-              if (inicialResult === 'inicial-clicked') {
-                addSpyLog('success', 'Slot Inicial', 'Slot "Inicial" clicado — imagem definida como referência.');
+              const includeResult = await webviewRef.current.executeJavaScript(includeImageScript);
+              if (includeResult === 'image-included') {
+                addSpyLog('success', 'Anexo de Mídia', 'Imagem anexada ao comando com sucesso ("Incluir no comando").');
               } else {
-                addSpyLog('warning', 'Slot Inicial', 'Slot "Inicial" não encontrado; prosseguindo para injeção.');
+                addSpyLog('warning', 'Anexo de Mídia', 'Botão "Incluir no comando" não localizado diretamente.');
               }
             } catch (err: any) {
-              addSpyLog('error', 'Slot Inicial', 'Erro ao clicar no slot Inicial', err.message);
+              addSpyLog('error', 'Anexo de Mídia', 'Erro ao anexar mídia ao comando', err.message);
             }
             await new Promise(r => setTimeout(r, 800));
 
-            // PASSO 3: Injetar prompt UMA única vez
+            // PASSO 4: Injetar prompt UMA única vez
             addSpyLog('info', 'Injeção de Prompt', `Injetando prompt no campo "O que você quer criar?"...`);
             await injectText(promptText, smartSelector);
             await new Promise(r => setTimeout(r, 1500));
