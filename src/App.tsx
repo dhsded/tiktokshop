@@ -140,6 +140,8 @@ interface SceneImage {
   id: string;
   file: File;
   preview: string;
+  originalPreview?: string;
+  croppedPreview?: string;
   name: string;
   cropState?: {
     crop?: any;
@@ -525,7 +527,7 @@ function MainApp() {
   const [isKeysExhaustedAlertOpen, setIsKeysExhaustedAlertOpen] = useState(false);
 
   // Cropping State (ReactCrop Interativo)
-  const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string } | null>(null);
+  const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string, originalPreview?: string } | null>(null);
   const [crop, setCrop] = useState<ReactCropType>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -721,6 +723,36 @@ function MainApp() {
     });
   };
 
+  const getCroppedImgDataUrl = async (imageSrc: string, pixelCrop: Area): Promise<string | null> => {
+    try {
+      const image = await createImage(imageSrc);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) return null;
+
+      canvas.width = pixelCrop.width;
+      canvas.height = pixelCrop.height;
+
+      ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        pixelCrop.width,
+        pixelCrop.height
+      );
+
+      return canvas.toDataURL('image/jpeg', 0.92);
+    } catch (err) {
+      console.error("Erro ao gerar preview cortado:", err);
+      return null;
+    }
+  };
+
   const saveCrop = useCallback(async () => {
     if (!imageToCrop || !imgRef.current) return;
     setIsCropping(true);
@@ -740,12 +772,33 @@ function MainApp() {
         croppedAreaPixels: pixelCropResult
       };
 
+      const sourceSrc = imageToCrop.originalPreview || imageToCrop.preview;
+      const croppedDataUrl = await getCroppedImgDataUrl(sourceSrc, pixelCropResult);
+
       if (imageToCrop.type === 'collection') {
-        setImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+        setImages(prev => prev.map(img => img.id === imageToCrop.id ? { 
+          ...img, 
+          originalPreview: img.originalPreview || img.preview,
+          croppedPreview: croppedDataUrl || img.croppedPreview || img.preview,
+          preview: croppedDataUrl || img.preview,
+          cropState 
+        } : img));
       } else if (imageToCrop.type === 'model') {
-        setModelImage(prev => prev ? { ...prev, cropState } : null);
+        setModelImage(prev => prev ? { 
+          ...prev, 
+          originalPreview: prev.originalPreview || prev.preview,
+          croppedPreview: croppedDataUrl || prev.croppedPreview || prev.preview,
+          preview: croppedDataUrl || prev.preview,
+          cropState 
+        } : null);
       } else if (imageToCrop.type === 'product') {
-        setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { ...img, cropState } : img));
+        setProductImages(prev => prev.map(img => img.id === imageToCrop.id ? { 
+          ...img, 
+          originalPreview: img.originalPreview || img.preview,
+          croppedPreview: croppedDataUrl || img.croppedPreview || img.preview,
+          preview: croppedDataUrl || img.preview,
+          cropState 
+        } : img));
       }
 
       setImageToCrop(null);
@@ -2205,7 +2258,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                               <button 
-                                onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'collection', preview: img.preview }); }}
+                                onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'collection', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
                                 className="p-2 bg-blue-500/80 rounded-full hover:bg-blue-50 transition-colors text-white hover:text-blue-500"
                                 title="Cortar Imagem"
                               >
@@ -2346,7 +2399,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             <img src={modelImage.preview} alt="Model" className="w-full h-full object-contain p-2 bg-black/40" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                               <button 
-                                onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: modelImage.id, type: 'model', preview: modelImage.preview }); }}
+                                onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: modelImage.id, type: 'model', preview: modelImage.originalPreview || modelImage.preview, originalPreview: modelImage.originalPreview || modelImage.preview }); }}
                                 className="p-2 bg-blue-500/80 rounded-full hover:bg-blue-100 transition-colors text-white hover:text-blue-500"
                                 title="Cortar Imagem"
                               >
@@ -2415,7 +2468,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 <img src={img.preview} alt="Product" className={`w-full h-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'} bg-black/40 p-1`} />
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'product', preview: img.preview }); }}
+                                    onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'product', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
                                     className="p-1.5 bg-blue-500/80 rounded-full hover:bg-blue-100 transition-colors text-white hover:text-blue-500"
                                     title="Cortar Imagem"
                                   >
@@ -3174,19 +3227,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col"
           >
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
+            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#0a0a0b]">
               <div>
-                <h3 className="text-xl font-bold font-display text-white flex items-center gap-2">
+                <h3 className="text-xl font-bold font-display text-white-force flex items-center gap-2">
                   <Crop className="w-5 h-5 text-orange-500" />
                   Editor de Corte Interativo
                 </h3>
-                <p className="text-xs text-white/50 mt-0.5">
-                  Arraste as bordas e cantos para ajustar. Pressione <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 text-white font-mono text-[10px]">ENTER</kbd> para confirmar ou <kbd className="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 text-white font-mono text-[10px]">ESC</kbd> para cancelar.
+                <p className="text-xs text-white-force opacity-80 mt-0.5">
+                  Arraste as bordas e cantos para ajustar. Pressione <kbd className="px-1.5 py-0.5 bg-white/20 rounded border border-white/30 text-white-force font-mono text-[10px]">ENTER</kbd> para confirmar ou <kbd className="px-1.5 py-0.5 bg-white/20 rounded border border-white/30 text-white-force font-mono text-[10px]">ESC</kbd> para cancelar.
                 </p>
               </div>
               <button 
                 onClick={() => { setImageToCrop(null); setCrop(undefined); setCompletedCrop(null); }}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white-force"
               >
                 <X className="w-5 h-5" />
               </button>
