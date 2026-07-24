@@ -4698,11 +4698,12 @@ function PromptInjector() {
             setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene})`);
             setDownloadStatus("Preparando...");
 
-            // PASSO 1: Abrir Modal de Mídia (se não estiver aberto) e clicar em "Enviar Mídia"
-            addSpyLog('info', 'Anexo de Mídia', `Abrindo modal de mídia para upload da imagem ${imgIdx}...`);
-            setDownloadStatus(`Abrindo modal de mídia...`);
-            const openMediaModalScript = `
-              (function() {
+            // PASSO 1: Abrir Modal de Mídia e selecionar/incluir a imagem do produto correlacionada
+            addSpyLog('info', 'Anexo de Mídia', `Localizando imagem de referência ${imgIdx} do produto...`);
+            setDownloadStatus(`Buscando imagem ${imgIdx}...`);
+
+            const openModalAndSelectScript = `
+              (function(targetImageIndex) {
                 const isVisible = (el) => {
                   if (!el) return false;
                   const r = el.getBoundingClientRect();
@@ -4711,10 +4712,9 @@ function PromptInjector() {
                          window.getComputedStyle(el).visibility !== 'hidden';
                 };
 
-                // Verificar se o modal de mídia já está aberto
+                // A. Abrir modal se não estiver aberto
                 let modal = document.querySelector('[role="dialog"], [id*="radix"]');
                 if (!modal || !isVisible(modal)) {
-                  // Clicar no botão (+) / add_2 do campo de prompt ou no slot Inicial
                   const plusBtn = Array.from(document.querySelectorAll('button, div.sc-26b30722-2 button, [role="button"]')).find(b => {
                     if (!isVisible(b)) return false;
                     const text = (b.textContent || '').trim();
@@ -4723,66 +4723,64 @@ function PromptInjector() {
                   });
                   if (plusBtn) plusBtn.click();
                 }
-                return 'modal-opened';
-              })();
-            `;
-            try {
-              await webviewRef.current.executeJavaScript(openMediaModalScript);
-            } catch (err: any) {
-              console.warn("Media modal trigger warning:", err);
-            }
-            await new Promise(r => setTimeout(r, 600));
 
-            // Clicar em "Enviar Mídia" dentro do modal se visível
-            const clickUploadBtnScript = `
-              (function() {
-                const isVisible = (el) => {
-                  if (!el) return false;
-                  const r = el.getBoundingClientRect();
-                  return r.width > 0 && r.height > 0 &&
-                         window.getComputedStyle(el).display !== 'none' &&
-                         window.getComputedStyle(el).visibility !== 'hidden';
-                };
+                // B. Verificar se a imagem correspondente ao produto já existe na lista virtuoso/uploads
+                const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
+                // Selecionar o item do índice (ex: 1º item para imgIdx 1, 2º para imgIdx 2)
+                const existingItem = listItems[targetImageIndex - 1] || listItems[0];
+                if (existingItem && listItems.length >= targetImageIndex) {
+                  existingItem.click();
+                  return 'found-existing';
+                }
+
+                // C. Se não houver itens suficientes, clicar em "Enviar mídia"
                 const uploadBtn = Array.from(document.querySelectorAll('button, button.sc-559b4cd2-4')).find(b => {
                   if (!isVisible(b)) return false;
                   const text = (b.textContent || '').trim().toLowerCase();
                   return text.includes('enviar mídia') || text.includes('enviar midia') || text.includes('upload');
                 });
-                if (uploadBtn) { uploadBtn.click(); return 'upload-btn-clicked'; }
-                return 'not-found';
-              })();
+                if (uploadBtn) uploadBtn.click();
+
+                return 'need-upload';
+              })(${imgIdx});
             `;
-            try {
-              await webviewRef.current.executeJavaScript(clickUploadBtnScript);
-            } catch (err: any) {}
-            await new Promise(r => setTimeout(r, 500));
 
-            // PASSO 2: Upload da imagem via IPC (CDP setFileInputFiles)
-            addSpyLog('info', 'Upload de Imagem', `Enviando arquivo da imagem ${imgIdx}...`);
-            setDownloadStatus(`Upload imagem ${imgIdx}...`);
+            let selectStatus = 'need-upload';
             try {
-              const webContentsId = webviewRef.current.getWebContentsId();
-              const uploadResult = await window.electronAPI.uploadFileToWebview({
-                webContentsId,
-                projectIndex: prompts?.projectIndex || 1,
-                sceneIndex: idx + 1,
-                imageIndex: imgIdx,
-                isFinal: false
-              });
-              if (uploadResult.success) {
-                addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
-              } else {
-                addSpyLog('warning', 'Upload de Imagem', `Falha no upload: ${uploadResult.error}`);
-              }
+              selectStatus = await webviewRef.current.executeJavaScript(openModalAndSelectScript);
             } catch (err: any) {
-              addSpyLog('error', 'Upload de Imagem', `Erro no upload da imagem ${imgIdx}`, err.message);
+              console.warn("Select media script warning:", err);
             }
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, 600));
 
-            // PASSO 3: Selecionar o item recém-enviado e Clicar em "Incluir no comando"
-            addSpyLog('info', 'Anexo de Mídia', `Incluindo imagem ${imgIdx} no comando...`);
+            // PASSO 2: Se a imagem ainda não estava no Flow, realizar o upload via IPC
+            if (selectStatus === 'need-upload') {
+              addSpyLog('info', 'Upload de Imagem', `Enviando arquivo da imagem ${imgIdx} para a biblioteca do Flow...`);
+              setDownloadStatus(`Upload imagem ${imgIdx}...`);
+              try {
+                const webContentsId = webviewRef.current.getWebContentsId();
+                const uploadResult = await window.electronAPI.uploadFileToWebview({
+                  webContentsId,
+                  projectIndex: prompts?.projectIndex || 1,
+                  sceneIndex: idx + 1,
+                  imageIndex: imgIdx,
+                  isFinal: false
+                });
+                if (uploadResult.success) {
+                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
+                } else {
+                  addSpyLog('warning', 'Upload de Imagem', `Aviso no upload: ${uploadResult.error}`);
+                }
+              } catch (err: any) {
+                addSpyLog('error', 'Upload de Imagem', `Erro no upload da imagem ${imgIdx}`, err.message);
+              }
+              await new Promise(r => setTimeout(r, 1200));
+            }
+
+            // PASSO 3: Confirmar seleção na lista virtuoso e Clicar em "Incluir no comando"
+            addSpyLog('info', 'Anexo de Mídia', `Anexando imagem de referência ${imgIdx} ao comando...`);
             const includeImageScript = `
-              (function() {
+              (function(targetImageIndex) {
                 const isVisible = (el) => {
                   if (!el) return false;
                   const r = el.getBoundingClientRect();
@@ -4791,13 +4789,10 @@ function PromptInjector() {
                          window.getComputedStyle(el).visibility !== 'hidden';
                 };
 
-                // A. Clicar no primeiro item da lista virtuoso de mídias enviadas
                 const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
-                if (listItems.length > 0) {
-                  listItems[0].click();
-                }
+                const itemToClick = listItems[targetImageIndex - 1] || listItems[0];
+                if (itemToClick) itemToClick.click();
 
-                // B. Clicar no botão "Incluir no comando"
                 const includeBtn = Array.from(document.querySelectorAll('button, div.sc-4da33547-5 button')).find(b => {
                   if (!isVisible(b)) return false;
                   const text = (b.textContent || '').trim().toLowerCase();
@@ -4809,14 +4804,14 @@ function PromptInjector() {
                   return 'image-included';
                 }
                 return 'include-btn-not-found';
-              })();
+              })(${imgIdx});
             `;
             try {
               const includeResult = await webviewRef.current.executeJavaScript(includeImageScript);
               if (includeResult === 'image-included') {
-                addSpyLog('success', 'Anexo de Mídia', 'Imagem anexada ao comando com sucesso ("Incluir no comando").');
+                addSpyLog('success', 'Anexo de Mídia', `Imagem de referência ${imgIdx} anexada ao comando com sucesso ("Incluir no comando").`);
               } else {
-                addSpyLog('warning', 'Anexo de Mídia', 'Botão "Incluir no comando" não localizado diretamente.');
+                addSpyLog('warning', 'Anexo de Mídia', `Aviso ao clicar em "Incluir no comando".`);
               }
             } catch (err: any) {
               addSpyLog('error', 'Anexo de Mídia', 'Erro ao anexar mídia ao comando', err.message);

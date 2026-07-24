@@ -272,40 +272,56 @@ ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, project
     }
 
     const files = fs.readdirSync(imgDir);
+    const imageFiles = files.filter((f: string) => /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(f));
     const sceneStr2 = String(sceneIndex).padStart(2, '0');
     const sceneStr = String(sceneIndex);
+    const projStr2 = String(projectIndex).padStart(2, '0');
+    const letter = String.fromCharCode(96 + imageIndex); // 1->'a', 2->'b', 3->'c'...
 
-    // Padrões de busca por nome de arquivo (e.g. img1 cena01, img1-cena01, cena01_1, cena1_1)
+    // Padrões de busca por nome de arquivo (produto01a, produto1a, img1 cena01, cena01_1, etc.)
+    const prodPattern1 = `produto${projStr2}${letter}`;
+    const prodPattern2 = `produto${projectIndex}${letter}`;
+    const prodPattern3 = `produto${projStr2}_${letter}`;
+    const prodPattern4 = `produto${projectIndex}_${letter}`;
+    const prodPattern5 = `produto${projStr2}_${imageIndex}`;
+    const prodPattern6 = `produto${projectIndex}_${imageIndex}`;
     const targetPattern1 = `img${imageIndex} cena${sceneStr2}`;
     const targetPattern2 = `img${imageIndex}-cena${sceneStr2}`;
     const targetPattern3 = `cena${sceneStr2}_${imageIndex}`;
     const targetPattern4 = `cena${sceneStr}_${imageIndex}`;
-    const targetPattern5 = `cena ${sceneStr2} - imagem ${imageIndex}`;
-    const targetPattern6 = `cena ${sceneStr} - imagem ${imageIndex}`;
 
-    let matchedFile = files.find(f => {
+    let matchedFile = imageFiles.find(f => {
       const lf = f.toLowerCase();
-      return lf.includes(targetPattern1.toLowerCase()) ||
+      return lf.includes(prodPattern1.toLowerCase()) ||
+             lf.includes(prodPattern2.toLowerCase()) ||
+             lf.includes(prodPattern3.toLowerCase()) ||
+             lf.includes(prodPattern4.toLowerCase()) ||
+             lf.includes(prodPattern5.toLowerCase()) ||
+             lf.includes(prodPattern6.toLowerCase()) ||
+             lf.includes(targetPattern1.toLowerCase()) ||
              lf.includes(targetPattern2.toLowerCase()) ||
              lf.includes(targetPattern3.toLowerCase()) ||
-             lf.includes(targetPattern4.toLowerCase()) ||
-             lf.includes(targetPattern5.toLowerCase()) ||
-             lf.includes(targetPattern6.toLowerCase());
+             lf.includes(targetPattern4.toLowerCase());
     });
 
     if (!matchedFile) {
-      matchedFile = files.find(f => {
+      matchedFile = imageFiles.find(f => {
         const lf = f.toLowerCase();
-        return (lf.includes(`cena${sceneStr2}`) || lf.includes(`cena${sceneStr}`) || lf.includes(`cena ${sceneStr}`)) && 
-               (lf.includes(`img${imageIndex}`) || lf.includes(`_${imageIndex}`) || lf.includes(`-${imageIndex}`) || lf.includes(` ${imageIndex}`) || lf.includes(`imagem ${imageIndex}`));
+        return (lf.includes(`cena${sceneStr2}`) || lf.includes(`cena${sceneStr}`) || lf.includes(`produto`)) && 
+               (lf.includes(`img${imageIndex}`) || lf.includes(`_${imageIndex}`) || lf.includes(`-${imageIndex}`) || lf.includes(` ${imageIndex}`) || lf.includes(letter));
       });
     }
 
     if (!matchedFile) {
-      matchedFile = files.find(f => {
+      matchedFile = imageFiles.find(f => {
         const lf = f.toLowerCase();
-        return (lf.includes(`cena${sceneStr2}`) || lf.includes(`cena${sceneStr}`)) && lf.includes(String(imageIndex));
+        return lf.includes(String(imageIndex)) || lf.includes(letter);
       });
+    }
+
+    // Fallback N-ésimo arquivo de imagem se disponível na pasta
+    if (!matchedFile && imageFiles.length > 0) {
+      matchedFile = imageFiles[imageIndex - 1] || imageFiles[0];
     }
 
     if (!matchedFile) {
