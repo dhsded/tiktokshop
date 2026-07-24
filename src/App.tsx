@@ -4664,7 +4664,7 @@ function PromptInjector() {
         }
 
         setSelectedItemIndex(idx);
-        setActiveNode(4); // Injeção
+        setActiveNode(4);
         addSpyLog('info', 'Execução da Cena', `Iniciando Cena ${idx + 1}/${itemsToInject.length}...`);
 
         const item = itemsToInject[idx];
@@ -4674,8 +4674,8 @@ function PromptInjector() {
           : getUnifiedVideoPrompt(item, 'digen');
 
         const smartSelector = getSmartSelector(
-          injTarget === 'flow' 
-            ? (generationType === 'Vídeo' ? 'veo' : 'image') 
+          injTarget === 'flow'
+            ? (generationType === 'Vídeo' ? 'veo' : 'image')
             : 'digen'
         );
 
@@ -4684,112 +4684,86 @@ function PromptInjector() {
         }
 
         for (let imgIdx = 1; imgIdx <= imagesPerScene; imgIdx++) {
-          for (let vidIdx = 1; vidIdx <= videosPerImage; vidIdx++) {
+
+          // ── FLUXO EXCLUSIVO DO GOOGLE FLOW ──────────────────────────────────────────
+
+          if (isFlowScenes) {
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
             while (pauseControllerRef.current) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-              setDownloadStatus("Pausado...");
-              await new Promise(r => setTimeout(r, 500));
+              setDownloadStatus("Pausado..."); await new Promise(r => setTimeout(r, 500));
             }
-
-            const letter = String.fromCharCode(64 + vidIdx);
-            const progressText = isFlowScenes
-              ? `Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene} - Víd ${letter})`
-              : `Cena ${idx + 1}/${itemsToInject.length} (Gerando ${vidIdx}/${generationsCount})`;
-
-            setInjectionProgressText(progressText);
-            setDownloadStatus("Aguardando Geração...");
 
             const sceneStr2 = String(idx + 1).padStart(2, '0');
-            const customFileName = isFlowScenes
-              ? `img${imgIdx} cena${sceneStr2}${letter}`
-              : `cena${idx + 1}_${vidIdx}`;
+            setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene})`);
+            setDownloadStatus("Preparando...");
 
-            addSpyLog('info', 'Metadados de Download', `Registrado nome de arquivo alvo: "${customFileName}"`);
-
-            await window.electronAPI.setCurrentDownloadInfo({
-              projectIndex: prompts?.projectIndex || 1,
-              sceneIndex: idx + 1,
-              generationLoop: vidIdx,
-              customFileName
-            });
-
-            // FLOW SCENES: upload imagem e selecionar como Inicial na barra inferior
-            if (isFlowScenes && vidIdx === 1) {
-              setDownloadStatus(`Fazendo upload da imagem ${imgIdx}...`);
-              addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} para a Cena ${idx + 1}...`);
-              try {
-                const webContentsId = webviewRef.current.getWebContentsId();
-                const uploadResult = await window.electronAPI.uploadFileToWebview({
-                  webContentsId,
-                  projectIndex: prompts?.projectIndex || 1,
-                  sceneIndex: idx + 1,
-                  imageIndex: imgIdx,
-                  isFinal: false
-                });
-                if (uploadResult.success) {
-                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
-                } else {
-                  addSpyLog('warning', 'Upload de Imagem', `Falha no upload da imagem ${imgIdx}: ${uploadResult.error}`);
-                }
-              } catch (err: any) {
-                addSpyLog('error', 'Upload de Imagem', `Erro durante o upload da imagem ${imgIdx}`, err.message);
+            // PASSO 1: Upload da imagem de referência via IPC
+            addSpyLog('info', 'Upload de Imagem', `Enviando imagem ${imgIdx} para a Cena ${idx + 1}...`);
+            setDownloadStatus(`Upload imagem ${imgIdx}...`);
+            try {
+              const webContentsId = webviewRef.current.getWebContentsId();
+              const uploadResult = await window.electronAPI.uploadFileToWebview({
+                webContentsId,
+                projectIndex: prompts?.projectIndex || 1,
+                sceneIndex: idx + 1,
+                imageIndex: imgIdx,
+                isFinal: false
+              });
+              if (uploadResult.success) {
+                addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
+              } else {
+                addSpyLog('warning', 'Upload de Imagem', `Falha no upload: ${uploadResult.error}`);
               }
-              await new Promise(r => setTimeout(r, 1500));
-
-              // Clicar no slot "Inicial" da barra inferior para selecionar imagem
-              addSpyLog('info', 'Slot Inicial', `Clicando no campo "Inicial" na barra inferior para selecionar imagem ${imgIdx}...`);
-              const clickInicialScript = `
-                (function() {
-                  const isVisible = (el) => {
-                    if (!el) return false;
-                    const r = el.getBoundingClientRect();
-                    return r.width > 0 && r.height > 0 &&
-                           window.getComputedStyle(el).display !== 'none' &&
-                           window.getComputedStyle(el).visibility !== 'hidden';
-                  };
-                  // Procurar o slot/botão "Inicial" na barra inferior
-                  const allEls = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
-                  const inicialBtn = allEls.find(el => {
-                    if (!isVisible(el)) return false;
-                    const rect = el.getBoundingClientRect();
-                    if (rect.bottom < window.innerHeight * 0.6) return false; // apenas área inferior
-                    const text = (el.textContent || '').trim().toLowerCase();
-                    return text === 'inicial' || text === 'initial' || text === 'start';
-                  });
-                  if (inicialBtn) {
-                    inicialBtn.click();
-                    return 'inicial-clicked';
-                  }
-                  return 'not-found';
-                })();
-              `;
-              try {
-                const inicialResult = await webviewRef.current.executeJavaScript(clickInicialScript);
-                if (inicialResult === 'inicial-clicked') {
-                  addSpyLog('success', 'Slot Inicial', 'Slot "Inicial" clicado — imagem selecionada como referência.');
-                } else {
-                  addSpyLog('warning', 'Slot Inicial', 'Slot "Inicial" não encontrado diretamente; prosseguindo para injeção de prompt.');
-                }
-              } catch (err: any) {
-                addSpyLog('error', 'Slot Inicial', 'Erro ao clicar no slot Inicial', err.message);
-              }
-              await new Promise(r => setTimeout(r, 800));
+            } catch (err: any) {
+              addSpyLog('error', 'Upload de Imagem', `Erro no upload da imagem ${imgIdx}`, err.message);
             }
+            await new Promise(r => setTimeout(r, 1500));
 
-            // Injeta prompt
+            // PASSO 2: Clicar no slot "Inicial" para selecionar a imagem
+            addSpyLog('info', 'Slot Inicial', `Clicando em "Inicial" na barra inferior para imagem ${imgIdx}...`);
+            const clickInicialScript = `
+              (function() {
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const r = el.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0 &&
+                         window.getComputedStyle(el).display !== 'none' &&
+                         window.getComputedStyle(el).visibility !== 'hidden';
+                };
+                const allEls = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
+                const inicialBtn = allEls.find(el => {
+                  if (!isVisible(el)) return false;
+                  const rect = el.getBoundingClientRect();
+                  if (rect.bottom < window.innerHeight * 0.6) return false;
+                  const text = (el.textContent || '').trim().toLowerCase();
+                  return text === 'inicial' || text === 'initial' || text === 'start';
+                });
+                if (inicialBtn) { inicialBtn.click(); return 'inicial-clicked'; }
+                return 'not-found';
+              })();
+            `;
+            try {
+              const inicialResult = await webviewRef.current.executeJavaScript(clickInicialScript);
+              if (inicialResult === 'inicial-clicked') {
+                addSpyLog('success', 'Slot Inicial', 'Slot "Inicial" clicado — imagem definida como referência.');
+              } else {
+                addSpyLog('warning', 'Slot Inicial', 'Slot "Inicial" não encontrado; prosseguindo para injeção.');
+              }
+            } catch (err: any) {
+              addSpyLog('error', 'Slot Inicial', 'Erro ao clicar no slot Inicial', err.message);
+            }
+            await new Promise(r => setTimeout(r, 800));
+
+            // PASSO 3: Injetar prompt UMA única vez
+            addSpyLog('info', 'Injeção de Prompt', `Injetando prompt no campo "O que você quer criar?"...`);
             await injectText(promptText, smartSelector);
             await new Promise(r => setTimeout(r, 1500));
 
             if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            while (pauseControllerRef.current) {
-              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-              setDownloadStatus("Pausado...");
-              await new Promise(r => setTimeout(r, 500));
-            }
 
-            // Clica no botão → (seta) da barra inferior do Google Flow
-            addSpyLog('info', 'Disparo de Geração', 'Procurando botão → (seta) na barra inferior do Flow...');
+            // PASSO 4: Clicar no botão → UMA única vez (gera todos os vídeos simultâneos)
+            addSpyLog('info', 'Disparo de Geração', `Clicando em → para gerar ${videosPerImage} vídeos simultâneos...`);
             const clickGenerateScript = `
               (function() {
                 const isVisible = (el) => {
@@ -4800,25 +4774,18 @@ function PromptInjector() {
                          window.getComputedStyle(el).visibility !== 'hidden' &&
                          !el.disabled;
                 };
-                // Botão → fica no canto direito da barra inferior
                 const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-                // Prioridade 1: botões na região inferior da tela
                 const bottomBtns = btns.filter(btn => {
                   if (!isVisible(btn)) return false;
                   const r = btn.getBoundingClientRect();
                   return r.bottom > window.innerHeight * 0.65 && r.top < window.innerHeight;
                 });
-                // Prioridade 2: botão de envio/seta (último botão enabled na barra inferior)
                 const sendBtn = bottomBtns.find(btn => {
                   const text = (btn.textContent || '').trim();
                   const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
                   return text === '→' || aria.includes('criar') || aria.includes('generate') || aria.includes('send') || aria.includes('submit');
                 }) || (bottomBtns.length > 0 ? bottomBtns[bottomBtns.length - 1] : null);
-                if (sendBtn) {
-                  sendBtn.click();
-                  return true;
-                }
-                // Fallback: buscar por texto Criar / Generate
+                if (sendBtn) { sendBtn.click(); return true; }
                 const fallback = btns.find(b => {
                   const text = (b.textContent || '').trim();
                   return (text === 'Criar' || text === 'Generate' || text === 'Create') && isVisible(b);
@@ -4829,126 +4796,215 @@ function PromptInjector() {
             `;
             const generateClicked = await webviewRef.current.executeJavaScript(clickGenerateScript);
             if (generateClicked) {
-              addSpyLog('success', 'Disparo de Geração', 'Botão → acionado! Geração iniciada.');
+              addSpyLog('success', 'Disparo de Geração', `Botão → acionado! Aguardando ${videosPerImage} vídeos renderizarem...`);
             } else {
               addSpyLog('warning', 'Disparo de Geração', 'Botão → não encontrado. Verifique se o Flow está pronto.');
             }
 
-            // Espera conclusão do render
+            // PASSO 5: Aguardar conclusão do render (verificar ausência de percentuais)
             setDownloadStatus("Renderizando...");
-            addSpyLog('info', 'Renderização', 'Monitorando conclusão da renderização...');
+            addSpyLog('info', 'Renderização', 'Monitorando % de progresso dos vídeos...');
             let isDone = false;
-            for (let check = 0; check < 60; check++) {
+            for (let check = 0; check < 80; check++) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
               while (pauseControllerRef.current) {
                 if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
                 setDownloadStatus("Pausado durante render...");
                 await new Promise(r => setTimeout(r, 500));
               }
-
               await new Promise(r => setTimeout(r, 3000));
               try {
                 const checkScript = `
                   (function() {
-                    // Verifica se ainda há cards com percentual de progresso (ex: "3%", "25%")
                     const progressTexts = Array.from(document.querySelectorAll('*'))
                       .filter(el => {
                         const text = (el.textContent || '').trim();
-                        return /^\d{1,3}%$/.test(text) && el.children.length === 0;
+                        return /^\\d{1,3}%$/.test(text) && el.children.length === 0;
                       });
                     if (progressTexts.length > 0) return 'generating';
-                    // Verificar se o botão → está habilitado (indica que geração terminou)
                     const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-                    const bottomBtns = btns.filter(btn => {
+                    const bottomEnabled = btns.filter(btn => {
                       const r = btn.getBoundingClientRect();
                       return r.bottom > window.innerHeight * 0.65 && !btn.disabled;
                     });
-                    if (bottomBtns.length > 0) return 'ready';
+                    if (bottomEnabled.length > 0) return 'ready';
                     return 'generating';
                   })()
                 `;
                 const status = await webviewRef.current.executeJavaScript(checkScript);
                 if (status === 'ready') {
                   isDone = true;
-                  addSpyLog('success', 'Renderização', `Todos os vídeos renderizados em ${(check + 1) * 3}s.`);
+                  addSpyLog('success', 'Renderização', `Todos os ${videosPerImage} vídeos prontos em ${(check + 1) * 3}s!`);
                   break;
                 }
               } catch (err) {}
             }
-
             if (!isDone) {
-              addSpyLog('warning', 'Renderização', 'Timeout de renderização (3 minutos). Prosseguindo para tentativa de download...');
+              addSpyLog('warning', 'Renderização', 'Timeout (4 min). Tentando baixar o que estiver disponível...');
             }
 
-            if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-            while (pauseControllerRef.current) {
-              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-              setDownloadStatus("Pausado...");
-              await new Promise(r => setTimeout(r, 500));
-            }
-
-            // Download: para Flow com x4, baixar o N-ésimo vídeo da grade (esquerda→direita)
-            setDownloadStatus(`Baixando ${isFlowScenes ? `vídeo ${vidIdx}/${videosPerImage}` : customFileName}...`);
-            addSpyLog('info', 'Download', `Procurando botão ⬇ para salvar "${customFileName}"...`);
-            const clickDownloadScript = `
-              (function(videoIndex) {
-                const isVisible = (el) => {
-                  if (!el) return false;
-                  const r = el.getBoundingClientRect();
-                  return r.width > 0 && r.height > 0 &&
-                         window.getComputedStyle(el).display !== 'none' &&
-                         window.getComputedStyle(el).visibility !== 'hidden';
-                };
-
-                // Opção 1: botões de download ⬇ no painel lateral direito (top→bottom = ordem de geração)
-                const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="download"]'));
-                const dlBtns = allBtns.filter(el => {
-                  if (!isVisible(el)) return false;
-                  const text = (el.textContent || '').trim().toLowerCase();
-                  const title = (el.getAttribute('title') || '').toLowerCase();
-                  const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-                  return text.includes('baixar') || text.includes('download') ||
-                         title.includes('download') || title.includes('baixar') ||
-                         aria.includes('download') || aria.includes('baixar') ||
-                         el.className.toString().includes('download');
-                }).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-
-                if (dlBtns[videoIndex - 1]) {
-                  dlBtns[videoIndex - 1].click();
-                  return true;
-                }
-                // Fallback: qualquer botão de download visível
-                if (dlBtns.length > 0) { dlBtns[0].click(); return true; }
-                return false;
-              })(${vidIdx})
-            `;
-            const downloaded = await webviewRef.current.executeJavaScript(clickDownloadScript);
-            if (downloaded) {
-              addSpyLog('success', 'Download', `⬇ Ativado para "${customFileName}" (vídeo ${vidIdx})`);
-            } else {
-              addSpyLog('warning', 'Download', `Botão ⬇ não encontrado para o vídeo ${vidIdx}. Verifique o painel lateral.`);
-            }
-
-            const statusMsg = isFlowScenes
-              ? `Salvo (Img ${imgIdx} - Víd ${letter})`
-              : `Salvo (${vidIdx}/${generationsCount})`;
-            setDownloadStatus(statusMsg);
-            setActiveNode(5);
-            for (let s = 10; s > 0; s--) {
+            // PASSO 6: Download individual de cada um dos N vídeos gerados
+            await new Promise(r => setTimeout(r, 1000));
+            for (let vidIdx = 1; vidIdx <= videosPerImage; vidIdx++) {
               if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
               while (pauseControllerRef.current) {
                 if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
-                setDownloadStatus("Pausado...");
-                await new Promise(r => setTimeout(r, 500));
+                setDownloadStatus("Pausado..."); await new Promise(r => setTimeout(r, 500));
               }
-              setDownloadDelayRemaining(s);
-              await new Promise(r => setTimeout(r, 1000));
+
+              const letter = String.fromCharCode(64 + vidIdx);
+              const customFileName = `img${imgIdx} cena${sceneStr2}${letter}`;
+
+              addSpyLog('info', 'Metadados de Download', `Registrando nome: "${customFileName}"`);
+              await window.electronAPI.setCurrentDownloadInfo({
+                projectIndex: prompts?.projectIndex || 1,
+                sceneIndex: idx + 1,
+                generationLoop: vidIdx,
+                customFileName
+              });
+
+              setDownloadStatus(`Baixando vídeo ${vidIdx}/${videosPerImage} — ${customFileName}...`);
+              addSpyLog('info', 'Download', `Procurando botão ⬇ para o vídeo ${vidIdx} (${customFileName})...`);
+
+              const clickDownloadScript = `
+                (function(videoIndex) {
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 &&
+                           window.getComputedStyle(el).display !== 'none' &&
+                           window.getComputedStyle(el).visibility !== 'hidden';
+                  };
+                  const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="download"]'));
+                  const dlBtns = allBtns.filter(el => {
+                    if (!isVisible(el)) return false;
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    const title = (el.getAttribute('title') || '').toLowerCase();
+                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    return text.includes('baixar') || text.includes('download') ||
+                           title.includes('download') || title.includes('baixar') ||
+                           aria.includes('download') || aria.includes('baixar') ||
+                           el.className.toString().includes('download');
+                  }).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+                  if (dlBtns[videoIndex - 1]) { dlBtns[videoIndex - 1].click(); return true; }
+                  if (dlBtns.length > 0) { dlBtns[0].click(); return true; }
+                  return false;
+                })(${vidIdx})
+              `;
+              const downloaded = await webviewRef.current.executeJavaScript(clickDownloadScript);
+              if (downloaded) {
+                addSpyLog('success', 'Download', `⬇ "${customFileName}" — vídeo ${vidIdx}/${videosPerImage} iniciado.`);
+              } else {
+                addSpyLog('warning', 'Download', `⬇ não encontrado para vídeo ${vidIdx}. Verifique o painel lateral.`);
+              }
+
+              setDownloadStatus(`Salvo (Img ${imgIdx} - Víd ${letter})`);
+              setActiveNode(5);
+              // Intervalo entre downloads para evitar conflito de nomenclatura
+              for (let s = 5; s > 0; s--) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                setDownloadDelayRemaining(s);
+                await new Promise(r => setTimeout(r, 1000));
+              }
+              setDownloadDelayRemaining(0);
+              setActiveNode(4);
             }
-            setDownloadDelayRemaining(0);
-            setActiveNode(4);
+
+          } else {
+            // ── FLUXO DIGEN / OUTROS (sequencial: gerar + baixar por vidIdx) ──────────
+            for (let vidIdx = 1; vidIdx <= videosPerImage; vidIdx++) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              while (pauseControllerRef.current) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                setDownloadStatus("Pausado..."); await new Promise(r => setTimeout(r, 500));
+              }
+
+              const letter = String.fromCharCode(64 + vidIdx);
+              const progressText = `Cena ${idx + 1}/${itemsToInject.length} (Gerando ${vidIdx}/${generationsCount})`;
+              setInjectionProgressText(progressText);
+              setDownloadStatus("Aguardando Geração...");
+
+              const sceneStr2 = String(idx + 1).padStart(2, '0');
+              const customFileName = `cena${sceneStr2}_${vidIdx}`;
+              addSpyLog('info', 'Metadados de Download', `Registrado: "${customFileName}"`);
+              await window.electronAPI.setCurrentDownloadInfo({
+                projectIndex: prompts?.projectIndex || 1,
+                sceneIndex: idx + 1,
+                generationLoop: vidIdx,
+                customFileName
+              });
+
+              await injectText(promptText, smartSelector);
+              await new Promise(r => setTimeout(r, 1500));
+
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+
+              addSpyLog('info', 'Disparo de Geração', 'Procurando botão de geração...');
+              const genScript = `
+                (function() {
+                  const els = Array.from(document.querySelectorAll('button, span, div, [role="button"]'));
+                  const btn = els.find(el => {
+                    const text = (el.textContent || '').trim();
+                    return text === 'Criar' || text === 'Generate' || text === 'Create' || text.includes('Gerar');
+                  });
+                  if (btn && !btn.disabled) { btn.click(); return true; }
+                  return false;
+                })()
+              `;
+              const genClicked = await webviewRef.current.executeJavaScript(genScript);
+              addSpyLog(genClicked ? 'success' : 'warning', 'Disparo de Geração',
+                genClicked ? 'Geração iniciada!' : 'Botão não encontrado ou desabilitado.');
+
+              setDownloadStatus("Renderizando...");
+              let isDone = false;
+              for (let check = 0; check < 60; check++) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                await new Promise(r => setTimeout(r, 3000));
+                try {
+                  const st = await webviewRef.current.executeJavaScript(`
+                    (function() {
+                      const prog = Array.from(document.querySelectorAll('*')).filter(el => /^\\d{1,3}%$/.test((el.textContent||'').trim()) && el.children.length===0);
+                      return prog.length > 0 ? 'generating' : 'ready';
+                    })()
+                  `);
+                  if (st === 'ready') { isDone = true; addSpyLog('success', 'Renderização', `Pronto em ${(check+1)*3}s.`); break; }
+                } catch (err) {}
+              }
+              if (!isDone) addSpyLog('warning', 'Renderização', 'Timeout. Tentando baixar...');
+
+              setDownloadStatus("Baixando...");
+              addSpyLog('info', 'Download', `Procurando ⬇ para "${customFileName}"...`);
+              const dlScript = `
+                (function() {
+                  const els = Array.from(document.querySelectorAll('button, a, span, [role="button"], [class*="download"]'));
+                  const btn = els.find(el => {
+                    const text = (el.textContent||'').trim().toLowerCase();
+                    const title = (el.getAttribute('title')||'').toLowerCase();
+                    const aria = (el.getAttribute('aria-label')||'').toLowerCase();
+                    return text.includes('baixar')||text.includes('download')||title.includes('download')||aria.includes('download');
+                  });
+                  if (btn) { btn.click(); return true; }
+                  return false;
+                })()
+              `;
+              const dl = await webviewRef.current.executeJavaScript(dlScript);
+              addSpyLog(dl ? 'success' : 'warning', 'Download', dl ? `⬇ "${customFileName}" iniciado.` : 'Botão ⬇ não encontrado.');
+
+              setDownloadStatus(`Salvo (${vidIdx}/${generationsCount})`);
+              setActiveNode(5);
+              for (let s = 10; s > 0; s--) {
+                if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+                setDownloadDelayRemaining(s);
+                await new Promise(r => setTimeout(r, 1000));
+              }
+              setDownloadDelayRemaining(0);
+              setActiveNode(4);
+            }
           }
         }
       }
+
 
       setDownloadStatus("Lote Concluído!");
       setActiveNode(5);
