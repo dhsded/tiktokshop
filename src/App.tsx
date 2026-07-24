@@ -2724,16 +2724,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {/* Configurações Específicas para Flow */}
                       {injectionTarget === 'flow' && (
                         <div className="space-y-4">
-                          {/* Tipo de Geração (Vídeo / Imagem) */}
+                          {/* Modelo de Imagem (Nano Banana) */}
                           <div className="space-y-1.5">
-                            <label className="text-[11px] text-white/60 font-medium block">Tipo de Geração</label>
+                            <label className="text-[11px] text-white/60 font-medium block">Modelo de Imagem (Nano Banana)</label>
                             <select
-                              value={targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')}
-                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Tipo': e.target.value }))}
+                              value={targetConfigs['flow-ModeloImagem'] || 'Nano Banana 2'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-ModeloImagem': e.target.value }))}
                               className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
                             >
-                              <option value="Vídeo">Vídeo (VEO)</option>
-                              <option value="Imagem">Imagem (Nano Banana)</option>
+                              <option value="Nano Banana Pro">🍌 Nano Banana Pro</option>
+                              <option value="Nano Banana 2">🍌 Nano Banana 2</option>
+                              <option value="Nano Banana 2 Lite">🍌 Nano Banana 2 Lite</option>
+                            </select>
+                          </div>
+
+                          {/* Modelo de Vídeo (VEO) */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] text-white/60 font-medium block">Modelo de Vídeo (VEO)</label>
+                            <select
+                              value={targetConfigs['flow-ModeloVideo'] || 'Veo 3.1 - Lite [Lower Priority]'}
+                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-ModeloVideo': e.target.value }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
+                            >
+                              <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [Lower Priority]</option>
+                              <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
+                              <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+                              <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
+                              <option value="Omni Flash">Omni Flash</option>
                             </select>
                           </div>
 
@@ -2751,34 +2768,6 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               <option value="1:1">1:1 (Quadrado)</option>
                               <option value="4:3">4:3 (Padrão)</option>
                               <option value="3:4">3:4 (Retrato)</option>
-                            </select>
-                          </div>
-
-                          {/* Modelo de Geração (Dinâmico: Nano Banana para Imagem, VEO para Vídeo) */}
-                          <div className="space-y-1.5">
-                            <label className="text-[11px] text-white/60 font-medium block">
-                              {(targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? 'Modelo de Imagem (Nano Banana)' : 'Modelo de Vídeo (VEO)'}
-                            </label>
-                            <select
-                              value={targetConfigs['flow-Modelo'] || ((targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? 'Nano Banana 2' : 'Veo 3.1 - Lite [Lower Priority]')}
-                              onChange={(e) => setTargetConfigs(prev => ({ ...prev, 'flow-Modelo': e.target.value }))}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                            >
-                              {(targetConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem')) === 'Imagem' ? (
-                                <>
-                                  <option value="Nano Banana Pro">🍌 Nano Banana Pro</option>
-                                  <option value="Nano Banana 2">🍌 Nano Banana 2</option>
-                                  <option value="Nano Banana 2 Lite">🍌 Nano Banana 2 Lite</option>
-                                </>
-                              ) : (
-                                <>
-                                  <option value="Veo 3.1 - Lite [Lower Priority]">Veo 3.1 - Lite [Lower Priority]</option>
-                                  <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
-                                  <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
-                                  <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
-                                  <option value="Omni Flash">Omni Flash</option>
-                                </>
-                              )}
                             </select>
                           </div>
 
@@ -4350,11 +4339,15 @@ function PromptInjector() {
     }
 
     if (injTarget === 'flow') {
-      const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
+      const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
+      const modelToUse = generationType === 'Imagem'
+        ? (injConfigs['flow-ModeloImagem'] || 'Nano Banana 2')
+        : (injConfigs['flow-ModeloVideo'] || 'Veo 3.1 - Lite [Lower Priority]');
+
       const flowConfigsToApply = [
         generationType,
         injConfigs['flow-Aspecto'],
-        injConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]',
+        modelToUse,
         injConfigs['flow-Quantidade'] || 'x4',
         injConfigs['flow-Duração'] || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
       ].filter(Boolean);
@@ -4582,11 +4575,15 @@ function PromptInjector() {
       }
 
       if (injTarget === 'flow') {
-        const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
+        const generationType = activeTab === 'scenes' ? 'Vídeo' : 'Imagem';
+        const modelToUse = generationType === 'Imagem'
+          ? (injConfigs['flow-ModeloImagem'] || 'Nano Banana 2')
+          : (injConfigs['flow-ModeloVideo'] || 'Veo 3.1 - Lite [Lower Priority]');
+
         const flowConfigsToApply = [
           generationType,
           injConfigs['flow-Aspecto'],
-          injConfigs['flow-Modelo'] || 'Veo 3.1 - Lite [Lower Priority]',
+          modelToUse,
           injConfigs['flow-Quantidade'] || 'x4',
           injConfigs['flow-Duração'] || (itemsToInject[0] as any)?.duration || prompts?.generatedScript?.scenes?.[0]?.duration || '8s'
         ].filter(Boolean);
