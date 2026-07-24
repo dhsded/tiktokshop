@@ -1511,12 +1511,16 @@ ${voiceInstruction}
 REGRAS OBRIGATÓRIAS:
 1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
 2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena (apenas referência interna, NÃO inclua esse nome nos prompts).
-3. Os campos 'veoPrompt' e 'digenPrompt' devem ser prompts PUROS e AUTO-CONTIDOS em inglês — descritivos, cinematográficos e completos. NUNCA inclua nomes de arquivos, colchetes com nomes ou referências a imagens originais nesses campos. As imagens originais servem apenas como referência visual para a IA entender o contexto, mas os vídeos serão gerados a partir de novas imagens criadas pela IA.
+3. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string do prompt em inglês:
+   - (1) Descrição visual da cena e movimento de câmera (Camera Movement & Visual Action);
+   - (2) Narração e falas dos personagens (Narration / Voiceover / Character Speech em PT-BR);
+   - (3) Música de fundo e efeitos sonoros (Background Music & SFX).
+   Exemplo no veoPrompt: 'Cinematic slow-motion camera pan across product. Voiceover/Dialogue: "[Texto da narração/fala em PT-BR]". Background Music: Upbeat commercial soundtrack with crisp product handling SFX.'
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
 6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
 7. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
-8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
+8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA) com as partes faladas em PT-BR indicadas claramente entre aspas.
 9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
 
 Retorne em estrutura JSON:
@@ -1527,8 +1531,8 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo de referência (uso interno)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Cinematic slow-motion camera pan across... (pure English prompt, NO filenames)", 
-      "digenPrompt": "Natural talking head presenting the product with... (pure English prompt, NO filenames)", 
+      "veoPrompt": "Cinematic camera pan across product. Voiceover/Dialogue: '[Narração em PT-BR]'. Background Music: Upbeat commercial soundtrack with ambient SFX.", 
+      "digenPrompt": "Natural talking head model presenting product. Dialogue: '[Narração em PT-BR]'. Background Music: Upbeat commercial music.", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -1670,12 +1674,12 @@ ${platformInstruction}
 ${voiceInstruction}
 
 REGRAS OBRIGATÓRIAS:
-1. Os campos 'veoPrompt' e 'digenPrompt' devem ser prompts PUROS e AUTO-CONTIDOS em inglês — descritivos, cinematográficos e completos. NUNCA inclua nomes de arquivos, colchetes com nomes ou referências a imagens originais nesses campos. As imagens originais servem apenas como referência visual, mas os vídeos serão gerados a partir de novas imagens criadas pela IA.
+1. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string em inglês: (1) Animação/movimento de câmera; (2) Narração/falas dos personagens ('Voiceover/Dialogue: [Texto da narração em PT-BR]'); (3) Música de fundo e SFX ('Background Music: [Música de fundo]').
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
-3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais.
+3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais, sempre incluindo a narração/falas e a trilha sonora.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
 5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
-6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA). Apenas 'narration' é em PT-BR.
+6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS para as partes técnicas de câmera e áudio, mantendo as falas em PT-BR dentro de aspas.
 7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
 8. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
 
@@ -1687,8 +1691,8 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo (referência interna)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Cinematic slow-motion camera pan across... (pure English prompt, NO filenames)", 
-      "digenPrompt": "Natural talking head presenting... (pure English prompt, NO filenames)", 
+      "veoPrompt": "Cinematic camera pan across model. Voiceover/Dialogue: '[Narração em PT-BR]'. Background Music: Soft acoustic fashion soundtrack with ambient room reverb.", 
+      "digenPrompt": "Natural talking head model presenting clothing. Dialogue: '[Narração em PT-BR]'. Background Music: Modern fashion beat.", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -1843,7 +1847,7 @@ REGRAS ABSOLUTAS — NUNCA VIOLE:
 1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
 2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
-4. Os campos imagePrompt, veoPrompt e digenPrompt DEVEM estar em INGLÊS.
+4. Os campos veoPrompt e digenPrompt DEVEM vir COMPLETOS e UNIFICADOS, incluindo em um único prompt: (1) Animação visual e movimento de câmera; (2) Narração e falas dos personagens em PT-BR ("Voiceover/Dialogue: [Texto da narração]"); (3) Música de fundo e SFX ("Background Music: [Trilha comercial]").
 5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[Música instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
 6. Os campos veoPrompt e digenPrompt devem ser prompts PUROS e AUTO-CONTIDOS — NUNCA inclua nomes de arquivo, colchetes com nomes ou referências a imagens originais. As imagens servem apenas como referência visual para a IA.
 7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
@@ -3897,6 +3901,32 @@ function PromptInjector() {
     console.log(`[INJECTOR SPY ${type.toUpperCase()}] [${step}] ${message}`, details || '');
   }, []);
 
+  const getUnifiedVideoPrompt = useCallback((item: any, target: 'veo' | 'digen' = 'veo'): string => {
+    if (!item) return '';
+    const rawPrompt = (target === 'veo' ? item.veoPrompt : item.digenPrompt) || item.imagePrompt || '';
+    const narration = item.narration || '';
+
+    const lower = rawPrompt.toLowerCase();
+    const hasVoice = lower.includes('narration:') || lower.includes('voiceover:') || lower.includes('dialogue:') || lower.includes('speech:') || lower.includes('fala:');
+    const hasMusic = lower.includes('music:') || lower.includes('audio:') || lower.includes('soundtrack:') || lower.includes('música:');
+
+    if (hasVoice && hasMusic) {
+      return rawPrompt;
+    }
+
+    let result = rawPrompt.trim();
+
+    if (!hasVoice && narration) {
+      result += `\n\nVoiceover & Character Speech (PT-BR):\n"${narration}"`;
+    }
+
+    if (!hasMusic) {
+      result += `\n\nBackground Music & Sound Effects:\nEnergetic commercial soundtrack matching scene mood with ambient sound effects.`;
+    }
+
+    return result;
+  }, []);
+
   // Auto-Scan States no Injetor
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -4605,8 +4635,8 @@ function PromptInjector() {
         const item = itemsToInject[idx];
         const generationType = injConfigs['flow-Tipo'] || (activeTab === 'scenes' ? 'Vídeo' : 'Imagem');
         const promptText = injTarget === 'flow'
-          ? (generationType === 'Vídeo' ? (item as any).veoPrompt : (item as any).imagePrompt)
-          : (item as any).digenPrompt;
+          ? (generationType === 'Vídeo' ? getUnifiedVideoPrompt(item, 'veo') : (item as any).imagePrompt)
+          : getUnifiedVideoPrompt(item, 'digen');
 
         const smartSelector = getSmartSelector(
           injTarget === 'flow' 
@@ -5174,20 +5204,20 @@ function PromptInjector() {
                       <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-orange-400 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo)
+                            <Sparkles className="w-3.5 h-3.5" /> Prompt VEO (Vídeo + Narração + Música)
                           </span>
                         </div>
-                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                          {currentItem.veoPrompt}
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-24 overflow-y-auto leading-relaxed select-text whitespace-pre-wrap">
+                          {getUnifiedVideoPrompt(currentItem, 'veo')}
                         </div>
                         <button
                           onClick={async () => {
                             await selectFlowTab('Vídeo');
-                            injectText(currentItem.veoPrompt, getSmartSelector('veo'));
+                            injectText(getUnifiedVideoPrompt(currentItem, 'veo'), getSmartSelector('veo'));
                           }}
                           className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/10 transition-all hover:scale-[1.02]"
                         >
-                          Injetar VEO
+                          Injetar VEO Completo
                         </button>
                       </div>
                     )}
@@ -5197,17 +5227,17 @@ function PromptInjector() {
                       <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800 hover:border-zinc-700/60 transition-all space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5" /> Prompt DIGEN (Avatar)
+                            <User className="w-3.5 h-3.5" /> Prompt DIGEN (Avatar + Falas + Música)
                           </span>
                         </div>
-                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-20 overflow-y-auto leading-relaxed select-text">
-                          {currentItem.digenPrompt}
+                        <div className="text-[11px] text-zinc-300 font-mono bg-zinc-950 p-2 rounded-lg border border-zinc-850 max-h-24 overflow-y-auto leading-relaxed select-text whitespace-pre-wrap">
+                          {getUnifiedVideoPrompt(currentItem, 'digen')}
                         </div>
                         <button
-                          onClick={() => injectText(currentItem.digenPrompt, getSmartSelector('digen'))}
+                          onClick={() => injectText(getUnifiedVideoPrompt(currentItem, 'digen'), getSmartSelector('digen'))}
                           className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/10 transition-all hover:scale-[1.02]"
                         >
-                          Injetar DIGEN
+                          Injetar DIGEN Completo
                         </button>
                       </div>
                     )}
