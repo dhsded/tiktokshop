@@ -2256,22 +2256,37 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               alt={img.name} 
                               className="w-full h-full object-contain bg-black/20 p-1"
                             />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            {img.cropState && (
+                              <div className="absolute top-2 right-2 bg-emerald-500/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-md shadow-md z-10">
+                                ✂️ Cortada
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1 z-20">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'collection', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
-                                className="p-2 bg-blue-500/80 rounded-full hover:bg-blue-50 transition-colors text-white hover:text-blue-500"
-                                title="Cortar Imagem"
+                                className="p-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md"
+                                title="Recortar Imagem"
                               >
-                                <Crop className="w-4 h-4" />
+                                <Crop className="w-3.5 h-3.5" />
                               </button>
+                              {img.cropState && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); downloadCroppedImage(img); }}
+                                  className="p-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-md"
+                                  title="Baixar Imagem Cortada"
+                                >
+                                  <Save className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button 
                                 onClick={(e) => { e.stopPropagation(); removeImage(img.id); }}
-                                className="p-2 bg-red-500/80 rounded-full hover:bg-red-500 transition-colors"
+                                className="p-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-lg transition-all shadow-md"
+                                title="Remover Imagem"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-mono">
+                            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-mono z-10">
                               {index + 1}
                             </div>
                           </motion.div>
@@ -2397,32 +2412,36 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         {modelImage ? (
                           <>
                             <img src={modelImage.preview} alt="Model" className="w-full h-full object-contain p-2 bg-black/40" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            {modelImage.cropState && (
+                              <div className="absolute top-2 left-2 bg-emerald-500/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md shadow-md z-10 flex items-center gap-1">
+                                <span>✂️</span> Cortada
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2 z-20">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: modelImage.id, type: 'model', preview: modelImage.originalPreview || modelImage.preview, originalPreview: modelImage.originalPreview || modelImage.preview }); }}
-                                className="p-2 bg-blue-500/80 rounded-full hover:bg-blue-100 transition-colors text-white hover:text-blue-500"
-                                title="Cortar Imagem"
+                                className="p-2 bg-blue-600/90 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md"
+                                title="Recortar Imagem"
                               >
                                 <Crop className="w-4 h-4" />
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); removeSingleImage('model'); }} className="p-2 bg-red-500/80 rounded-full hover:bg-red-500">
+                              {modelImage.cropState && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); downloadCroppedImage(modelImage); }}
+                                  className="p-2 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-md"
+                                  title="Baixar Imagem Cortada"
+                                >
+                                  <Save className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); removeSingleImage('model'); }} 
+                                className="p-2 bg-red-600/90 hover:bg-red-500 text-white rounded-xl transition-all shadow-md"
+                                title="Remover Imagem"
+                              >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                            {modelImage.cropState && (
-                              <>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); downloadCroppedImage(modelImage); }}
-                                  className="absolute top-2 right-2 p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-lg flex items-center justify-center group/btn z-10"
-                                  title="Salvar Recorte (Download)"
-                                >
-                                  <Save className="w-3.5 h-3.5" />
-                                </button>
-                                <div className="absolute bottom-2 right-2 bg-emerald-500/85 backdrop-blur-md text-[9px] text-white font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                                  <span>✂️</span>
-                                </div>
-                              </>
-                            )}
                           </>
                         ) : (
                           <>
@@ -2466,32 +2485,36 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             {productImages.map((img) => (
                               <div key={img.id} className="relative aspect-square rounded-xl overflow-hidden border border-white/5 group">
                                 <img src={img.preview} alt="Product" className={`w-full h-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'} bg-black/40 p-1`} />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                {img.cropState && (
+                                  <div className="absolute top-1.5 left-1.5 bg-emerald-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded backdrop-blur-md shadow-md z-10 flex items-center gap-0.5">
+                                    <span>✂️</span> Cortada
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 p-1 z-20">
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); setImageToCrop({ id: img.id, type: 'product', preview: img.originalPreview || img.preview, originalPreview: img.originalPreview || img.preview }); }}
-                                    className="p-1.5 bg-blue-500/80 rounded-full hover:bg-blue-100 transition-colors text-white hover:text-blue-500"
-                                    title="Cortar Imagem"
+                                    className="p-1.5 bg-blue-600/90 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md"
+                                    title="Recortar Imagem"
                                   >
-                                    <Crop className="w-3 h-3" />
+                                    <Crop className="w-3.5 h-3.5" />
                                   </button>
-                                  <button onClick={(e) => { e.stopPropagation(); removeSingleImage('product', img.id); }} className="p-1.5 bg-red-500/80 rounded-full hover:bg-red-500 transition-colors">
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                                {img.cropState && (
-                                  <>
+                                  {img.cropState && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); downloadCroppedImage(img); }}
-                                      className="absolute top-1.5 right-1.5 p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-md flex items-center justify-center group/btn z-10"
-                                      title="Salvar Recorte (Download)"
+                                      className="p-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-md"
+                                      title="Baixar Imagem Cortada"
                                     >
-                                      <Save className="w-3 h-3" />
+                                      <Save className="w-3.5 h-3.5" />
                                     </button>
-                                    <div className="absolute bottom-1.5 right-1.5 bg-emerald-500/85 backdrop-blur-md text-[8px] text-white font-bold px-1 py-0.5 rounded flex items-center">
-                                      <span>✂️</span>
-                                    </div>
-                                  </>
-                                )}
+                                  )}
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); removeSingleImage('product', img.id); }} 
+                                    className="p-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-lg transition-all shadow-md"
+                                    title="Remover Imagem"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </motion.div>
