@@ -265,7 +265,29 @@ ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, project
   if (imageName) {
     filePath = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`, 'imagens_referencia', imageName);
   } else if (sceneIndex !== undefined && imageIndex !== undefined) {
-    const imgDir = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`, 'imagens_referencia');
+    let imgDir = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`, 'imagens_referencia');
+    if (!fs.existsSync(imgDir)) {
+      imgDir = path.join(downloadsPath, 'TikTok Shop', `produto${String(projectIndex).padStart(2, '0')}`, 'imagens_referencia');
+    }
+    if (!fs.existsSync(imgDir)) {
+      imgDir = path.join(downloadsPath, 'TikTok Shop', `produto${projectIndex}`);
+    }
+    if (!fs.existsSync(imgDir)) {
+      const baseDir = path.join(downloadsPath, 'TikTok Shop');
+      if (fs.existsSync(baseDir)) {
+        const subdirs = fs.readdirSync(baseDir).filter((d: string) => {
+          try { return fs.statSync(path.join(baseDir, d)).isDirectory(); } catch (e) { return false; }
+        });
+        for (const sub of subdirs) {
+          const candidate = path.join(baseDir, sub, 'imagens_referencia');
+          if (fs.existsSync(candidate)) {
+            imgDir = candidate;
+            break;
+          }
+        }
+      }
+    }
+
     if (!fs.existsSync(imgDir)) {
       console.warn(`[Electron Upload] Directory not found: ${imgDir}`);
       return { success: false, error: `Directory not found: ${imgDir}` };

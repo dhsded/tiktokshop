@@ -2924,9 +2924,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {window.electronAPI ? (
                         <>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
                               const pIndex = proj ? proj.projectIndex : projectCounter;
+                              try {
+                                await handleSaveAssets(pIndex);
+                              } catch (err) {
+                                console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
+                              }
                               window.electronAPI.openInjectorWindow({ 
                                 generatedScript, 
                                 generatedAngles,
@@ -2941,9 +2946,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             <Sparkles className="w-3.5 h-3.5" /> Injetar no Google Flow
                           </button>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
                               const pIndex = proj ? proj.projectIndex : projectCounter;
+                              try {
+                                await handleSaveAssets(pIndex);
+                              } catch (err) {
+                                console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
+                              }
                               window.electronAPI.openInjectorWindow({ 
                                 generatedScript, 
                                 generatedAngles,
@@ -5586,6 +5596,7 @@ function PromptInjector() {
                         <button
                           onClick={async () => {
                             await selectFlowTab('Imagem');
+                            await attachReferenceImages(selectedItemIndex + 1);
                             injectText(currentItem.imagePrompt, getSmartSelector('image'));
                           }}
                           className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
