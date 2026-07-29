@@ -3928,6 +3928,22 @@ function PromptInjector() {
     console.log(`[INJECTOR SPY ${type.toUpperCase()}] [${step}] ${message}`, details || '');
   }, []);
 
+  useEffect(() => {
+    if (window.electronAPI?.onDownloadEvent) {
+      const removeListener = window.electronAPI.onDownloadEvent((data: any) => {
+        if (data.type === 'download-started') {
+          addSpyLog('info', 'Download de Arquivo', `Iniciando download: "${data.filename}"`, `Destino: ${data.savePath}`);
+        } else if (data.type === 'download-completed') {
+          const sizeMb = data.sizeBytes ? (data.sizeBytes / (1024 * 1024)).toFixed(2) + ' MB' : 'Tamanho salvo';
+          addSpyLog('success', 'Download Concluído', `✅ Arquivo salvo com sucesso: "${data.filename}" (${sizeMb})`, `Caminho completo no disco: ${data.savePath}`);
+        } else if (data.type === 'download-failed' || data.type === 'download-interrupted') {
+          addSpyLog('error', 'Download Falhou', `❌ Falha ao baixar "${data.filename}" (Status: ${data.status || 'interrompido'})`, `Caminho planejado: ${data.savePath}`);
+        }
+      });
+      return () => removeListener();
+    }
+  }, [addSpyLog]);
+
   const getUnifiedVideoPrompt = useCallback((item: any, target: 'veo' | 'digen' = 'veo'): string => {
     if (!item) return '';
     const rawPrompt = (target === 'veo' ? item.veoPrompt : item.digenPrompt) || item.imagePrompt || '';
@@ -4202,6 +4218,7 @@ function PromptInjector() {
     const script = `
       (function() {
         const isVisible = (el) => {
+          if (!el) return false;
           const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) return false;
           const s = window.getComputedStyle(el);
@@ -4214,76 +4231,127 @@ function PromptInjector() {
             if (el && isVisible(el)) return el;
           }
 
-          // Prioridade 1: campo "O que você quer criar?" da barra inferior do Google Flow
-          const allInputs = Array.from(document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"], [contenteditable=""]'));
-          const flowPromptField = allInputs.find(el => {
+          const isValidPromptField = (el) => {
             if (!isVisible(el)) return false;
-            const placeholder = (el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '').toLowerCase();
-            return placeholder.includes('criar') || placeholder.includes('create') || placeholder.includes('want') || placeholder.includes('quer');
-          });
-          if (flowPromptField) return flowPromptField;
+            const r = el.getBoundingClientRect();
+            // Rejeitar a barra de pesquisa do topo da página (top < 100px)
+            if (r.top < 100 && r.height < 55) return false;
+            return true;
+          };
 
-          // Prioridade 2: elemento atualmente focado (campo aberto por interação)
+          // Prioridade 1: container de prompt do Google Flow (div.sc-36b67ffc-1 / popover inferior de Animar ou Criar)
+          const flowContainers = Array.from(document.querySelectorAll('div.sc-36b67ffc-1, [class*="36b67ffc"], [role="dialog"], div.sc-5c3af813-10, div.sc-5c3af813-1, div.sc-5c3af813-2, [class*="prompt-box"]'));
+          for (const container of flowContainers) {
+            if (!isVisible(container)) continue;
+            const innerEditable = container.querySelector('[contenteditable="true"], [contenteditable=""], [data-lexical-editor="true"], textarea, p, input[type="text"]');
+            if (innerEditable && isValidPromptField(innerEditable)) {
+              return innerEditable;
+            }
+          }
+
+          // Prioridade 2: Qualquer campo editável na metade inferior da página (rodapé/popover com "criar" / "want")
+          const allEditables = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""], [data-lexical-editor="true"], input[type="text"], div.sc-36b67ffc-1 p'));
+          const bottomField = allEditables.find(el => {
+            if (!isValidPromptField(el)) return false;
+            const r = el.getBoundingClientRect();
+            const text = (el.textContent || el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '').toLowerCase();
+            const parentText = (el.parentElement ? el.parentElement.textContent || '' : '').toLowerCase();
+            return r.top > window.innerHeight * 0.35 && (
+              text.includes('criar') || text.includes('create') || text.includes('want') || text.includes('quer') ||
+              parentText.includes('criar') || parentText.includes('create') || parentText.includes('want') || parentText.includes('quer')
+            );
+          });
+          if (bottomField) return bottomField;
+
+          // Prioridade 3: Qualquer editável na metade inferior da página
+          const anyBottomEditable = allEditables.find(el => {
+            if (!isValidPromptField(el)) return false;
+            const r = el.getBoundingClientRect();
+            return r.top > window.innerHeight * 0.35;
+          });
+          if (anyBottomEditable) return anyBottomEditable;
+
+          // Prioridade 4: Elemento atualmente focado que não seja o topo
           const active = document.activeElement;
-          if (active && isVisible(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
+          if (active && isValidPromptField(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable)) {
             return active;
           }
 
-          // Prioridade 3: campo dentro de container ativo
-          const activeContainer = document.querySelector('[class*="active"], [class*="selected"], [class*="prompt"], [class*="editor"], [class*="input"]');
-          if (activeContainer) {
-            const innerField = activeContainer.querySelector('textarea, [contenteditable="true"], input[type="text"]');
-            if (innerField && isVisible(innerField)) return innerField;
-          }
-
-          // Prioridade 4: primeira textarea visível
-          const textareas = Array.from(document.querySelectorAll('textarea'));
-          const visibleTextarea = textareas.find(t => isVisible(t));
-          if (visibleTextarea) return visibleTextarea;
-
-          const editables = Array.from(document.querySelectorAll('[contenteditable="true"], [contenteditable=""]'));
-          const visibleEditable = editables.find(e => isVisible(e));
-          if (visibleEditable) return visibleEditable;
-
-          const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
-          const visibleInput = inputs.find(i => isVisible(i));
-          if (visibleInput) return visibleInput;
+          // Prioridade 5: Qualquer editável válido na página
+          const anyValid = allEditables.find(el => isValidPromptField(el));
+          if (anyValid) return anyValid;
 
           return null;
         };
 
-        const el = findField();
-        if (!el) return false;
+        const container = findField();
+        if (!container) return false;
+
+        // Se o container tiver um filho específico contenteditable/lexical, focar no filho
+        const el = container.querySelector('[contenteditable="true"], [data-lexical-editor="true"]') || container;
         
         el.focus();
         
-        if (el.isContentEditable) {
+        const valToInject = ${escapedText};
+
+        // Inserção para React Inputs/Textareas e Lexical/Slate Editors
+        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+          const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+          const valueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          if (valueSetter) {
+            valueSetter.call(el, valToInject);
+          } else {
+            el.value = valToInject;
+          }
+        } else if (el.isContentEditable || el.getAttribute('contenteditable') !== null || el.getAttribute('data-lexical-editor') !== null) {
           const range = document.createRange();
           range.selectNodeContents(el);
           const sel = window.getSelection();
           sel.removeAllRanges();
           sel.addRange(range);
-        } else if (typeof el.select === 'function') {
-          el.select();
-        }
-        
-        let success = false;
-        try {
-          success = document.execCommand('insertText', false, ${escapedText});
-        } catch (e) {}
-        
-        if (!success) {
-          if (el.isContentEditable) {
-            el.innerText = ${escapedText};
-          } else {
-            el.value = ${escapedText};
+
+          let inserted = false;
+          try {
+            inserted = document.execCommand('insertText', false, valToInject);
+          } catch (e) {}
+
+          if (!inserted) {
+            el.innerText = valToInject;
           }
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
         }
+
+        // Simular bateria completa de eventos DOM para ativar o estado interno do Lexical / React / Vue
+        try {
+          el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: valToInject }));
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: valToInject }));
+        } catch(e) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Eventos de teclado (Space / Enter) para acionar mutações no Lexical
+        ['keydown', 'keypress', 'keyup'].forEach(eventType => {
+          el.dispatchEvent(new KeyboardEvent(eventType, {
+            bubbles: true, cancelable: true, key: ' ', code: 'Space', keyCode: 32, charCode: 32
+          }));
+        });
+
+        // Forçar a ativação do botão de envio no DOM se estiver desabilitado pelo framework
+        setTimeout(() => {
+          const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+          const sendBtn = btns.find(b => {
+            const text = (b.textContent || '').trim();
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            return text === '→' || aria.includes('criar') || aria.includes('generate') || aria.includes('send') || aria.includes('submit') || aria.includes('enviar');
+          });
+          if (sendBtn) {
+            sendBtn.removeAttribute('disabled');
+            sendBtn.disabled = false;
+            if (sendBtn.classList) sendBtn.classList.remove('disabled');
+          }
+        }, 100);
+
         return true;
       })()
     `;
@@ -4723,128 +4791,109 @@ function PromptInjector() {
             setInjectionProgressText(`Cena ${idx + 1}/${itemsToInject.length} (Img ${imgIdx}/${imagesPerScene})`);
             setDownloadStatus("Preparando...");
 
-            // PASSO 1: Abrir Modal de Mídia e selecionar/incluir a imagem do produto correlacionada
-            addSpyLog('info', 'Anexo de Mídia', `Localizando imagem de referência ${imgIdx} do produto...`);
-            setDownloadStatus(`Buscando imagem ${imgIdx}...`);
+            // PASSO 1: Anexar até 5 imagens de referência do produto no prompt do Nano Banana 2
+            addSpyLog('info', 'Anexo de Mídias', `Anexando até 5 imagens de referência do produto para a Cena ${idx + 1}...`);
+            setDownloadStatus(`Anexando 5 referências...`);
 
-            const openModalAndSelectScript = `
-              (function(targetImageIndex) {
-                const isVisible = (el) => {
-                  if (!el) return false;
-                  const r = el.getBoundingClientRect();
-                  return r.width > 0 && r.height > 0 &&
-                         window.getComputedStyle(el).display !== 'none' &&
-                         window.getComputedStyle(el).visibility !== 'hidden';
-                };
+            for (let refIdx = 1; refIdx <= Math.min(5, imagesPerScene > 1 ? imagesPerScene : 5); refIdx++) {
+              if (abortControllerRef.current) throw new Error("Automação cancelada pelo usuário.");
+              
+              const openModalAndSelectScript = `
+                (function(targetImageIndex) {
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 &&
+                           window.getComputedStyle(el).display !== 'none' &&
+                           window.getComputedStyle(el).visibility !== 'hidden';
+                  };
 
-                // A. Abrir modal se não estiver aberto
-                let modal = document.querySelector('[role="dialog"], [id*="radix"]');
-                if (!modal || !isVisible(modal)) {
-                  const plusBtn = Array.from(document.querySelectorAll('button, div.sc-26b30722-2 button, [role="button"]')).find(b => {
+                  let modal = document.querySelector('[role="dialog"], [id*="radix"]');
+                  if (!modal || !isVisible(modal)) {
+                    const plusBtn = Array.from(document.querySelectorAll('button, div.sc-26b30722-2 button, [role="button"]')).find(b => {
+                      if (!isVisible(b)) return false;
+                      const text = (b.textContent || '').trim();
+                      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                      return text.includes('add') || text.includes('+') || aria.includes('criar') || aria.includes('adicionar') || text.includes('Inicial');
+                    });
+                    if (plusBtn) plusBtn.click();
+                  }
+
+                  const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
+                  const existingItem = listItems[targetImageIndex - 1] || listItems[0];
+                  if (existingItem && listItems.length >= targetImageIndex) {
+                    existingItem.click();
+                    return 'found-existing';
+                  }
+
+                  const uploadBtn = Array.from(document.querySelectorAll('button, button.sc-559b4cd2-4')).find(b => {
                     if (!isVisible(b)) return false;
-                    const text = (b.textContent || '').trim();
-                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                    return text.includes('add') || text.includes('+') || aria.includes('criar') || aria.includes('adicionar') || text.includes('Inicial');
+                    const text = (b.textContent || '').trim().toLowerCase();
+                    return text.includes('enviar mídia') || text.includes('enviar midia') || text.includes('upload');
                   });
-                  if (plusBtn) plusBtn.click();
-                }
+                  if (uploadBtn) uploadBtn.click();
 
-                // B. Verificar se a imagem correspondente ao produto já existe na lista virtuoso/uploads
-                const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
-                // Selecionar o item do índice (ex: 1º item para imgIdx 1, 2º para imgIdx 2)
-                const existingItem = listItems[targetImageIndex - 1] || listItems[0];
-                if (existingItem && listItems.length >= targetImageIndex) {
-                  existingItem.click();
-                  return 'found-existing';
-                }
+                  return 'need-upload';
+                })(${refIdx});
+              `;
 
-                // C. Se não houver itens suficientes, clicar em "Enviar mídia"
-                const uploadBtn = Array.from(document.querySelectorAll('button, button.sc-559b4cd2-4')).find(b => {
-                  if (!isVisible(b)) return false;
-                  const text = (b.textContent || '').trim().toLowerCase();
-                  return text.includes('enviar mídia') || text.includes('enviar midia') || text.includes('upload');
-                });
-                if (uploadBtn) uploadBtn.click();
-
-                return 'need-upload';
-              })(${imgIdx});
-            `;
-
-            let selectStatus = 'need-upload';
-            try {
-              selectStatus = await webviewRef.current.executeJavaScript(openModalAndSelectScript);
-            } catch (err: any) {
-              console.warn("Select media script warning:", err);
-            }
-            await new Promise(r => setTimeout(r, 600));
-
-            // PASSO 2: Se a imagem ainda não estava no Flow, realizar o upload via IPC
-            if (selectStatus === 'need-upload') {
-              addSpyLog('info', 'Upload de Imagem', `Enviando arquivo da imagem ${imgIdx} para a biblioteca do Flow...`);
-              setDownloadStatus(`Upload imagem ${imgIdx}...`);
+              let selectStatus = 'need-upload';
               try {
-                const webContentsId = webviewRef.current.getWebContentsId();
-                const uploadResult = await window.electronAPI.uploadFileToWebview({
-                  webContentsId,
-                  projectIndex: prompts?.projectIndex || 1,
-                  sceneIndex: idx + 1,
-                  imageIndex: imgIdx,
-                  isFinal: false
-                });
-                if (uploadResult.success) {
-                  addSpyLog('success', 'Upload de Imagem', `Upload da imagem ${imgIdx} concluído.`);
-                } else {
-                  addSpyLog('warning', 'Upload de Imagem', `Aviso no upload: ${uploadResult.error}`);
-                }
-              } catch (err: any) {
-                addSpyLog('error', 'Upload de Imagem', `Erro no upload da imagem ${imgIdx}`, err.message);
+                selectStatus = await webviewRef.current.executeJavaScript(openModalAndSelectScript);
+              } catch (err: any) {}
+              await new Promise(r => setTimeout(r, 400));
+
+              if (selectStatus === 'need-upload') {
+                try {
+                  const webContentsId = webviewRef.current.getWebContentsId();
+                  await window.electronAPI.uploadFileToWebview({
+                    webContentsId,
+                    projectIndex: prompts?.projectIndex || 1,
+                    sceneIndex: idx + 1,
+                    imageIndex: refIdx,
+                    isFinal: false
+                  });
+                } catch (err: any) {}
+                await new Promise(r => setTimeout(r, 800));
               }
-              await new Promise(r => setTimeout(r, 1200));
+
+              const includeImageScript = `
+                (function(targetImageIndex) {
+                  const isVisible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 &&
+                           window.getComputedStyle(el).display !== 'none' &&
+                           window.getComputedStyle(el).visibility !== 'hidden';
+                  };
+
+                  const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
+                  const itemToClick = listItems[targetImageIndex - 1] || listItems[0];
+                  if (itemToClick) itemToClick.click();
+
+                  const includeBtn = Array.from(document.querySelectorAll('button, div.sc-4da33547-5 button')).find(b => {
+                    if (!isVisible(b)) return false;
+                    const text = (b.textContent || '').trim().toLowerCase();
+                    return text.includes('incluir no comando') || text.includes('incluir') || text.includes('add to prompt');
+                  });
+
+                  if (includeBtn) {
+                    includeBtn.click();
+                    return 'image-included';
+                  }
+                  return 'include-btn-not-found';
+                })(${refIdx});
+              `;
+              try {
+                await webviewRef.current.executeJavaScript(includeImageScript);
+              } catch (err: any) {}
+              await new Promise(r => setTimeout(r, 500));
             }
 
-            // PASSO 3: Confirmar seleção na lista virtuoso e Clicar em "Incluir no comando"
-            addSpyLog('info', 'Anexo de Mídia', `Anexando imagem de referência ${imgIdx} ao comando...`);
-            const includeImageScript = `
-              (function(targetImageIndex) {
-                const isVisible = (el) => {
-                  if (!el) return false;
-                  const r = el.getBoundingClientRect();
-                  return r.width > 0 && r.height > 0 &&
-                         window.getComputedStyle(el).display !== 'none' &&
-                         window.getComputedStyle(el).visibility !== 'hidden';
-                };
+            addSpyLog('success', 'Anexo de Mídias', `Até 5 imagens de referência anexadas ao prompt da Cena ${idx + 1}.`);
 
-                const listItems = Array.from(document.querySelectorAll('[data-testid="virtuoso-item-list"] > div, [class*="virtuoso"] img, [class*="b0e5"]'));
-                const itemToClick = listItems[targetImageIndex - 1] || listItems[0];
-                if (itemToClick) itemToClick.click();
-
-                const includeBtn = Array.from(document.querySelectorAll('button, div.sc-4da33547-5 button')).find(b => {
-                  if (!isVisible(b)) return false;
-                  const text = (b.textContent || '').trim().toLowerCase();
-                  return text.includes('incluir no comando') || text.includes('incluir') || text.includes('add to prompt');
-                });
-
-                if (includeBtn) {
-                  includeBtn.click();
-                  return 'image-included';
-                }
-                return 'include-btn-not-found';
-              })(${imgIdx});
-            `;
-            try {
-              const includeResult = await webviewRef.current.executeJavaScript(includeImageScript);
-              if (includeResult === 'image-included') {
-                addSpyLog('success', 'Anexo de Mídia', `Imagem de referência ${imgIdx} anexada ao comando com sucesso ("Incluir no comando").`);
-              } else {
-                addSpyLog('warning', 'Anexo de Mídia', `Aviso ao clicar em "Incluir no comando".`);
-              }
-            } catch (err: any) {
-              addSpyLog('error', 'Anexo de Mídia', 'Erro ao anexar mídia ao comando', err.message);
-            }
-            await new Promise(r => setTimeout(r, 800));
-
-            // PASSO 4: Injetar prompt UMA única vez
-            addSpyLog('info', 'Injeção de Prompt', `Injetando prompt no campo "O que você quer criar?"...`);
+            // PASSO 4: Injetar prompt da cena no Nano Banana 2
+            addSpyLog('info', 'Injeção de Prompt', `Injetando prompt de imagem no campo "O que você quer criar?"...`);
             await injectText(promptText, smartSelector);
             await new Promise(r => setTimeout(r, 1500));
 
@@ -4859,26 +4908,47 @@ function PromptInjector() {
                   const r = el.getBoundingClientRect();
                   return r.width > 0 && r.height > 0 &&
                          window.getComputedStyle(el).display !== 'none' &&
-                         window.getComputedStyle(el).visibility !== 'hidden' &&
-                         !el.disabled;
+                         window.getComputedStyle(el).visibility !== 'hidden';
                 };
                 const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
                 const bottomBtns = btns.filter(btn => {
                   if (!isVisible(btn)) return false;
                   const r = btn.getBoundingClientRect();
-                  return r.bottom > window.innerHeight * 0.65 && r.top < window.innerHeight;
+                  return r.bottom > window.innerHeight * 0.60 && r.top < window.innerHeight;
                 });
                 const sendBtn = bottomBtns.find(btn => {
                   const text = (btn.textContent || '').trim();
                   const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
-                  return text === '→' || aria.includes('criar') || aria.includes('generate') || aria.includes('send') || aria.includes('submit');
+                  return text === '→' || aria.includes('criar') || aria.includes('generate') || aria.includes('send') || aria.includes('submit') || aria.includes('enviar');
                 }) || (bottomBtns.length > 0 ? bottomBtns[bottomBtns.length - 1] : null);
-                if (sendBtn) { sendBtn.click(); return true; }
-                const fallback = btns.find(b => {
-                  const text = (b.textContent || '').trim();
-                  return (text === 'Criar' || text === 'Generate' || text === 'Create') && isVisible(b);
-                });
-                if (fallback) { fallback.click(); return true; }
+
+                if (sendBtn) {
+                  sendBtn.removeAttribute('disabled');
+                  sendBtn.disabled = false;
+                  if (sendBtn.classList) sendBtn.classList.remove('disabled');
+                  
+                  const mouseEvents = ['mousedown', 'mouseup', 'click'];
+                  mouseEvents.forEach(eventType => {
+                    sendBtn.dispatchEvent(new MouseEvent(eventType, {
+                      bubbles: true, cancelable: true, view: window
+                    }));
+                  });
+                  if (typeof sendBtn.click === 'function') {
+                    sendBtn.click();
+                  }
+                  return true;
+                }
+
+                // Fallback: se o botão → não puder ser clicado diretamente, disparar ENTER no campo ativo/editor
+                const activeEl = document.activeElement || document.querySelector('[contenteditable="true"], [data-lexical-editor="true"], textarea');
+                if (activeEl) {
+                  ['keydown', 'keypress', 'keyup'].forEach(type => {
+                    activeEl.dispatchEvent(new KeyboardEvent(type, {
+                      bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, charCode: 13
+                    }));
+                  });
+                  return true;
+                }
                 return false;
               })()
             `;
@@ -4941,7 +5011,7 @@ function PromptInjector() {
               }
 
               const letter = String.fromCharCode(64 + vidIdx);
-              const customFileName = `img${imgIdx} cena${sceneStr2}${letter}`;
+              const customFileName = `img${imgIdx}-cena${sceneStr2}${letter}`;
 
               addSpyLog('info', 'Metadados de Download', `Registrando nome: "${customFileName}"`);
               await window.electronAPI.setCurrentDownloadInfo({
@@ -6118,6 +6188,39 @@ function SpyWindow() {
       webview.removeEventListener('did-navigate-in-page', handleNavigate);
       webview.removeEventListener('console-message', handleConsoleMessage);
     };
+  }, [scanResult]);
+
+  // Escutar downloads em tempo real no Espião
+  useEffect(() => {
+    if (window.electronAPI?.onDownloadEvent) {
+      const removeListener = window.electronAPI.onDownloadEvent((data: any) => {
+        if (data.type === 'download-completed') {
+          const sizeMb = data.sizeBytes ? (data.sizeBytes / (1024 * 1024)).toFixed(2) + ' MB' : '';
+          const downloadAction: SpyAction = {
+            type: 'click',
+            tag: 'DOWNLOAD',
+            selector: data.savePath,
+            label: `Download: ${data.filename}`,
+            value: `${data.savePath} (${sizeMb})`,
+            timestamp: data.timestamp || Date.now(),
+            interpreted: `📥 Download Salvo: ${data.filename}`,
+            category: 'action'
+          };
+          setRecordedActions(prev => {
+            const next = [...prev, downloadAction];
+            if (window.electronAPI?.writeSpyScanResults) {
+              window.electronAPI.writeSpyScanResults({
+                scan: scanResult,
+                actions: next,
+                macro: consolidateMacro(next)
+              });
+            }
+            return next;
+          });
+        }
+      });
+      return () => removeListener();
+    }
   }, [scanResult]);
 
   // Função para interpretar e adicionar a ação em tempo real

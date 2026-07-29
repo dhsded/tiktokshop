@@ -457,13 +457,16 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Interceptar downloads do Injetor para salvamento automatizado e numerado
+  // Interceptar e monitorar downloads do Injetor para salvamento automatizado e registro no Espião
   session.defaultSession.on('will-download', (event, item, webContents) => {
+    const fs = require('fs');
+    const path = require('path');
+    const downloadsPath = app.getPath('downloads');
+
+    let filePath = '';
+    let fileName = item.getFilename();
+
     if (currentDownloadInfo) {
-      const fs = require('fs');
-      const path = require('path');
-      const downloadsPath = app.getPath('downloads');
-      
       const folderName = `produto${currentDownloadInfo.projectIndex || 1}`;
       const targetDir = path.join(downloadsPath, 'TikTok Shop', folderName);
       
@@ -474,13 +477,78 @@ app.whenReady().then(() => {
       const originalName = item.getFilename();
       const ext = path.extname(originalName) || '.mp4';
       
-      // Nome formatado sequencial: cenaX_Y.mp4 (onde X é o sceneIndex e Y é o loop da variação)
-      const fileName = `cena${currentDownloadInfo.sceneIndex || 0}_${currentDownloadInfo.generationLoop || 1}${ext}`;
-      const filePath = path.join(targetDir, fileName);
+      const baseName = currentDownloadInfo.customFileName || `cena${currentDownloadInfo.sceneIndex || 0}_${currentDownloadInfo.generationLoop || 1}`;
+      fileName = `${baseName}${ext}`;
+      filePath = path.join(targetDir, fileName);
       
       item.setSavePath(filePath);
       console.log(`[Electron Download Redirect] Direcionando arquivo para: ${filePath}`);
+    } else {
+      filePath = item.getSavePath() || path.join(downloadsPath, fileName);
     }
+
+    const broadcastDownloadEvent = (eventType: string, details: any) => {
+      const payload = { type: eventType, filename: fileName, savePath: filePath, ...details };
+      
+      // Notificar todas as janelas ativas (Injector, Spy, Main)
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('download-event', payload);
+        }
+      });
+      
+      // Persistir registro detalhado no spy_last_scan.json
+      try {
+        const spyPath = path.join(app.getAppPath(), 'spy_last_scan.json');
+        let currentSpyData: any = {};
+        if (fs.existsSync(spyPath)) {
+          try {
+            currentSpyData = JSON.parse(fs.readFileSync(spyPath, 'utf-8'));
+          } catch(e) {}
+        }
+        if (!currentSpyData.downloads) currentSpyData.downloads = [];
+        currentSpyData.downloads.unshift(payload);
+        currentSpyData.downloads = currentSpyData.downloads.slice(0, 200);
+        fs.writeFileSync(spyPath, JSON.stringify(currentSpyData, null, 2), 'utf-8');
+      } catch (err) {
+        console.error('Error writing download event to spy_last_scan.json:', err);
+      }
+    };
+
+    broadcastDownloadEvent('download-started', {
+      url: item.getURL(),
+      mimeType: item.getMimeType(),
+      totalBytes: item.getTotalBytes(),
+      timestamp: Date.now()
+    });
+
+    item.on('updated', (_evt, state) => {
+      if (state === 'interrupted') {
+        broadcastDownloadEvent('download-interrupted', { timestamp: Date.now() });
+      }
+    });
+
+    item.once('done', (_evt, state) => {
+      let fileSize = 0;
+      try {
+        if (fs.existsSync(filePath)) {
+          fileSize = fs.statSync(filePath).size;
+        }
+      } catch(e) {}
+
+      if (state === 'completed') {
+        broadcastDownloadEvent('download-completed', {
+          sizeBytes: fileSize,
+          status: 'completed',
+          timestamp: Date.now()
+        });
+      } else {
+        broadcastDownloadEvent('download-failed', {
+          status: state,
+          timestamp: Date.now()
+        });
+      }
+    });
   });
 
   // Atalho global para abrir o espião (apenas em dev)

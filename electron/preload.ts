@@ -28,4 +28,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSiteSchema: (payload: any) => ipcRenderer.invoke('save-site-schema', payload),
   setCurrentDownloadInfo: (info: any) => ipcRenderer.invoke('set-current-download-info', info),
   uploadFileToWebview: (payload: { webContentsId: number, projectIndex: number, imageName?: string, sceneIndex?: number, imageIndex?: number, isFinal?: boolean }) => ipcRenderer.invoke('upload-file-to-webview', payload),
+  onDownloadEvent: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('download-event', subscription);
+    return () => {
+      ipcRenderer.removeListener('download-event', subscription);
+    };
+  },
 });

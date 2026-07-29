@@ -1,0 +1,56 @@
+{
+  "scan": {
+    "prompts": [
+      {
+        "tag": "DIV",
+        "type": "text",
+        "selector": "div.block.w-full",
+        "label": "",
+        "placeholder": "",
+        "value": "",
+        "visible": true,
+        "category": "prompt"
+      },
+      {
+        "tag": "DIV",
+        "type": "text",
+        "selector": "div.block.w-full",
+        "label": "",
+        "placeholder": "",
+        "value": "",
+        "visible": false,
+        "category": "prompt"
+      }
+    ],
+    "uploads": [
+      {
+        "tag": "INPUT",
+        "type": "file",
+        "selector": "input.hidden",
+        "label": "Upload de arquivo",
+        "placeholder": "",
+        "value": "",
+        "accept": "image/*,video/*,audio/*",
+        "visible": false,
+        "category": "upload"
+      },
+      {
+        "tag": "INPUT",
+        "type": "file",
+        "selector": "input.hidden",
+        "label": "Upload de arquivo",
+        "placeholder": "",
+        "value": "",
+        "accept": "image/*,video/*,audio/*",
+        "visible": false,
+        "category": "upload"
+      }
+    ],
+    "configs": [],
+    "actions": [],
+    "timestamp": 1784204673865,
+    "url": "https://digen.ai/en/explore"
+  },
+  "actions": [],
+  "macro": []
+}

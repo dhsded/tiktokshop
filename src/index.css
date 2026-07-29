@@ -429,10 +429,89 @@ select option:focus,
   color: #ffffff !important;
 }
 
-.crop-modal-header *,
-.light .crop-modal-header *,
-.crop-modal-footer *,
-.light .crop-modal-footer * {
+/* Anular remapeamentos globais do modo claro (.light) dentro do modal de corte */
+.crop-modal-overlay .bg-white\/5,
+.light .crop-modal-overlay .bg-white\/5,
+.light.crop-modal-overlay .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+.crop-modal-overlay .bg-white\/10,
+.light .crop-modal-overlay .bg-white\/10,
+.light.crop-modal-overlay .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.crop-modal-overlay .border-white\/10,
+.light .crop-modal-overlay .border-white\/10,
+.light.crop-modal-overlay .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.crop-modal-overlay .hover\:bg-white\/5:hover,
+.light .crop-modal-overlay .hover\:bg-white\/5:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.crop-modal-overlay .hover\:bg-white\/10:hover,
+.light .crop-modal-overlay .hover\:bg-white\/10:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Forçar cores de texto e ícones com alto contraste no modal de corte */
+.crop-modal-overlay .text-white\/40,
+.light .crop-modal-overlay .text-white\/40 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.crop-modal-overlay .text-white\/50,
+.light .crop-modal-overlay .text-white\/50 {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.crop-modal-overlay .text-white\/70,
+.light .crop-modal-overlay .text-white\/70 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.crop-modal-overlay .text-white\/80,
+.light .crop-modal-overlay .text-white\/80 {
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.crop-modal-overlay .text-white,
+.light .crop-modal-overlay .text-white {
+  color: #ffffff !important;
+}
+
+.crop-modal-overlay .hover\:text-white:hover,
+.light .crop-modal-overlay .hover\:text-white:hover {
+  color: #ffffff !important;
+}
+
+.crop-modal-overlay .hover\:text-white\/80:hover,
+.light .crop-modal-overlay .hover\:text-white\/80:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.crop-modal-overlay .text-orange-400,
+.light .crop-modal-overlay .text-orange-400 {
+  color: #fb923c !important;
+}
+
+.crop-modal-overlay .text-orange-500,
+.light .crop-modal-overlay .text-orange-500 {
+  color: #f97316 !important;
+}
+
+.crop-modal-overlay .bg-orange-500,
+.light .crop-modal-overlay .bg-orange-500 {
+  background-color: #f97316 !important;
+  color: #ffffff !important;
+}
+
+.crop-modal-overlay .bg-orange-500 *,
+.light .crop-modal-overlay .bg-orange-500 * {
   color: #ffffff !important;
 }
 
@@ -447,6 +526,7 @@ select option:focus,
   border-color: rgba(255, 255, 255, 0.3) !important;
   color: #ffffff !important;
 }
+
 
 
 
