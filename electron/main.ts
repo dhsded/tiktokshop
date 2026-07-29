@@ -421,41 +421,48 @@ ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, project
     console.log(`[Electron Upload] Uploading ${filePath} to input: ${selector}`);
 
     // 2. Anexar o debugger do Chromium DevTools Protocol (CDP)
+    let attached = false;
     try {
       if (!targetWebContents.debugger.isAttached()) {
         targetWebContents.debugger.attach('1.3');
+        attached = true;
       }
-    } catch (err) {
-      console.error("[Electron Upload] Failed to attach debugger:", err);
-    }
 
-    // 3. Obter o documento, localizar o nodeId e definir os arquivos no input
-    const { root } = await targetWebContents.debugger.sendCommand('DOM.getDocument');
-    const { nodeId } = await targetWebContents.debugger.sendCommand('DOM.querySelector', {
-      nodeId: root.nodeId,
-      selector: selector
-    });
-
-    if (nodeId) {
-      await targetWebContents.debugger.sendCommand('DOM.setFileInputFiles', {
-        files: [filePath],
-        nodeId: nodeId
+      const { root } = await targetWebContents.debugger.sendCommand('DOM.getDocument');
+      const { nodeId } = await targetWebContents.debugger.sendCommand('DOM.querySelector', {
+        nodeId: root.nodeId,
+        selector: selector
       });
 
-      // Disparar eventos DOM para garantir que a UI reativa do React do Flow capture o arquivo
-      await targetWebContents.executeJavaScript(`
-        (function() {
-          const el = document.querySelector(${JSON.stringify(selector)});
-          if (el) {
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        })()
-      `);
+      if (nodeId) {
+        await targetWebContents.debugger.sendCommand('DOM.setFileInputFiles', {
+          files: [filePath],
+          nodeId: nodeId
+        });
 
-      return { success: true };
-    } else {
-      return { success: false, error: `NodeId not found for selector: ${selector}` };
+        // Disparar eventos DOM para garantir que a UI reativa do React do Flow capture o arquivo
+        await targetWebContents.executeJavaScript(`
+          (function() {
+            const el = document.querySelector(${JSON.stringify(selector)});
+            if (el) {
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          })()
+        `);
+
+        return { success: true };
+      } else {
+        return { success: false, error: `NodeId not found for selector: ${selector}` };
+      }
+    } finally {
+      if (attached && targetWebContents.debugger.isAttached()) {
+        try {
+          targetWebContents.debugger.detach();
+        } catch (detachErr) {
+          console.warn("[Electron Upload] Debugger detach warning:", detachErr);
+        }
+      }
     }
   } catch (err: any) {
     console.error("[Electron Upload] Failed to upload file via CDP:", err);

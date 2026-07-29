@@ -4151,16 +4151,28 @@ function PromptInjector() {
       setTimeout(() => runScan(), 2500);
     };
 
+    const handleRenderCrash = (e: any) => {
+      console.warn("Webview render process crashed/gone. Reloading...", e);
+      addSpyLog('error', 'Renderizador Webview', 'O processo de renderização do Google Flow foi interrompido. Recarregando página automaticamente...');
+      setTimeout(() => {
+        if (webviewRef.current) webviewRef.current.reload();
+      }, 1000);
+    };
+
     webview.addEventListener('did-start-loading', handleStartLoad);
     webview.addEventListener('did-stop-loading', handleStopLoad);
     webview.addEventListener('did-navigate', handleNavigate);
     webview.addEventListener('did-navigate-in-page', handleNavigate);
+    webview.addEventListener('render-process-gone', handleRenderCrash);
+    webview.addEventListener('plugin-crashed', handleRenderCrash);
 
     return () => {
       webview.removeEventListener('did-start-loading', handleStartLoad);
       webview.removeEventListener('did-stop-loading', handleStopLoad);
       webview.removeEventListener('did-navigate', handleNavigate);
       webview.removeEventListener('did-navigate-in-page', handleNavigate);
+      webview.removeEventListener('render-process-gone', handleRenderCrash);
+      webview.removeEventListener('plugin-crashed', handleRenderCrash);
     };
   }, [prompts]);
 
