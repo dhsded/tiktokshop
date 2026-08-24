@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, ipcMain, globalShortcut, session } from 'ele
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
+let mainWindow: BrowserWindow | null = null;
 let injectorWindow: BrowserWindow | null = null;
 let spyWindow: BrowserWindow | null = null;
 let pendingPromptsData: any = null;
@@ -9,14 +10,16 @@ let pendingSpyData: any = null;
 let currentDownloadInfo: any = null;
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  console.log('[Main] Creating main window...');
+  const iconPath = join(__dirname, '../../resources/icon.png');
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    show: false,
-    autoHideMenuBar: true,
-    icon: join(__dirname, '../../resources/icon.ico'),
+    show: true,
+    autoHideMenuBar: false,
+    icon: iconPath,
     title: 'Gerador TikTok Shop',
     backgroundColor: '#0a0a0b',
     webPreferences: {
@@ -29,7 +32,23 @@ function createWindow(): void {
   });
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show();
+    console.log('[Main] Window ready-to-show fired');
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Main] webContents finished loading');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[Main] webContents failed load:', errorCode, errorDescription);
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -39,8 +58,10 @@ function createWindow(): void {
 
   // In development load from Vite dev server, in production load the built file
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    console.log('[Main] Loading URL:', process.env['ELECTRON_RENDERER_URL']);
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {
+    console.log('[Main] Loading File:', join(__dirname, '../renderer/index.html'));
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
 }
@@ -475,16 +496,30 @@ ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, project
 });
 
 // ============================================================
-// App Lifecycle
+// App Lifecycle & Single Instance Lock
 // ============================================================
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.tiktokshop.gerador');
+app.commandLine.appendSwitch('disable-gpu-cache');
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window);
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
 
-  createWindow();
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId('com.tiktokshop.gerador');
+
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window);
+    });
+
+    createWindow();
 
   // Interceptar e monitorar downloads do Injetor para salvamento automatizado e registro no Espião
   session.defaultSession.on('will-download', (event, item, webContents) => {
@@ -602,3 +637,4 @@ app.on('will-quit', () => {
   // Liberar atalhos globais ao sair
   globalShortcut.unregisterAll();
 });
+}

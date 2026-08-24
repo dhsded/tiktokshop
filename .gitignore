@@ -9,3 +9,6 @@ coverage/
 *.log
 .env*
 !.env.example
+*.mp4
+video_frames/
+video_imagem_frames/

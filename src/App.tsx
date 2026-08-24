@@ -131,6 +131,7 @@ declare global {
       saveSiteSchema: (payload: any) => Promise<{ success: boolean; error?: string }>;
       setCurrentDownloadInfo: (info: any) => Promise<boolean>;
       uploadFileToWebview: (payload: { webContentsId: number, projectIndex: number, imageName?: string, sceneIndex?: number, imageIndex?: number, isFinal?: boolean }) => Promise<{ success: boolean; error?: string }>;
+      onDownloadEvent: (callback: (data: any) => void) => () => void;
     };
   }
 }
@@ -2928,7 +2929,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
                               const pIndex = proj ? proj.projectIndex : projectCounter;
                               try {
-                                await handleSaveAssets(pIndex);
+                                await saveProjectToFolder(pIndex);
                               } catch (err) {
                                 console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
                               }
@@ -2950,7 +2951,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               const proj = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
                               const pIndex = proj ? proj.projectIndex : projectCounter;
                               try {
-                                await handleSaveAssets(pIndex);
+                                await saveProjectToFolder(pIndex);
                               } catch (err) {
                                 console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
                               }
@@ -5608,7 +5609,6 @@ function PromptInjector() {
                         <button
                           onClick={async () => {
                             await selectFlowTab('Imagem');
-                            await attachReferenceImages(selectedItemIndex + 1);
                             injectText(currentItem.imagePrompt, getSmartSelector('image'));
                           }}
                           className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/10 transition-all hover:scale-[1.02]"
