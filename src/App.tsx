@@ -53,7 +53,9 @@ import {
   Square,
   Eye,
   Terminal,
-  Filter
+  Filter,
+  Link,
+  ExternalLink
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -61,7 +63,7 @@ import { jsPDF } from 'jspdf';
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 interface VersionEntry {
   version: string;
@@ -71,6 +73,18 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.3.0',
+    date: '17/09/2026',
+    title: 'Importador TikTok Shop por Link',
+    changes: [
+      'Novo: Importação instantânea de produtos colando o link do TikTok Shop',
+      'Novo: Extração automática de todas as fotos em alta resolução original (Full HD/4K)',
+      'Novo: Extração de título, preço, benefícios e especificações detalhadas do produto',
+      'Novo: Sessão persistente contra verificações de segurança do TikTok',
+      'Novo: Seleção visual de fotos com importação direta para a galeria de referências',
+    ],
+  },
   {
     version: '1.2.0',
     date: '15/07/2026',
@@ -115,6 +129,11 @@ const VERSION_HISTORY: VersionEntry[] = [
 ];
 
 declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: any;
+    }
+  }
   interface Window {
     electronAPI: {
       platform: string;
@@ -132,6 +151,7 @@ declare global {
       setCurrentDownloadInfo: (info: any) => Promise<boolean>;
       uploadFileToWebview: (payload: { webContentsId: number, projectIndex: number, imageName?: string, sceneIndex?: number, imageIndex?: number, isFinal?: boolean }) => Promise<{ success: boolean; error?: string }>;
       onDownloadEvent: (callback: (data: any) => void) => () => void;
+      fetchImageAsBase64: (url: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; error?: string }>;
     };
   }
 }
@@ -208,6 +228,115 @@ const THEMES = [
   'Boho Chic',
   'Essenciais Minimalistas'
 ];
+
+function dataUrlToFile(dataUrl: string, filename: string): File {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
+const TIKTOK_PDP_SCRAPER_SCRIPT = `
+(() => {
+  const isCaptcha = document.title.includes('Security Check') || !!document.getElementById('captcha_container');
+  if (isCaptcha) {
+    return { status: 'captcha', title: document.title };
+  }
+
+  // 1. Título do Produto
+  let title = '';
+  const titleEl = document.querySelector('h1') || 
+                  document.querySelector('[data-testid*="title"]') || 
+                  document.querySelector('[class*="title"]') || 
+                  document.querySelector('[class*="product_name"]');
+  if (titleEl) {
+    title = titleEl.innerText.trim();
+  } else {
+    title = (document.title || '').replace(/\\s*\\|\\s*TikTok\\s*Shop.*/i, '').replace(/\\s*\\|\\s*TikTok.*/i, '').trim();
+  }
+
+  // 2. Preço
+  let price = '';
+  const priceEl = document.querySelector('[class*="price-val"], [class*="price_val"], [class*="sale-price"], [class*="product-price"], [data-testid*="price"]');
+  if (priceEl) {
+    price = priceEl.innerText.trim();
+  }
+
+  // 3. Descrição e Especificações
+  const descParts = [];
+  const descElements = Array.from(document.querySelectorAll('[class*="spec-item"], [class*="property-item"], [class*="desc-content"], [class*="detail-desc"], [class*="rich-text"], [data-testid*="desc"]'));
+  descElements.forEach(el => {
+    const text = el.innerText?.trim();
+    if (text && !descParts.includes(text) && text.length > 3) {
+      descParts.push(text);
+    }
+  });
+
+  if (descParts.length === 0) {
+    const pElements = Array.from(document.querySelectorAll('div[class*="desc"] p, div[class*="detail"] p, div[class*="content"] p, li'));
+    pElements.forEach(p => {
+      const text = p.innerText?.trim();
+      if (text && text.length > 5 && !descParts.includes(text)) {
+        descParts.push(text);
+      }
+    });
+  }
+
+  // 4. Imagens de Alta Resolução do Produto
+  const rawImages = [];
+  const allImgs = Array.from(document.querySelectorAll('img'));
+  allImgs.forEach(img => {
+    const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+    if (!src) return;
+    
+    // Validar se é do CDN de mídia do TikTok
+    const isTikTokCdn = src.includes('ibyteimg.com') || src.includes('tiktokcdn.com') || src.includes('tos-');
+    if (!isTikTokCdn) return;
+
+    // Descartar ícones, avatares e SVGs pequenos
+    if (src.includes('svg') || src.includes('icon') || src.includes('avatar') || src.includes('logo')) return;
+    
+    const w = img.naturalWidth || img.width || 0;
+    const h = img.naturalHeight || img.height || 0;
+    if (w > 0 && w < 80 && h > 0 && h < 80) return;
+
+    // Converter para URL em alta resolução original
+    let highResUrl = src;
+    if (highResUrl.includes('~tplv-')) {
+      highResUrl = highResUrl.replace(/~tplv-[a-z0-9]+-[^.]+\\./i, '~tplv-aphluv4xwc-origin-jpeg.');
+    }
+    highResUrl = highResUrl.split('?')[0];
+
+    if (!rawImages.includes(highResUrl)) {
+      rawImages.push(highResUrl);
+    }
+  });
+
+  // Deduplicar URLs por hash do caminho
+  const uniqueImages = [];
+  const seenHashes = new Set();
+  rawImages.forEach(url => {
+    const pathPart = url.split('/').pop()?.split('~')[0] || url;
+    if (!seenHashes.has(pathPart)) {
+      seenHashes.add(pathPart);
+      uniqueImages.push(url);
+    }
+  });
+
+  return {
+    status: 'success',
+    title,
+    price,
+    description: descParts.slice(0, 15).join('\\n'),
+    images: uniqueImages
+  };
+})()
+`;
 
 interface N8NFlowchartProps {
   queueLength: number;
@@ -509,6 +638,142 @@ function MainApp() {
   const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'none'>('female');
   const modelInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
+
+  // TikTok Shop Importer State
+  const [tiktokInputUrl, setTiktokInputUrl] = useState('');
+  const [isTikTokModalOpen, setIsTikTokModalOpen] = useState(false);
+  const [activeTikTokUrl, setActiveTikTokUrl] = useState('');
+  const [isExtractingTikTok, setIsExtractingTikTok] = useState(false);
+  const [isTikTokCaptchaDetected, setIsTikTokCaptchaDetected] = useState(false);
+  const [tiktokExtractionStatus, setTiktokExtractionStatus] = useState('');
+  const [extractedTikTokProduct, setExtractedTikTokProduct] = useState<{
+    title: string;
+    price: string;
+    description: string;
+    images: string[];
+  } | null>(null);
+  const [selectedTikTokImages, setSelectedTikTokImages] = useState<string[]>([]);
+  const [isImportingTikTokImages, setIsImportingTikTokImages] = useState(false);
+  const [tiktokImportProgress, setTiktokImportProgress] = useState<string | null>(null);
+  const tiktokWebviewRef = useRef<any>(null);
+
+  const handleStartTikTokImport = () => {
+    let cleanUrl = tiktokInputUrl.trim();
+    if (!cleanUrl) return;
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = 'https://' + cleanUrl;
+    }
+    setActiveTikTokUrl(cleanUrl);
+    setExtractedTikTokProduct(null);
+    setSelectedTikTokImages([]);
+    setIsTikTokCaptchaDetected(false);
+    setIsExtractingTikTok(true);
+    setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
+    setIsTikTokModalOpen(true);
+  };
+
+  const handleApplyTikTokProduct = async () => {
+    if (!extractedTikTokProduct || selectedTikTokImages.length === 0) return;
+    setIsImportingTikTokImages(true);
+    setTiktokImportProgress(`Baixando 0/${selectedTikTokImages.length} imagens...`);
+
+    const newSceneImages: SceneImage[] = [];
+
+    for (let i = 0; i < selectedTikTokImages.length; i++) {
+      const imgUrl = selectedTikTokImages[i];
+      setTiktokImportProgress(`Baixando foto ${i + 1}/${selectedTikTokImages.length}...`);
+      
+      try {
+        let dataUrl = '';
+        if (window.electronAPI?.fetchImageAsBase64) {
+          const res = await window.electronAPI.fetchImageAsBase64(imgUrl);
+          if (res && res.success && res.dataUrl) {
+            dataUrl = res.dataUrl;
+          }
+        }
+        
+        if (!dataUrl) {
+          const resp = await fetch(imgUrl);
+          const blob = await resp.blob();
+          dataUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+        }
+
+        const cleanFileName = `tiktok_${i + 1}_${Date.now()}.jpg`;
+        const file = dataUrlToFile(dataUrl, cleanFileName);
+        const sceneImg: SceneImage = {
+          id: Math.random().toString(36).substring(2, 9),
+          file,
+          preview: dataUrl,
+          originalPreview: dataUrl,
+          name: cleanFileName
+        };
+        newSceneImages.push(sceneImg);
+      } catch (err) {
+        console.error(`Falha ao baixar imagem ${imgUrl}:`, err);
+      }
+    }
+
+    if (activeTab === 'collection') {
+      setImages(prev => [...prev, ...newSceneImages]);
+    } else {
+      setProductImages(prev => [...prev, ...newSceneImages]);
+    }
+
+    let updatedObs = observations ? observations + '\n\n' : '';
+    updatedObs += `📌 PRODUTO IMPORTADO DO TIKTOK SHOP:\n`;
+    if (extractedTikTokProduct.title) updatedObs += `Nome: ${extractedTikTokProduct.title}\n`;
+    if (extractedTikTokProduct.price) updatedObs += `Preço: ${extractedTikTokProduct.price}\n`;
+    if (extractedTikTokProduct.description) {
+      updatedObs += `\nEspecificações / Detalhes:\n${extractedTikTokProduct.description}\n`;
+    }
+    setObservations(updatedObs);
+
+    setIsImportingTikTokImages(false);
+    setTiktokImportProgress(null);
+    setIsTikTokModalOpen(false);
+
+    setValidationAlert({
+      title: "Produto Importado com Sucesso!",
+      message: `${newSceneImages.length} fotos em alta resolução e as informações do produto foram adicionadas ao seu projeto.`
+    });
+  };
+
+  // Polling automático da extração do produto no Webview do TikTok Shop
+  useEffect(() => {
+    if (!isTikTokModalOpen || !activeTikTokUrl || extractedTikTokProduct) return;
+
+    const interval = setInterval(async () => {
+      const webview = tiktokWebviewRef.current;
+      if (!webview) return;
+
+      try {
+        const result = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
+        if (result) {
+          if (result.status === 'captcha') {
+            setIsTikTokCaptchaDetected(true);
+            setTiktokExtractionStatus('Verificação visual do TikTok detectada. Por favor, deslize o quebra-cabeça abaixo para continuar.');
+          } else if (result.status === 'success') {
+            if ((result.images && result.images.length > 0) || result.title) {
+              setIsTikTokCaptchaDetected(false);
+              setExtractedTikTokProduct(result);
+              setSelectedTikTokImages(result.images || []);
+              setIsExtractingTikTok(false);
+              setTiktokExtractionStatus(`✅ Extração concluída! ${result.images?.length || 0} fotos encontradas.`);
+              clearInterval(interval);
+            }
+          }
+        }
+      } catch (err) {
+        // Ignora erros temporários enquanto carrega
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct]);
 
   // Shared
   const [observations, setObservations] = useState('');
@@ -2207,6 +2472,51 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <span className="text-xs text-white/40">{images.length} fotos</span>
                     </div>
                   </div>
+
+                  {/* TikTok Shop Link Importer Box */}
+                  <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-orange-500/10 border border-pink-500/25 rounded-2xl p-4 space-y-3 shadow-lg shadow-pink-500/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-pink-400 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+                        <Link className="w-4 h-4" /> Importar do TikTok Shop por Link
+                      </span>
+                      <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                        Auto-Sync
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      Cole o link do produto para puxar automaticamente todas as fotos em alta resolução original e especificações.
+                    </p>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          placeholder="Cole o link (ex: https://shop.tiktok.com/br/pdp/...)"
+                          value={tiktokInputUrl}
+                          onChange={(e) => setTiktokInputUrl(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleStartTikTokImport()}
+                          className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-pink-500/60 transition-all font-mono"
+                        />
+                        {tiktokInputUrl && (
+                          <button
+                            onClick={() => setTiktokInputUrl('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs p-1"
+                            title="Limpar link"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleStartTikTokImport}
+                        disabled={!tiktokInputUrl.trim() || isExtractingTikTok}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-600/20 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0 cursor-pointer"
+                      >
+                        {isExtractingTikTok ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        Puxar Produto
+                      </button>
+                    </div>
+                  </div>
                   
                   <div 
                     onDragOver={onDragOver}
@@ -2400,6 +2710,51 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     Imagens de Referência
                   </h2>
                   
+                  {/* TikTok Shop Link Importer Box */}
+                  <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-orange-500/10 border border-pink-500/25 rounded-2xl p-4 space-y-3 shadow-lg shadow-pink-500/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-pink-400 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+                        <Link className="w-4 h-4" /> Importar do TikTok Shop por Link
+                      </span>
+                      <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                        Auto-Sync
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      Cole o link de qualquer produto para puxar automaticamente todas as fotos em alta resolução original, título e especificações completas.
+                    </p>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          placeholder="Cole o link (ex: https://shop.tiktok.com/br/pdp/...)"
+                          value={tiktokInputUrl}
+                          onChange={(e) => setTiktokInputUrl(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleStartTikTokImport()}
+                          className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-pink-500/60 transition-all font-mono"
+                        />
+                        {tiktokInputUrl && (
+                          <button
+                            onClick={() => setTiktokInputUrl('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs p-1"
+                            title="Limpar link"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleStartTikTokImport}
+                        disabled={!tiktokInputUrl.trim() || isExtractingTikTok}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-600/20 hover:scale-[1.02] active:scale-[0.98] flex-shrink-0 cursor-pointer"
+                      >
+                        {isExtractingTikTok ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        Puxar Produto
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Model Image */}
                     <div className="space-y-3">
@@ -3285,6 +3640,319 @@ Angulos a variar (escolha os mais relevantes para o produto):
         </div>
       </main>
 
+
+      {/* Modal Importador TikTok Shop */}
+      <AnimatePresence>
+        {isTikTokModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
+              }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+
+            {/* Modal Dialog */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              style={{
+                backgroundColor: themeMode === 'dark' ? '#111113' : '#ffffff',
+                borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7',
+                color: themeMode === 'dark' ? '#fafafa' : '#18181b'
+              }}
+              className="relative z-10 w-full max-w-4xl max-h-[92vh] rounded-[2rem] shadow-2xl border flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div 
+                className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0"
+                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 via-rose-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20">
+                    <Link className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold font-display flex items-center gap-2">
+                      Importador de Produtos TikTok Shop
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 font-mono font-bold border border-pink-500/20">
+                        v1.3.0
+                      </span>
+                    </h3>
+                    <p className="text-xs opacity-60 font-mono truncate max-w-md">
+                      {activeTikTokUrl || 'Aguardando URL...'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const webview = tiktokWebviewRef.current;
+                      if (webview) webview.reload();
+                    }}
+                    title="Recarregar página do TikTok"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (activeTikTokUrl) window.open(activeTikTokUrl, '_blank');
+                    }}
+                    title="Abrir no navegador externo"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
+                    }}
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status / Alert Bar */}
+              <div className="px-6 pt-4 pb-2 flex-shrink-0">
+                {isTikTokCaptchaDetected ? (
+                  <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3.5 flex items-start gap-3 shadow-md shadow-amber-500/10">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5 animate-bounce" />
+                    <div className="text-xs text-amber-200 leading-relaxed">
+                      <strong className="font-semibold block text-amber-300 text-sm">Verificação de Segurança (Slide Captcha)</strong>
+                      O TikTok solicitou uma confirmação visual humana. Por favor, arraste a peça do quebra-cabeça na janela abaixo. Assim que você resolver, a extração das imagens continuará automaticamente!
+                    </div>
+                  </div>
+                ) : isExtractingTikTok ? (
+                  <div className="bg-pink-500/10 border border-pink-500/25 rounded-2xl p-3 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-2.5 text-xs text-pink-300">
+                      <Loader2 className="w-4 h-4 animate-spin text-pink-400 flex-shrink-0" />
+                      <span>{tiktokExtractionStatus || 'Carregando página e extraindo mídias em alta resolução...'}</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const webview = tiktokWebviewRef.current;
+                        if (webview) {
+                          setTiktokExtractionStatus('Forçando leitura do DOM...');
+                          try {
+                            const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
+                            if (res && res.status === 'success' && ((res.images && res.images.length > 0) || res.title)) {
+                              setExtractedTikTokProduct(res);
+                              setSelectedTikTokImages(res.images || []);
+                              setIsExtractingTikTok(false);
+                              setTiktokExtractionStatus(`✅ Extração concluída! ${res.images?.length || 0} fotos encontradas.`);
+                            }
+                          } catch (e) {}
+                        }
+                      }}
+                      className="px-3 py-1 rounded-xl text-[11px] font-bold bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-pink-300" /> Forçar Leitura
+                    </button>
+                  </div>
+                ) : extractedTikTokProduct ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-emerald-300 font-medium">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>{tiktokExtractionStatus || `Extração concluída com sucesso! ${extractedTikTokProduct.images.length} fotos prontas.`}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedTikTokImages(extractedTikTokProduct.images)}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                      >
+                        Marcar Todas ({extractedTikTokProduct.images.length})
+                      </button>
+                      <button
+                        onClick={() => setSelectedTikTokImages([])}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
+                      >
+                        Desmarcar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Body Content */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {/* Embedded Webview */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] opacity-60">
+                    <span className="flex items-center gap-1 font-bold uppercase tracking-wider">
+                      <Globe className="w-3.5 h-3.5 text-pink-400" /> Navegador TikTok Shop (Sessão Isolada Segura)
+                    </span>
+                    <span className="font-mono text-[10px]">
+                      {isTikTokCaptchaDetected ? '🔒 Aguardando resolução do Captcha' : '⚡ Auto-Sync ativo'}
+                    </span>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/60 shadow-inner">
+                    <webview
+                      ref={tiktokWebviewRef}
+                      src={activeTikTokUrl}
+                      partition="persist:tiktok_shop"
+                      className={`w-full transition-all duration-300 ${
+                        isTikTokCaptchaDetected 
+                          ? 'h-96' 
+                          : (extractedTikTokProduct ? 'h-40' : 'h-72')
+                      }`}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Extracted Product Data */}
+                {extractedTikTokProduct && (
+                  <div className="space-y-4">
+                    {/* Info Card */}
+                    <div 
+                      className="p-4 rounded-2xl border space-y-3"
+                      style={{
+                        backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1 flex-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-pink-400 flex items-center gap-1.5">
+                            <Package className="w-3 h-3" /> Detalhes do Produto Extraído
+                          </span>
+                          <h4 className="text-sm font-semibold leading-snug">
+                            {extractedTikTokProduct.title || 'Produto TikTok Shop'}
+                          </h4>
+                        </div>
+                        {extractedTikTokProduct.price && (
+                          <span className="px-3 py-1 rounded-xl bg-pink-500/20 border border-pink-500/30 text-pink-400 font-mono font-bold text-sm flex-shrink-0">
+                            {extractedTikTokProduct.price}
+                          </span>
+                        )}
+                      </div>
+
+                      {extractedTikTokProduct.description && (
+                        <div className="text-[11px] opacity-70 bg-black/30 p-3 rounded-xl border border-white/5 max-h-24 overflow-y-auto leading-relaxed whitespace-pre-line font-mono">
+                          {extractedTikTokProduct.description}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Image Selector Grid */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider opacity-70 flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4 text-pink-400" />
+                          Fotos do Produto em Alta Resolução ({selectedTikTokImages.length} de {extractedTikTokProduct.images.length} selecionadas)
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          Resolução Original (Full HD / 4K)
+                        </span>
+                      </div>
+
+                      {extractedTikTokProduct.images.length === 0 ? (
+                        <div className="p-8 text-center border border-dashed rounded-2xl border-white/10 opacity-50 text-xs">
+                          Nenhuma foto de produto foi encontrada nesta página.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 max-h-72 overflow-y-auto p-1">
+                          {extractedTikTokProduct.images.map((imgUrl, idx) => {
+                            const isSelected = selectedTikTokImages.includes(imgUrl);
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedTikTokImages(prev => prev.filter(u => u !== imgUrl));
+                                  } else {
+                                    setSelectedTikTokImages(prev => [...prev, imgUrl]);
+                                  }
+                                }}
+                                className={`group relative aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 ${
+                                  isSelected 
+                                    ? 'border-pink-500 shadow-lg shadow-pink-500/25 scale-[0.98]' 
+                                    : 'border-white/10 hover:border-white/30 opacity-60 hover:opacity-100'
+                                }`}
+                              >
+                                <img 
+                                  src={imgUrl} 
+                                  alt={`Foto ${idx + 1}`} 
+                                  className="w-full h-full object-cover select-none"
+                                  loading="lazy"
+                                />
+                                <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                                  isSelected 
+                                    ? 'bg-pink-600 text-white shadow-md shadow-pink-600/50' 
+                                    : 'bg-black/70 text-white/40 border border-white/30'
+                                }`}>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </div>
+                                <div className="absolute bottom-1.5 left-1.5 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] font-mono text-white/90">
+                                  #{idx + 1}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div 
+                className="px-6 py-4 border-t flex items-center justify-between flex-shrink-0 bg-black/20"
+                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}
+              >
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
+                    }}
+                    disabled={isImportingTikTokImages}
+                    className="px-5 py-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-xs font-semibold transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  {isImportingTikTokImages && tiktokImportProgress && (
+                    <span className="text-xs text-pink-300 font-mono animate-pulse flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400" />
+                      {tiktokImportProgress}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleApplyTikTokProduct}
+                  disabled={!extractedTikTokProduct || selectedTikTokImages.length === 0 || isImportingTikTokImages}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs shadow-lg shadow-pink-600/25 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  {isImportingTikTokImages ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Baixando Fotos...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>
+                        Importar {selectedTikTokImages.length > 0 ? `${selectedTikTokImages.length} Fotos` : 'Fotos'} & Informações
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Crop Modal */}
       <AnimatePresence>

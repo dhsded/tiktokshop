@@ -234,6 +234,33 @@ ipcMain.handle('save-project-assets', async (_event, payload: any) => {
   }
 });
 
+// Download de imagem externa e conversão para base64 (sem restrições de CORS)
+ipcMain.handle('fetch-image-as-base64', async (_event, imageUrl: string) => {
+  try {
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'Referer': 'https://shop.tiktok.com/'
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const mimeType = response.headers.get('content-type') || 'image/jpeg';
+    return {
+      success: true,
+      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      mimeType,
+      size: buffer.length
+    };
+  } catch (err: any) {
+    console.error(`[Electron] Error fetching image ${imageUrl}:`, err);
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
 // Salvar e carregar schemas aprendidos pelo Espião
 ipcMain.handle('load-site-schema', async (_event, siteName: string) => {
   const fs = require('fs');

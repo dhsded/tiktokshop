@@ -35,4 +35,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('download-event', subscription);
     };
   },
+  fetchImageAsBase64: (url: string) => ipcRenderer.invoke('fetch-image-as-base64', url),
 });
