@@ -585,24 +585,90 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       }
     });
 
-    // Comentários de clientes no DOM
-    const reviewCards = Array.from(document.querySelectorAll('[class*="review-item"], [class*="review_item"], [class*="ReviewItem"], [class*="comment-item"], [class*="feedback-item"], [data-testid*="review-item"]'));
-    if (reviewCards.length > 0) {
-      reviewCards.forEach((card, idx) => {
-        const textEl = card.querySelector('[class*="content"], [class*="text"], [class*="desc"], p') || card;
-        const rawText = textEl.innerText ? textEl.innerText.trim() : '';
-        if (rawText && rawText.length > 8) {
-          const lines = rawText.split('\\n').map(l => l.trim()).filter(l => l.length > 4);
-          const best = lines.find(l => l.length > 8 && !l.includes('2024') && !l.includes('2025') && !l.includes('2026')) || rawText;
-          if (!reviewsData.comments.some(c => c.text === best)) {
-            const authorEl = card.querySelector('[class*="user"], [class*="name"], [class*="nick"], [class*="author"]');
-            const author = authorEl ? authorEl.innerText.trim() : undefined;
-            reviewsData.comments.push({
-              id: 'rev_dom_' + idx,
-              text: best,
-              author
-            });
+    // Comentários de clientes no DOM com extração de autor, variante, data e texto limpo
+    const parseCard = (card, idx) => {
+      const rawText = card.innerText ? card.innerText.trim() : '';
+      if (!rawText || rawText.length < 6) return null;
+
+      let author = '';
+      const authorMatch = rawText.match(/^([^\n·]+?)\s*·\s*(?:Compras verificadas|Verified purchase)/im);
+      if (authorMatch) {
+        author = authorMatch[1].trim();
+      } else {
+        const authorEl = card.querySelector('[class*="user"], [class*="name"], [class*="nick"], [class*="author"]');
+        if (authorEl) author = authorEl.innerText.trim();
+      }
+
+      let variant = '';
+      const varMatch = rawText.match(/Item:\s*([^\n]+)/i);
+      if (varMatch) {
+        variant = varMatch[1].trim();
+      }
+
+      let date = '';
+      const dateMatch = rawText.match(/(\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})/);
+      if (dateMatch) {
+        date = dateMatch[1].trim();
+      }
+
+      const lines = rawText.split('\\n')
+        .map(l => l.trim())
+        .filter(l => {
+          if (!l || l.length < 2) return false;
+          if (author && (l === author || l.startsWith(author + ' ·'))) return false;
+          if (l === 'BR' || l.includes('Compras verificadas') || l.includes('Verified purchase')) return false;
+          if (/^item:\s*/i.test(l)) return false;
+          if (date && l === date) return false;
+          if (/^\d{4}[-/.]\d{2}[-/.]\d{2}/.test(l)) return false;
+          if (l.includes('Exibindo') || l.includes('Limpar filtros') || l.includes('Tudo') || l.includes('Inclui imagens')) return false;
+          if (l.includes('Anterior') || l.includes('Próximo') || l.includes('Next')) return false;
+          return true;
+        });
+
+      let commentText = lines.join(' ').trim();
+      if (!commentText || commentText.length < 5) return null;
+
+      return {
+        id: 'rev_dom_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+        text: commentText,
+        author: author || undefined,
+        variant: variant ? ('Item: ' + variant) : undefined,
+        date: date || undefined,
+        rating: '5'
+      };
+    };
+
+    const verifiedBadges = Array.from(document.querySelectorAll('*')).filter(el => {
+      const txt = (el.innerText || el.textContent || '').trim();
+      return (txt === 'Compras verificadas' || txt.includes('Compras verificadas') || txt.includes('Verified purchase')) && el.children.length <= 1;
+    });
+
+    let detectedCards = [];
+    if (verifiedBadges.length > 0) {
+      const cardSet = new Set();
+      verifiedBadges.forEach(b => {
+        let cur = b.parentElement;
+        for (let step = 0; step < 5; step++) {
+          if (!cur || cur === document.body) break;
+          if (cur.parentElement && (cur.parentElement.children.length >= 2 || cur.tagName === 'LI')) {
+            cardSet.add(cur);
+            break;
           }
+          cur = cur.parentElement;
+        }
+      });
+      detectedCards = Array.from(cardSet);
+    }
+
+    if (detectedCards.length === 0) {
+      detectedCards = Array.from(document.querySelectorAll('[class*="review-item"], [class*="review_item"], [class*="ReviewItem"], [class*="comment-item"], [class*="feedback-item"], [data-testid*="review-item"]'));
+    }
+
+    if (detectedCards.length > 0) {
+      detectedCards.forEach((card, idx) => {
+        const parsed = parseCard(card, idx);
+        if (parsed && !reviewsData.comments.some(c => c.text === parsed.text)) {
+          reviewsData.comments.push(parsed);
         }
       });
     } else {
@@ -615,7 +681,8 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
           if (t && t.length > 15 && t.length < 350 && !reviewsData.comments.some(c => c.text === t)) {
             reviewsData.comments.push({
               id: 'rev_sec_' + idx,
-              text: t
+              text: t,
+              rating: '5'
             });
           }
         });
@@ -623,11 +690,9 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     }
   } catch (e) {}
 
-  // Limitar para até 15 comentários mais substanciais
-  if (reviewsData.comments.length > 15) {
-    reviewsData.comments = reviewsData.comments
-      .sort((a, b) => b.text.length - a.text.length)
-      .slice(0, 15);
+  // Permitir até 100 comentários coletados
+  if (reviewsData.comments.length > 100) {
+    reviewsData.comments = reviewsData.comments.slice(0, 100);
   }
 
   return {
@@ -642,6 +707,193 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     })),
     reviews: reviewsData
   };
+})()
+`;
+
+// Script para extrair unicamente avaliações do DOM da página atual do Webview
+export const TIKTOK_REVIEWS_EXTRACTOR_SCRIPT = `
+(() => {
+  try {
+    const reviewsData = {
+      rating: '',
+      totalReviews: '',
+      tags: [],
+      comments: []
+    };
+
+    const ratingEl = document.querySelector('[class*="rating-score"], [class*="rating_score"], [class*="rate-num"], [class*="rating-val"], [data-testid*="rating"]');
+    if (ratingEl) {
+      const m = (ratingEl.innerText || '').match(/([1-5]\\.[0-9])/);
+      if (m) reviewsData.rating = m[1];
+    }
+
+    const countEl = document.querySelector('[class*="review-count"], [class*="rate-count"], [class*="evaluation-count"], [data-testid*="review-count"]');
+    if (countEl) {
+      const m = (countEl.innerText || '').match(/(\\d+[\\d.,]*[kK]?)/);
+      if (m) reviewsData.totalReviews = m[1];
+    }
+
+    const exibindoEl = Array.from(document.querySelectorAll('*')).find(el => {
+      const t = el.textContent || '';
+      return t.includes('Exibindo') && t.includes('avaliações') && el.children.length === 0;
+    });
+    if (exibindoEl) {
+      const m = exibindoEl.textContent.match(/(\\d+)\\s*(?:de|of)\\s*(\\d+)/i);
+      if (m && !reviewsData.totalReviews) {
+        reviewsData.totalReviews = m[2];
+      }
+    }
+
+    const tagEls = Array.from(document.querySelectorAll('[class*="tag-item"], [class*="review-tag"], [class*="tag_item"], [class*="tagItem"], [class*="filter-item"], [class*="chip-item"], [data-testid*="review-tag"]'));
+    tagEls.forEach(el => {
+      const t = el.innerText ? el.innerText.trim() : '';
+      if (t && t.length > 2 && t.length < 40 && !reviewsData.tags.includes(t)) {
+        reviewsData.tags.push(t);
+      }
+    });
+
+    const parseCard = (card, idx) => {
+      const rawText = card.innerText ? card.innerText.trim() : '';
+      if (!rawText || rawText.length < 6) return null;
+
+      let author = '';
+      const authorMatch = rawText.match(/^([^\\n·]+?)\\s*·\\s*(?:Compras verificadas|Verified purchase)/im);
+      if (authorMatch) {
+        author = authorMatch[1].trim();
+      } else {
+        const authorEl = card.querySelector('[class*="user"], [class*="name"], [class*="nick"], [class*="author"]');
+        if (authorEl) author = authorEl.innerText.trim();
+      }
+
+      let variant = '';
+      const varMatch = rawText.match(/Item:\\s*([^\\n]+)/i);
+      if (varMatch) {
+        variant = varMatch[1].trim();
+      }
+
+      let date = '';
+      const dateMatch = rawText.match(/(\\d{4}[-/.]\\d{2}[-/.]\\d{2}|\\d{2}[-/.]\\d{2}[-/.]\\d{4})/);
+      if (dateMatch) {
+        date = dateMatch[1].trim();
+      }
+
+      const lines = rawText.split('\\n')
+        .map(l => l.trim())
+        .filter(l => {
+          if (!l || l.length < 2) return false;
+          if (author && (l === author || l.startsWith(author + ' ·'))) return false;
+          if (l === 'BR' || l.includes('Compras verificadas') || l.includes('Verified purchase')) return false;
+          if (/^item:\\s*/i.test(l)) return false;
+          if (date && l === date) return false;
+          if (/^\\d{4}[-/.]\\d{2}[-/.]\\d{2}/.test(l)) return false;
+          if (l.includes('Exibindo') || l.includes('Limpar filtros') || l.includes('Tudo') || l.includes('Inclui imagens')) return false;
+          if (l.includes('Anterior') || l.includes('Próximo') || l.includes('Next')) return false;
+          return true;
+        });
+
+      let commentText = lines.join(' ').trim();
+      if (!commentText || commentText.length < 5) return null;
+
+      return {
+        id: 'rev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7),
+        text: commentText,
+        author: author || undefined,
+        variant: variant ? ('Item: ' + variant) : undefined,
+        date: date || undefined,
+        rating: '5'
+      };
+    };
+
+    const verifiedBadges = Array.from(document.querySelectorAll('*')).filter(el => {
+      const txt = (el.innerText || el.textContent || '').trim();
+      return (txt === 'Compras verificadas' || txt.includes('Compras verificadas') || txt.includes('Verified purchase')) && el.children.length <= 1;
+    });
+
+    let detectedCards = [];
+    if (verifiedBadges.length > 0) {
+      const cardSet = new Set();
+      verifiedBadges.forEach(b => {
+        let cur = b.parentElement;
+        for (let step = 0; step < 5; step++) {
+          if (!cur || cur === document.body) break;
+          if (cur.parentElement && (cur.parentElement.children.length >= 2 || cur.tagName === 'LI')) {
+            cardSet.add(cur);
+            break;
+          }
+          cur = cur.parentElement;
+        }
+      });
+      detectedCards = Array.from(cardSet);
+    }
+
+    if (detectedCards.length === 0) {
+      detectedCards = Array.from(document.querySelectorAll('[class*="review-item"], [class*="review_item"], [class*="ReviewItem"], [class*="comment-item"], [class*="feedback-item"], [data-testid*="review-item"]'));
+    }
+
+    detectedCards.forEach((card, idx) => {
+      const parsed = parseCard(card, idx);
+      if (parsed && !reviewsData.comments.some(c => c.text === parsed.text)) {
+        reviewsData.comments.push(parsed);
+      }
+    });
+
+    return reviewsData;
+  } catch (err) {
+    return { error: err.message, comments: [] };
+  }
+})()
+`;
+
+// Script para avançar para a próxima página de avaliações no Webview
+export const createTikTokReviewsAdvanceScript = (targetPageNum: number) => `
+(() => {
+  try {
+    const allClickables = Array.from(document.querySelectorAll('button, a, div[role="button"], li, span'));
+
+    const pageNumBtn = allClickables.find(el => {
+      const txt = (el.innerText || el.textContent || '').trim();
+      return txt === String(\${targetPageNum}) && !el.classList.contains('active') && !el.hasAttribute('disabled') && el.getAttribute('aria-disabled') !== 'true';
+    });
+
+    if (pageNumBtn) {
+      pageNumBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pageNumBtn.click();
+      return { success: true, method: 'page_number', page: \${targetPageNum} };
+    }
+
+    const nextBtn = allClickables.find(el => {
+      const txt = (el.innerText || el.textContent || '').trim();
+      const isNextText = txt === 'Próximo' || txt === 'Next' || txt.includes('Próximo') || txt.includes('Next') || txt === '>';
+      const isNotDisabled = !el.hasAttribute('disabled') && 
+                            el.getAttribute('aria-disabled') !== 'true' && 
+                            !el.classList.contains('disabled') &&
+                            !el.classList.contains('is-disabled');
+      return isNextText && isNotDisabled;
+    });
+
+    if (nextBtn) {
+      nextBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      nextBtn.click();
+      return { success: true, method: 'next_button' };
+    }
+
+    const pagContainer = document.querySelector('[class*="pagination"], [class*="pager"], [class*="page-list"]');
+    if (pagContainer) {
+      const items = Array.from(pagContainer.querySelectorAll('button, a, div[role="button"], li'));
+      if (items.length > 1) {
+        const last = items[items.length - 1];
+        if (!last.hasAttribute('disabled') && last.getAttribute('aria-disabled') !== 'true' && !last.classList.contains('disabled')) {
+          last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          last.click();
+          return { success: true, method: 'pagination_last_item' };
+        }
+      }
+    }
+
+    return { success: false, reason: 'no_next_page' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 })()
 `;
 
@@ -963,6 +1215,8 @@ function MainApp() {
     text: string;
     author?: string;
     rating?: string;
+    variant?: string;
+    date?: string;
   }
 
   interface TikTokProductReviews {
@@ -983,6 +1237,10 @@ function MainApp() {
   const [selectedTikTokImageIds, setSelectedTikTokImageIds] = useState<string[]>([]);
   const [includeTikTokReviews, setIncludeTikTokReviews] = useState(true);
   const [selectedTikTokCommentIds, setSelectedTikTokCommentIds] = useState<string[]>([]);
+  const [isPaginatingReviews, setIsPaginatingReviews] = useState(false);
+  const [reviewsTargetCount, setReviewsTargetCount] = useState<number>(30);
+  const [reviewPaginationStatus, setReviewPaginationStatus] = useState<string>('');
+  const abortPaginationRef = useRef<boolean>(false);
   const [productReviews, setProductReviews] = useState<{
     rating?: string;
     totalReviews?: string;
@@ -1113,7 +1371,12 @@ function MainApp() {
     if (includeTikTokReviews && extractedTikTokProduct.reviews) {
       selectedComments = (extractedTikTokProduct.reviews.comments || [])
         .filter(c => selectedTikTokCommentIds.includes(c.id))
-        .map(c => c.text);
+        .map(c => {
+          let commentStr = c.text;
+          if (c.variant) commentStr += ` [${c.variant}]`;
+          if (c.author) commentStr += ` — ${c.author}`;
+          return commentStr;
+        });
 
       setProductReviews({
         rating: extractedTikTokProduct.reviews.rating || '',
@@ -1145,7 +1408,7 @@ function MainApp() {
         updatedObs += `Destaques mais elogiados: ${extractedTikTokProduct.reviews.tags.join(', ')}\n`;
       }
       if (selectedComments.length > 0) {
-        updatedObs += `Comentários reais selecionados:\n`;
+        updatedObs += `Comentários reais selecionados (${selectedComments.length}):\n`;
         selectedComments.forEach((c, idx) => {
           updatedObs += `  ${idx + 1}. "${c}"\n`;
         });
@@ -1258,6 +1521,114 @@ function MainApp() {
     } finally {
       setIsDownloadingZip(false);
       setZipDownloadProgress(null);
+    }
+  };
+
+  const handleStopPagination = () => {
+    abortPaginationRef.current = true;
+    setIsPaginatingReviews(false);
+    setReviewPaginationStatus('⏹️ Coleta interrompida pelo usuário.');
+  };
+
+  const handlePaginateReviews = async (targetCount: number = reviewsTargetCount) => {
+    const webview = tiktokWebviewRef.current;
+    if (!webview) {
+      setReviewPaginationStatus('⚠️ Navegador do TikTok Shop não está ativo.');
+      return;
+    }
+
+    setIsPaginatingReviews(true);
+    abortPaginationRef.current = false;
+    setReviewPaginationStatus(`Iniciando coleta automática de avaliações (Meta: ${targetCount})...`);
+
+    try {
+      // 1. Rolar suavemente até o container de reviews no webview
+      await webview.executeJavaScript(`
+        (() => {
+          const revEl = document.querySelector('[class*="review"], [class*="comment"], [data-testid*="review"], #reviews') ||
+                        document.body;
+          if (revEl) {
+            revEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        })()
+      `);
+      await new Promise(r => setTimeout(r, 600));
+
+      let allReviews: TikTokCommentItem[] = extractedTikTokProduct?.reviews?.comments 
+        ? [...extractedTikTokProduct.reviews.comments] 
+        : [];
+      let page = 1;
+      const maxPages = Math.ceil(targetCount / 3) + 7;
+
+      while (allReviews.length < targetCount && page <= maxPages) {
+        if (abortPaginationRef.current) {
+          setReviewPaginationStatus(`⏹️ Coleta interrompida. ${allReviews.length} avaliações preservadas.`);
+          break;
+        }
+
+        setReviewPaginationStatus(`🔄 Paginando... Página ${page} (${allReviews.length} de ${targetCount} avaliações coletadas)`);
+
+        // Extrai avaliações da página atual
+        const pageResult = await webview.executeJavaScript(TIKTOK_REVIEWS_EXTRACTOR_SCRIPT);
+
+        if (pageResult && Array.isArray(pageResult.comments) && pageResult.comments.length > 0) {
+          for (const newRev of pageResult.comments) {
+            const exists = allReviews.some(r => r.text === newRev.text);
+            if (!exists) {
+              allReviews.push(newRev);
+            }
+          }
+
+          // Atualizar o estado em tempo real para o usuário ver cada novo comentário chegando
+          setExtractedTikTokProduct(prev => {
+            if (!prev) return prev;
+            const prevRev = prev.reviews || { tags: [], comments: [] };
+            return {
+              ...prev,
+              reviews: {
+                ...prevRev,
+                rating: pageResult.rating || prevRev.rating,
+                totalReviews: pageResult.totalReviews || prevRev.totalReviews,
+                tags: pageResult.tags && pageResult.tags.length > 0 
+                  ? Array.from(new Set([...prevRev.tags, ...pageResult.tags])) 
+                  : prevRev.tags,
+                comments: [...allReviews]
+              }
+            };
+          });
+
+          // Marcar todos os comentários coletados como selecionados
+          setSelectedTikTokCommentIds(allReviews.map(c => c.id));
+        }
+
+        if (allReviews.length >= targetCount) {
+          setReviewPaginationStatus(`🎉 Meta atingida! ${allReviews.length} avaliações coletadas com sucesso.`);
+          break;
+        }
+
+        // Avançar para a próxima página
+        const nextPageNum = page + 1;
+        const advanceScript = createTikTokReviewsAdvanceScript(nextPageNum);
+        const advanceRes = await webview.executeJavaScript(advanceScript);
+
+        if (!advanceRes || !advanceRes.success) {
+          setReviewPaginationStatus(`ℹ️ Todas as avaliações disponíveis no TikTok Shop foram coletadas (${allReviews.length} avaliações).`);
+          break;
+        }
+
+        page++;
+        // Aguardar atualização do DOM
+        await new Promise(r => setTimeout(r, 900));
+      }
+
+      if (allReviews.length > 0 && !abortPaginationRef.current) {
+        setReviewPaginationStatus(`✅ Concluído: ${allReviews.length} avaliações reais prontas para o roteiro!`);
+      }
+    } catch (err: any) {
+      console.error('Erro na paginação de avaliações:', err);
+      setReviewPaginationStatus(`Erro durante a paginação: ${err?.message || 'Falha de comunicação'}`);
+    } finally {
+      setIsPaginatingReviews(false);
     }
   };
 
@@ -4819,20 +5190,18 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <span>Fotos do Produto ({selectedTikTokImageIds.length}/{extractedTikTokProduct.images.length})</span>
                     </button>
 
-                    {extractedTikTokProduct.reviews && (
-                      <button
-                        type="button"
-                        onClick={() => setTiktokModalTab('reviews')}
-                        className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
-                          tiktokModalTab === 'reviews'
-                            ? 'border-purple-500 text-purple-400 font-extrabold'
-                            : 'border-transparent opacity-60 hover:opacity-100 text-white'
-                        }`}
-                      >
-                        <MessageSquareQuote className="w-4 h-4" />
-                        <span>Avaliações {extractedTikTokProduct.reviews.comments?.length ? `(${extractedTikTokProduct.reviews.comments.length})` : ''}</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setTiktokModalTab('reviews')}
+                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        tiktokModalTab === 'reviews'
+                          ? 'border-purple-500 text-purple-400 font-extrabold'
+                          : 'border-transparent opacity-60 hover:opacity-100 text-white'
+                      }`}
+                    >
+                      <MessageSquareQuote className="w-4 h-4" />
+                      <span>Avaliações {extractedTikTokProduct.reviews?.comments?.length ? `(${extractedTikTokProduct.reviews.comments.length})` : ''}</span>
+                    </button>
 
                     <button
                       type="button"
@@ -5076,7 +5445,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 )}
 
                 {/* ABA 2: AVALIAÇÕES E COMENTÁRIOS */}
-                {extractedTikTokProduct && extractedTikTokProduct.reviews && tiktokModalTab === 'reviews' && (
+                {extractedTikTokProduct && tiktokModalTab === 'reviews' && (
                   <div 
                     className="p-5 rounded-2xl border space-y-4"
                     style={{
@@ -5084,25 +5453,26 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       borderColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(168, 85, 247, 0.25)'
                     }}
                   >
+                    {/* Cabeçalho da Seção de Avaliações */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs uppercase font-bold tracking-wider text-purple-400 flex items-center gap-1.5">
                           <MessageSquareQuote className="w-4 h-4" /> Avaliações & Depoimentos de Clientes
                         </span>
-                        {extractedTikTokProduct.reviews.rating && (
+                        {extractedTikTokProduct.reviews?.rating && (
                           <span className="text-[11px] bg-amber-500/20 text-amber-300 font-bold px-2.5 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
                             <Star className="w-3 h-3 fill-amber-300" /> {extractedTikTokProduct.reviews.rating}
                           </span>
                         )}
-                        {extractedTikTokProduct.reviews.totalReviews && (
+                        {extractedTikTokProduct.reviews?.totalReviews && (
                           <span className="text-[11px] bg-white/5 text-white/70 font-mono px-2.5 py-0.5 rounded-full">
-                            ({extractedTikTokProduct.reviews.totalReviews} avaliações)
+                            ({extractedTikTokProduct.reviews.totalReviews} avaliações no TikTok)
                           </span>
                         )}
                       </div>
 
                       {/* Toggle master: Incluir no roteiro de IA */}
-                      <label className="flex items-center gap-2.5 cursor-pointer select-none bg-purple-500/15 border border-purple-500/30 px-3 py-1.5 rounded-xl">
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none bg-purple-500/15 border border-purple-500/30 px-3 py-1.5 rounded-xl flex-shrink-0">
                         <input
                           type="checkbox"
                           checked={includeTikTokReviews}
@@ -5115,8 +5485,80 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </label>
                     </div>
 
-                    {/* Feedback Tags / Praise categories */}
-                    {extractedTikTokProduct.reviews.tags.length > 0 && (
+                    {/* Barra de Controle de Paginação Automática (Meta de 10 a 30+ avaliações) */}
+                    <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/20 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-purple-300">Meta de Coleta:</span>
+                          <div className="flex items-center gap-1.5">
+                            {[10, 20, 30, 50].map((count) => (
+                              <button
+                                key={count}
+                                type="button"
+                                onClick={() => setReviewsTargetCount(count)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  reviewsTargetCount === count
+                                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400'
+                                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                {count}{count === 30 ? ' ★' : ''}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isPaginatingReviews ? (
+                            <button
+                              type="button"
+                              onClick={handleStopPagination}
+                              className="px-3.5 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Square className="w-3.5 h-3.5 fill-current" /> Parar Coleta ({extractedTikTokProduct.reviews?.comments?.length || 0})
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handlePaginateReviews(reviewsTargetCount)}
+                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-purple-600/20 active:scale-95"
+                            >
+                              <Zap className="w-3.5 h-3.5 fill-current" /> Coletar {reviewsTargetCount} Avaliações (Paginar)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status / Progresso em tempo real */}
+                      {(isPaginatingReviews || reviewPaginationStatus) && (
+                        <div className="space-y-1.5 pt-1 border-t border-purple-500/15">
+                          <div className="flex items-center justify-between text-[11px] text-purple-200">
+                            <span className="flex items-center gap-1.5">
+                              {isPaginatingReviews && <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />}
+                              {reviewPaginationStatus}
+                            </span>
+                            {extractedTikTokProduct.reviews?.comments && (
+                              <span className="font-mono text-purple-300 font-bold">
+                                {extractedTikTokProduct.reviews.comments.length} / {reviewsTargetCount}
+                              </span>
+                            )}
+                          </div>
+                          {isPaginatingReviews && (
+                            <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                              <div 
+                                className="bg-gradient-to-r from-purple-500 to-pink-500 h-full rounded-full transition-all duration-300"
+                                style={{
+                                  width: `${Math.min(100, Math.max(5, ((extractedTikTokProduct.reviews?.comments?.length || 0) / reviewsTargetCount) * 100))}%`
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Feedback Tags / Elogios mais citados */}
+                    {extractedTikTokProduct.reviews?.tags && extractedTikTokProduct.reviews.tags.length > 0 && (
                       <div className="space-y-1.5">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-purple-300/80">
                           Destaques mais elogiados pelos compradores:
@@ -5131,33 +5573,66 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     )}
 
-                    {/* List of customer comments */}
-                    {extractedTikTokProduct.reviews.comments.length > 0 ? (
+                    {/* Lista de Comentários de Clientes */}
+                    {extractedTikTokProduct.reviews?.comments && extractedTikTokProduct.reviews.comments.length > 0 ? (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs opacity-75">
-                          <span>
-                            Depoimentos encontrados ({selectedTikTokCommentIds.length} de {extractedTikTokProduct.reviews.comments.length} selecionados):
+                        <div className="flex items-center justify-between text-xs opacity-80 flex-wrap gap-2">
+                          <span className="font-medium text-purple-200">
+                            {extractedTikTokProduct.reviews.comments.length} avaliações coletadas ({selectedTikTokCommentIds.length} selecionadas):
                           </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 text-[11px]">
                             <button
                               type="button"
                               onClick={() => setSelectedTikTokCommentIds(extractedTikTokProduct.reviews!.comments.map(c => c.id))}
-                              className="text-[11px] text-purple-300 hover:underline cursor-pointer font-bold"
+                              className="text-purple-300 hover:text-purple-200 hover:underline cursor-pointer font-bold"
                             >
-                              Marcar Todos
+                              Todas
+                            </button>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ids = extractedTikTokProduct.reviews!.comments.slice(0, 10).map(c => c.id);
+                                setSelectedTikTokCommentIds(ids);
+                              }}
+                              className="text-purple-300 hover:text-purple-200 hover:underline cursor-pointer font-bold"
+                            >
+                              Top 10
+                            </button>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ids = extractedTikTokProduct.reviews!.comments.slice(0, 20).map(c => c.id);
+                                setSelectedTikTokCommentIds(ids);
+                              }}
+                              className="text-purple-300 hover:text-purple-200 hover:underline cursor-pointer font-bold"
+                            >
+                              Top 20
+                            </button>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ids = extractedTikTokProduct.reviews!.comments.slice(0, 30).map(c => c.id);
+                                setSelectedTikTokCommentIds(ids);
+                              }}
+                              className="text-purple-300 hover:text-purple-200 hover:underline cursor-pointer font-bold"
+                            >
+                              Top 30
                             </button>
                             <span>•</span>
                             <button
                               type="button"
                               onClick={() => setSelectedTikTokCommentIds([])}
-                              className="text-[11px] text-white/50 hover:underline cursor-pointer"
+                              className="text-white/50 hover:underline cursor-pointer"
                             >
                               Desmarcar
                             </button>
                           </div>
                         </div>
 
-                        <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                        <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                           {extractedTikTokProduct.reviews.comments.map((comm) => {
                             const isSelected = selectedTikTokCommentIds.includes(comm.id);
                             return (
@@ -5173,8 +5648,8 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                   !includeTikTokReviews
                                     ? 'opacity-40 bg-white/5 border-white/5'
                                     : isSelected
-                                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-100 shadow-sm'
-                                      : 'bg-white/5 border-white/5 opacity-60 hover:opacity-100'
+                                      ? 'bg-purple-500/15 border-purple-500/35 text-purple-100 shadow-sm'
+                                      : 'bg-white/5 border-white/5 opacity-70 hover:opacity-100'
                                 }`}
                               >
                                 <input
@@ -5184,13 +5659,37 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                   onChange={() => {}} 
                                   className="mt-0.5 rounded text-purple-600 bg-white/10 border-white/20 cursor-pointer pointer-events-none"
                                 />
-                                <div className="flex-1 space-y-1">
-                                  <p className="leading-relaxed">"{comm.text}"</p>
-                                  {comm.author && (
-                                    <span className="text-[10px] opacity-60 font-mono block">
-                                      — {comm.author}
-                                    </span>
-                                  )}
+                                <div className="flex-1 space-y-1.5">
+                                  {/* Estrelas */}
+                                  <div className="flex items-center gap-1">
+                                    {[...Array(5)].map((_, sIdx) => (
+                                      <Star key={sIdx} className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
+                                    ))}
+                                  </div>
+
+                                  {/* Texto limpo da avaliação */}
+                                  <p className="leading-relaxed font-normal text-white/95">
+                                    "{comm.text}"
+                                  </p>
+
+                                  {/* Badges de Variante, Data e Autor */}
+                                  <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[10px]">
+                                    {comm.variant && (
+                                      <span className="bg-purple-500/20 text-purple-200 border border-purple-500/30 px-2 py-0.5 rounded font-mono">
+                                        🏷️ {comm.variant}
+                                      </span>
+                                    )}
+                                    {comm.date && (
+                                      <span className="text-white/40 font-mono">
+                                        📅 {comm.date}
+                                      </span>
+                                    )}
+                                    {comm.author && (
+                                      <span className="text-white/50 font-mono">
+                                        — {comm.author}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -5198,34 +5697,22 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </div>
                       </div>
                     ) : (
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between gap-3 text-xs opacity-75">
-                        <span className="text-xs">
-                          Nenhum comentário visível no topo da página. Role o navegador para carregar mais avaliações.
-                        </span>
+                      <div className="p-4 bg-white/5 border border-white/10 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs opacity-90">
+                        <div className="space-y-1 text-center sm:text-left">
+                          <p className="font-bold text-purple-200">
+                            💡 O TikTok Shop exibe apenas 3 avaliações por tela.
+                          </p>
+                          <p className="text-white/60 text-[11px]">
+                            Clique no botão ao lado para navegar automaticamente pelas páginas e extrair de 10 a 30+ avaliações reais.
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={async () => {
-                            const webview = tiktokWebviewRef.current;
-                            if (webview) {
-                              try {
-                                await webview.executeJavaScript("window.scrollBy({ top: 1000, behavior: 'smooth' })");
-                                setTimeout(async () => {
-                                  try {
-                                    const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
-                                    if (res && res.reviews) {
-                                      setExtractedTikTokProduct(prev => prev ? { ...prev, reviews: res.reviews } : prev);
-                                      if (res.reviews.comments && res.reviews.comments.length > 0) {
-                                        setSelectedTikTokCommentIds(res.reviews.comments.map((c: any) => c.id));
-                                      }
-                                    }
-                                  } catch (e) {}
-                                }, 800);
-                              } catch (e) {}
-                            }
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+                          disabled={isPaginatingReviews}
+                          onClick={() => handlePaginateReviews(reviewsTargetCount)}
+                          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0 shadow-lg shadow-purple-600/20"
                         >
-                          <RefreshCcw className="w-3.5 h-3.5" /> Rolar e Buscar Comentários
+                          <Zap className="w-4 h-4 fill-current" /> Iniciar Paginação (Meta: {reviewsTargetCount})
                         </button>
                       </div>
                     )}
