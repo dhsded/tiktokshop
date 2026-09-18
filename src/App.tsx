@@ -2643,12 +2643,10 @@ function MainApp() {
     return (envKey && envKey !== 'MY_GEMINI_API_KEY') ? envKey : '';
   };
 
-  // Modelo primário + fallbacks (todos suportados na API v1beta oficial do Google)
+  // Modelo primário + fallbacks ativos (suportados na API oficial do Google)
   const GEMINI_MODEL_CHAIN = [
-    "gemini-2.5-flash",      // Modelo primário (mais recente)
-    "gemini-2.0-flash",      // Fallback ultrarrápido, altamente estável e com alta cota
-    "gemini-2.5-flash-lite", // Fallback leve
-    "gemini-2.0-flash-lite", // Segundo fallback leve
+    "gemini-2.5-flash",      // Modelo primário ativo
+    "gemini-flash-latest",   // Fallback oficial estável
   ];
 
   const playAlertSound = () => {
@@ -2794,7 +2792,7 @@ Retorne APENAS o array JSON.`,
         }
       });
 
-      const newOrder = JSON.parse(response.text || '[]') as number[];
+      const newOrder = aiProvidersManager.safeJsonParse<number[]>(response.text || '[]', []);
       if (Array.isArray(newOrder) && newOrder.length === images.length) {
         const sortedImages = newOrder.map(idx => images[idx]);
         setImages(sortedImages);
@@ -3073,7 +3071,10 @@ Retorne em estrutura JSON:
 
       if (abortControllerRef.current?.signal.aborted) return;
 
-      const parsed = JSON.parse(response.text || '{}') as ScriptResponse;
+      const parsed = aiProvidersManager.safeJsonParse<ScriptResponse>(response.text || '{}', {} as ScriptResponse);
+      if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+        throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
+      }
       setGeneratedScript(parsed);
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -3226,7 +3227,10 @@ Retorne em estrutura JSON:
 
       if (abortControllerRef.current?.signal.aborted) return;
 
-      const parsed = JSON.parse(response.text || '{}') as ScriptResponse;
+      const parsed = aiProvidersManager.safeJsonParse<ScriptResponse>(response.text || '{}', {} as ScriptResponse);
+      if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+        throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
+      }
       setGeneratedScript(parsed);
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -3380,7 +3384,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
         }
       });
 
-      const parsed = JSON.parse(response.text || '{}') as { angles: GeneratedAngle[] };
+      const parsed = aiProvidersManager.safeJsonParse<{ angles: GeneratedAngle[] }>(response.text || '{}', { angles: [] });
+      if (!parsed || !Array.isArray(parsed.angles) || parsed.angles.length === 0) {
+        throw new Error("A IA respondeu mas os ângulos não puderam ser estruturados. Tente novamente.");
+      }
       setGeneratedAngles(parsed.angles || []);
     } catch (error: any) {
       console.error('Erro ao gerar ângulos:', error);
@@ -6751,11 +6758,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
 
-                    {/* Seleção de Modelo Vision Groq */}
+                    {/* Seleção de Modelo Groq */}
                     <div className="space-y-2.5">
                       <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                         <Cpu className="w-3.5 h-3.5 text-orange-400" />
-                        Modelos de Visão Multimodal Groq (100% Gratuitos)
+                        Modelos de Alta Velocidade Groq LPU (100% Gratuitos)
                       </label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {GROQ_MODELS.map((m) => {

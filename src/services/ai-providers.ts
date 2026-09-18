@@ -42,33 +42,17 @@ export interface ModelOption {
 export const GEMINI_MODELS: ModelOption[] = [
   {
     id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Recomendado)',
+    name: 'Gemini 2.5 Flash (Recomendado Google)',
     tag: 'Visão HD • Mais Rápido • Gratuito',
     desc: 'Motor de última geração do Google. Máxima velocidade com compreensão visual detalhada de produtos e roupas.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
+    id: 'gemini-flash-latest',
+    name: 'Gemini Flash Latest (Estável)',
     tag: 'Alta Estabilidade • Gratuito',
-    desc: 'Versão estável e consagrada do Gemini com alta taxa de acerto para schemas JSON e descrições de moda.',
-    hasVision: true,
-    isFree: true
-  },
-  {
-    id: 'gemini-2.5-flash-lite',
-    name: 'Gemini 2.5 Flash Lite',
-    tag: 'Ultraleve • Econômico • Gratuito',
-    desc: 'Modelo com menor consumo de cota por requisição, ideal para contas com limites restritos.',
-    hasVision: true,
-    isFree: true
-  },
-  {
-    id: 'gemini-2.0-flash-lite',
-    name: 'Gemini 2.0 Flash Lite',
-    tag: 'Baixa Latência • Gratuito',
-    desc: 'Excelente para validação rápida de imagens e ordenação de cenas.',
+    desc: 'Versão estável e sempre atualizada do Gemini Flash do Google.',
     hasVision: true,
     isFree: true
   }
@@ -76,19 +60,35 @@ export const GEMINI_MODELS: ModelOption[] = [
 
 export const GROQ_MODELS: ModelOption[] = [
   {
-    id: 'llama-3.2-11b-vision-preview',
-    name: 'Llama 3.2 11B Vision (Recomendado Groq)',
-    tag: 'Visão Multimodal • Ultra Rápido • FREE',
-    desc: 'Modelo oficial da Meta com visão computacional acelerado por LPUs da Groq. Velocidade insana para analisar fotos.',
-    hasVision: true,
+    id: 'openai/gpt-oss-120b',
+    name: 'GPT-OSS 120B (Recomendado Groq)',
+    tag: '120B Parâmetros • Ultra Rápido LPU • FREE',
+    desc: 'Modelo de alta escala (120 bilhões de parâmetros) com hardware LPU da Groq. Máxima qualidade de copywriting e velocidade instantânea.',
+    hasVision: false,
     isFree: true
   },
   {
-    id: 'llama-3.2-90b-vision-preview',
-    name: 'Llama 3.2 90B Vision (Máxima Precisão)',
-    tag: '90B Parâmetros • Visão Profunda • FREE',
-    desc: 'Raciocínio visual refinado e compreensão detalhada de texturas e atributos do produto.',
-    hasVision: true,
+    id: 'openai/gpt-oss-20b',
+    name: 'GPT-OSS 20B (Ultraleve)',
+    tag: '20B Parâmetros • Resposta Instantânea • FREE',
+    desc: 'Modelo compacto e superveloz, ideal para gerações rápidas de roteiros e variações.',
+    hasVision: false,
+    isFree: true
+  },
+  {
+    id: 'groq/compound',
+    name: 'Groq Compound AI',
+    tag: 'Raciocínio Avançado • Groq LPU • FREE',
+    desc: 'Arquitetura composta da Groq para estruturação refinada de campanhas e storytelling comercial.',
+    hasVision: false,
+    isFree: true
+  },
+  {
+    id: 'qwen/qwen3.8-27b',
+    name: 'Qwen 3.8 27B (Groq)',
+    tag: '27B Parâmetros • Alta Criatividade • FREE',
+    desc: 'Excelente vocabulário em português para roteiros dinâmicos e ganchos de alta retenção no TikTok Shop.',
+    hasVision: false,
     isFree: true
   }
 ];
@@ -97,41 +97,41 @@ export const OPENROUTER_MODELS: ModelOption[] = [
   {
     id: 'openrouter/free',
     name: 'OpenRouter Free Router (Auto-Select Vision)',
-    tag: 'Auto-Roteador • Gratuito',
-    desc: 'Seleciona dinamicamente o melhor modelo gratuito disponível com suporte a imagens e formato JSON.',
+    tag: 'Auto-Roteador • Visão Multimodal • FREE',
+    desc: 'Seleciona dinamicamente o melhor modelo gratuito disponível com suporte completo a imagens e formato JSON.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'qwen/qwen2.5-vl-72b-instruct:free',
-    name: 'Qwen 2.5 VL 72B Instruct (Free)',
-    tag: '72B • Líder em Visão • FREE',
-    desc: 'Um dos modelos de visão multimodal mais poderosos do mundo com 100% de gratuidade.',
+    id: 'inclusionai/ling-3.0-flash-vl:free',
+    name: 'Ling 3.0 Flash VL (Free)',
+    tag: 'Visão HD Multimodal • Ultra Rápido • FREE',
+    desc: 'Modelo avançado com visão computacional para análise visual de produtos, cores e texturas.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'meta-llama/llama-3.2-11b-vision-instruct:free',
-    name: 'Llama 3.2 11B Vision Instruct (Free)',
-    tag: 'Meta Vision • Gratuito',
-    desc: 'Versão instruída oficial do Llama 3.2 com capacidade de leitura de fotos de produtos.',
+    id: 'google/gemma-4-31b-it:free',
+    name: 'Google Gemma 4 31B IT (Free)',
+    tag: '31B Multimodal • Google • FREE',
+    desc: 'Nova geração do Google Gemma com visão multimodal e excelente escrita em português brasileiro.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'google/gemma-3-27b-it:free',
-    name: 'Google Gemma 3 27B IT (Free)',
-    tag: '27B Multimodal • Google • FREE',
-    desc: 'Modelo multimodal de peso intermediário do Google, excelente em respostas em português.',
+    id: 'qwen/qwen3.8-27b:free',
+    name: 'Qwen 3.8 27B (Free)',
+    tag: '27B Multimodal • FREE',
+    desc: 'Excelente compreensão visual e raciocínio para geração de scripts e prompts de vídeo.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'google/gemma-3-12b-it:free',
-    name: 'Google Gemma 3 12B IT (Free)',
-    tag: '12B Multimodal • Rápido • FREE',
-    desc: 'Gemma 3 ágil e eficiente para inspeção visual e escrita de roteiros.',
-    hasVision: true,
+    id: 'deepseek/deepseek-v4-flash-0731:free',
+    name: 'DeepSeek V4 Flash (Free)',
+    tag: 'Copywriting Persuasivo • Ultra Rápido • FREE',
+    desc: 'Especialista em textos comerciais persuasivos, ganchos de retenção e storytelling para TikTok.',
+    hasVision: false,
     isFree: true
   }
 ];
@@ -167,7 +167,7 @@ const DEFAULT_CONFIG: ProvidersConfigState = {
     keys: []
   },
   groq: {
-    model: 'llama-3.2-11b-vision-preview',
+    model: 'openai/gpt-oss-120b',
     apiKey: '',
     keys: [],
     baseUrl: 'https://api.groq.com/openai/v1'
@@ -194,26 +194,57 @@ export class AIProvidersManager {
         const parsed = JSON.parse(saved);
         const groqKeys = Array.isArray(parsed.groq?.keys) ? parsed.groq.keys : (parsed.groq?.apiKey ? [parsed.groq.apiKey] : []);
         const openrouterKeys = Array.isArray(parsed.openrouter?.keys) ? parsed.openrouter.keys : (parsed.openrouter?.apiKey ? [parsed.openrouter.apiKey] : []);
-        return {
+
+        // Migração automática de modelos legados ou descontinuados salvos no localStorage do usuário
+        let groqModel = parsed.groq?.model || DEFAULT_CONFIG.groq.model;
+        if (groqModel.includes('llama-3.2') || groqModel.includes('vision-preview') || !GROQ_MODELS.some(m => m.id === groqModel)) {
+          groqModel = 'openai/gpt-oss-120b';
+        }
+
+        let openrouterModel = parsed.openrouter?.model || DEFAULT_CONFIG.openrouter.model;
+        if (openrouterModel.includes('gemma-3') || openrouterModel.includes('llama-3.2') || openrouterModel.includes('qwen2.5-vl') || !OPENROUTER_MODELS.some(m => m.id === openrouterModel)) {
+          openrouterModel = 'openrouter/free';
+        }
+
+        let geminiModel = parsed.gemini?.model || DEFAULT_CONFIG.gemini.model;
+        if (geminiModel.includes('2.0') || geminiModel.includes('1.5') || geminiModel === 'gemini-2.5-flash-lite' || !GEMINI_MODELS.some(m => m.id === geminiModel)) {
+          geminiModel = 'gemini-2.5-flash';
+        }
+
+        const migratedConfig: ProvidersConfigState = {
           activeProvider: parsed.activeProvider || DEFAULT_CONFIG.activeProvider,
           enableFailover: parsed.enableFailover !== undefined ? parsed.enableFailover : true,
           gemini: {
-            model: parsed.gemini?.model || DEFAULT_CONFIG.gemini.model,
+            model: geminiModel,
             keys: Array.isArray(parsed.gemini?.keys) ? parsed.gemini.keys : []
           },
           groq: {
-            model: parsed.groq?.model || DEFAULT_CONFIG.groq.model,
+            model: groqModel,
             apiKey: parsed.groq?.apiKey || (groqKeys.length > 0 ? groqKeys[0] : ''),
             keys: groqKeys,
             baseUrl: parsed.groq?.baseUrl || DEFAULT_CONFIG.groq.baseUrl
           },
           openrouter: {
-            model: parsed.openrouter?.model || DEFAULT_CONFIG.openrouter.model,
+            model: openrouterModel,
             apiKey: parsed.openrouter?.apiKey || (openrouterKeys.length > 0 ? openrouterKeys[0] : ''),
             keys: openrouterKeys,
             baseUrl: parsed.openrouter?.baseUrl || DEFAULT_CONFIG.openrouter.baseUrl
           }
         };
+
+        // Salva silenciosamente a versão migrada se algum modelo obsoleto foi corrigido
+        if (parsed.groq?.model !== groqModel || parsed.openrouter?.model !== openrouterModel || parsed.gemini?.model !== geminiModel) {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedConfig));
+            console.log('[AIProvidersManager] Modelos atualizados com sucesso para versões ativas:', {
+              gemini: geminiModel,
+              groq: groqModel,
+              openrouter: openrouterModel
+            });
+          } catch {}
+        }
+
+        return migratedConfig;
       }
     } catch (e) {
       console.warn('[AIProvidersManager] Falha ao carregar configurações salvas:', e);
@@ -282,24 +313,66 @@ export class AIProvidersManager {
   /**
    * Converte a resposta em JSON limpo e parseável
    */
+  /**
+   * Converte a resposta em JSON limpo e parseável,
+   * removendo tags de pensamento (<think>...</think>), fences de markdown,
+   * texto envolvente e vírgulas extras antes de fechar chaves/colchetes.
+   */
   public cleanJsonResponse(rawText: string): string {
     if (!rawText) return '{}';
     let clean = rawText.trim();
-    if (clean.startsWith('```json')) {
-      clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (clean.startsWith('```')) {
-      clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+
+    // 1. Remove blocos de raciocínio de modelos open-source (<think>...</think>)
+    clean = clean.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+    // 2. Remove blocos de código markdown ```json ... ```
+    const codeBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      clean = codeBlockMatch[1].trim();
+    } else {
+      clean = clean.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```$/gi, '').trim();
     }
-    clean = clean.trim();
+
+    // 3. Encontra os limites externos do objeto {...} ou array [...]
+    const firstBrace = clean.indexOf('{');
+    const firstBracket = clean.indexOf('[');
+    let start = -1;
+    let end = -1;
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      start = firstBrace;
+      end = clean.lastIndexOf('}');
+    } else if (firstBracket !== -1) {
+      start = firstBracket;
+      end = clean.lastIndexOf(']');
+    }
+
+    if (start !== -1 && end !== -1 && end > start) {
+      clean = clean.substring(start, end + 1);
+    }
+
+    // 4. Limpa vírgulas extras (trailing commas) antes de fechar objetos ou listas
+    clean = clean.replace(/,\s*([\}\]])/g, '$1');
+
     try {
       JSON.parse(clean);
       return clean;
     } catch (e) {
-      const match = clean.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-      if (match) {
-        return match[0];
-      }
       return clean;
+    }
+  }
+
+  /**
+   * Faz o parse seguro do JSON retornado pela IA
+   */
+  public safeJsonParse<T>(rawText: string, fallback: T): T {
+    try {
+      const cleaned = this.cleanJsonResponse(rawText);
+      const parsed = JSON.parse(cleaned);
+      return parsed as T;
+    } catch (err) {
+      console.warn('[AIProvidersManager] Falha ao fazer parse de JSON:', err, rawText?.slice(0, 200));
+      return fallback;
     }
   }
 
@@ -315,7 +388,7 @@ export class AIProvidersManager {
   }
 
   /**
-   * Chamada direta ao Google Gemini com rotação de chaves e cadeia de modelos
+   * Chamada direta ao Google Gemini com rotação de chaves e cadeia de modelos ativos
    */
   public async executeGemini(
     options: UnifiedAIOptions,
@@ -338,9 +411,7 @@ export class AIProvidersManager {
     const modelsToTry = [
       preferredModel,
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash-lite'
+      'gemini-flash-latest'
     ].filter((m, i, a) => a.indexOf(m) === i);
 
     let lastError: any = null;
@@ -370,7 +441,8 @@ export class AIProvidersManager {
       for (const model of modelsToTry) {
         try {
           if (options.onStatusUpdate) {
-            options.onStatusUpdate(`Solicitando Google Gemini (${model} - chave ${keyIdx + 1}/${keysToTry.length})...`);
+            const rotInfo = keysToTry.length > 1 ? ` [Chave ${keyIdx + 1}/${keysToTry.length}]` : '';
+            options.onStatusUpdate(`Solicitando Google Gemini (${model})${rotInfo}...`);
           }
           const ai = new GoogleGenAI({ apiKey: key });
           const genConfig: any = {
@@ -408,16 +480,17 @@ export class AIProvidersManager {
                              errorStr.includes('quota') || 
                              errorStr.includes('resource_exhausted') || 
                              errorStr.includes('invalid') || 
-                             errorStr.includes('expired');
+                             errorStr.includes('expired') ||
+                             (errorStr.includes('400') && errorStr.includes('key'));
 
           if (isKeyError) {
-            console.warn(`[Gemini] Chave ${keyIdx + 1} sem cota ou inválida. Tentando próxima...`);
+            console.warn(`[Gemini] Chave ${keyIdx + 1}/${keysToTry.length} sem cota ou inválida (${err?.message || ''}). Tentando próxima...`);
             break; // Próxima chave
           }
 
           if (errorStr.includes('503') || errorStr.includes('overloaded')) {
-            await new Promise(r => setTimeout(r, 500));
-            continue; // Próximo modelo
+            await new Promise(r => setTimeout(r, 1000));
+            continue; // Próximo modelo ou retry
           }
         }
       }
@@ -427,7 +500,7 @@ export class AIProvidersManager {
   }
 
   /**
-   * Chamada ao Groq Cloud via API OpenAI-compatible com Visão e Rotação de Chaves
+   * Chamada ao Groq Cloud via API OpenAI-compatible em hardware LPU com Rotação de Chaves
    */
   public async executeGroq(
     options: UnifiedAIOptions,
@@ -446,42 +519,36 @@ export class AIProvidersManager {
       throw new Error("Nenhuma chave Groq Cloud configurada (gsk_...). Adicione sua chave ou carregue um arquivo .txt.");
     }
 
-    const preferredModel = options.model || this.config.groq.model || 'llama-3.2-11b-vision-preview';
+    const preferredModel = options.model || this.config.groq.model || 'openai/gpt-oss-120b';
     const modelsToTry = [
       preferredModel,
-      'llama-3.2-11b-vision-preview',
-      'llama-3.2-90b-vision-preview'
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'groq/compound',
+      'qwen/qwen3.8-27b'
     ].filter((m, i, a) => a.indexOf(m) === i);
 
     let baseUrl = (this.config.groq.baseUrl || 'https://api.groq.com/openai/v1').trim();
     if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
-    // Monta mensagens no formato OpenAI com image_url
-    const userContent: any[] = [];
+    // Groq models require message content to be a single string
     let textAccumulator = '';
+    let imageCount = 0;
 
     if (options.parts && options.parts.length > 0) {
       for (const p of options.parts) {
         if (p.text) {
           textAccumulator += (textAccumulator ? '\n\n' : '') + p.text;
         } else if (p.inlineData) {
-          userContent.push({
-            type: "image_url",
-            image_url: {
-              url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`
-            }
-          });
+          imageCount++;
         }
       }
     } else if (options.prompt) {
       textAccumulator = options.prompt;
     }
 
-    if (textAccumulator) {
-      userContent.unshift({
-        type: "text",
-        text: textAccumulator + "\n\nIMPORTANTE: Responda ESTRITAMENTE em formato JSON parseável válido."
-      });
+    if (imageCount > 0) {
+      textAccumulator += `\n\n[Referência Visual: O usuário enviou ${imageCount} foto(s) de produto/look. Considere todas as especificações, nomes e diretrizes visuais informadas para construir o roteiro e os prompts de VEO, DIGEN e Nano Banana.]`;
     }
 
     const messages: any[] = [];
@@ -490,10 +557,16 @@ export class AIProvidersManager {
         role: "system",
         content: options.systemPrompt + "\nResponda estritamente em formato JSON válido."
       });
+    } else {
+      messages.push({
+        role: "system",
+        content: "Você é um assistente de IA especialista em marketing para TikTok Shop e e-commerce. Responda estritamente em formato JSON válido."
+      });
     }
+
     messages.push({
       role: "user",
-      content: userContent.length === 1 && userContent[0].type === "text" ? userContent[0].text : userContent
+      content: textAccumulator + "\n\nIMPORTANTE: Responda ESTRITAMENTE em formato JSON parseável válido."
     });
 
     let lastError: any = null;
@@ -506,7 +579,7 @@ export class AIProvidersManager {
         try {
           if (options.onStatusUpdate) {
             const rotInfo = keysToTry.length > 1 ? ` [Chave ${keyIdx + 1}/${keysToTry.length}]` : '';
-            options.onStatusUpdate(`Solicitando Groq Cloud Vision (${model})${rotInfo}...`);
+            options.onStatusUpdate(`Solicitando Groq Cloud LPU (${model})${rotInfo}...`);
           }
 
           const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -520,7 +593,7 @@ export class AIProvidersManager {
               model,
               messages,
               temperature: 0.7,
-              max_tokens: 4096,
+              max_tokens: 2048,
               response_format: { type: "json_object" }
             })
           });
@@ -593,9 +666,10 @@ export class AIProvidersManager {
     const modelsToTry = [
       preferredModel,
       'openrouter/free',
-      'qwen/qwen2.5-vl-72b-instruct:free',
-      'meta-llama/llama-3.2-11b-vision-instruct:free',
-      'google/gemma-3-27b-it:free'
+      'inclusionai/ling-3.0-flash-vl:free',
+      'google/gemma-4-31b-it:free',
+      'qwen/qwen3.8-27b:free',
+      'deepseek/deepseek-v4-flash-0731:free'
     ].filter((m, i, a) => a.indexOf(m) === i);
 
     let baseUrl = (this.config.openrouter.baseUrl || 'https://openrouter.ai/api/v1').trim();
@@ -603,12 +677,14 @@ export class AIProvidersManager {
 
     const userContent: any[] = [];
     let textAccumulator = '';
+    let hasImages = false;
 
     if (options.parts && options.parts.length > 0) {
       for (const p of options.parts) {
         if (p.text) {
           textAccumulator += (textAccumulator ? '\n\n' : '') + p.text;
         } else if (p.inlineData) {
+          hasImages = true;
           userContent.push({
             type: "image_url",
             image_url: {
@@ -652,6 +728,15 @@ export class AIProvidersManager {
             options.onStatusUpdate(`Solicitando OpenRouter (${model})${rotInfo}...`);
           }
 
+          // Se o modelo for texto-puro (como deepseek) e tiver imagens, usa apenas a parte de texto
+          let reqMessages = messages;
+          if (model.includes('deepseek') && hasImages) {
+            reqMessages = [
+              ...(options.systemPrompt ? [{ role: "system", content: options.systemPrompt }] : []),
+              { role: "user", content: textAccumulator + "\n\nIMPORTANTE: Responda ESTRITAMENTE em formato JSON parseável válido." }
+            ];
+          }
+
           const response = await fetch(`${baseUrl}/chat/completions`, {
             method: "POST",
             headers: {
@@ -663,9 +748,9 @@ export class AIProvidersManager {
             signal: AbortSignal.timeout(90000),
             body: JSON.stringify({
               model,
-              messages,
+              messages: reqMessages,
               temperature: 0.7,
-              max_tokens: 4096
+              max_tokens: 2048
             })
           });
 
@@ -837,7 +922,7 @@ export class AIProvidersManager {
             elapsedMs: 0
           };
         }
-        res = await this.executeGroq({ parts: testParts, model: overrideModel }, validKeys);
+        res = await this.executeGroq({ prompt: "Responda estritamente com este JSON: {\"status\": \"ok\", \"provider\": \"groq\"}", model: overrideModel }, validKeys);
       } else {
         const candidateKeys = (overrideKey && overrideKey.trim())
           ? [overrideKey]
@@ -857,9 +942,10 @@ export class AIProvidersManager {
       }
 
       const elapsed = Date.now() - t0;
+      const modeDesc = provider === 'groq' ? 'Conexão ultra-rápida LPU' : 'Conexão e análise visual';
       return {
         success: true,
-        message: `Conexão e análise visual bem-sucedidas com ${res.provider.toUpperCase()} (${res.model}) em ${(elapsed / 1000).toFixed(2)}s!`,
+        message: `${modeDesc} bem-sucedidas com ${res.provider.toUpperCase()} (${res.model}) em ${(elapsed / 1000).toFixed(2)}s!`,
         elapsedMs: elapsed
       };
     } catch (err: any) {
