@@ -146,11 +146,13 @@ export interface ProvidersConfigState {
   groq: {
     model: string;
     apiKey: string;
+    keys: string[];
     baseUrl: string;
   };
   openrouter: {
     model: string;
     apiKey: string;
+    keys: string[];
     baseUrl: string;
   };
 }
@@ -167,11 +169,13 @@ const DEFAULT_CONFIG: ProvidersConfigState = {
   groq: {
     model: 'llama-3.2-11b-vision-preview',
     apiKey: '',
+    keys: [],
     baseUrl: 'https://api.groq.com/openai/v1'
   },
   openrouter: {
     model: 'openrouter/free',
     apiKey: '',
+    keys: [],
     baseUrl: 'https://openrouter.ai/api/v1'
   }
 };
@@ -188,6 +192,8 @@ export class AIProvidersManager {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const groqKeys = Array.isArray(parsed.groq?.keys) ? parsed.groq.keys : (parsed.groq?.apiKey ? [parsed.groq.apiKey] : []);
+        const openrouterKeys = Array.isArray(parsed.openrouter?.keys) ? parsed.openrouter.keys : (parsed.openrouter?.apiKey ? [parsed.openrouter.apiKey] : []);
         return {
           activeProvider: parsed.activeProvider || DEFAULT_CONFIG.activeProvider,
           enableFailover: parsed.enableFailover !== undefined ? parsed.enableFailover : true,
@@ -197,12 +203,14 @@ export class AIProvidersManager {
           },
           groq: {
             model: parsed.groq?.model || DEFAULT_CONFIG.groq.model,
-            apiKey: parsed.groq?.apiKey || '',
+            apiKey: parsed.groq?.apiKey || (groqKeys.length > 0 ? groqKeys[0] : ''),
+            keys: groqKeys,
             baseUrl: parsed.groq?.baseUrl || DEFAULT_CONFIG.groq.baseUrl
           },
           openrouter: {
             model: parsed.openrouter?.model || DEFAULT_CONFIG.openrouter.model,
-            apiKey: parsed.openrouter?.apiKey || '',
+            apiKey: parsed.openrouter?.apiKey || (openrouterKeys.length > 0 ? openrouterKeys[0] : ''),
+            keys: openrouterKeys,
             baseUrl: parsed.openrouter?.baseUrl || DEFAULT_CONFIG.openrouter.baseUrl
           }
         };
@@ -241,15 +249,34 @@ export class AIProvidersManager {
   }
 
   public setGeminiKeys(keys: string[]) {
-    this.saveConfig({ gemini: { ...this.config.gemini, keys } });
+    const sanitized = keys.map(k => this.sanitizeKey(k)).filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
+    this.saveConfig({ gemini: { ...this.config.gemini, keys: sanitized } });
   }
 
   public setGroqKey(apiKey: string) {
-    this.saveConfig({ groq: { ...this.config.groq, apiKey: apiKey.trim() } });
+    const clean = this.sanitizeKey(apiKey);
+    const otherKeys = (this.config.groq.keys || []).filter(k => k !== clean);
+    const newKeys = clean ? [clean, ...otherKeys] : otherKeys;
+    this.saveConfig({ groq: { ...this.config.groq, apiKey: clean, keys: newKeys } });
+  }
+
+  public setGroqKeys(keys: string[]) {
+    const sanitized = keys.map(k => this.sanitizeKey(k)).filter(k => k.length > 5 && k !== 'MY_GROQ_API_KEY');
+    const primary = sanitized.length > 0 ? sanitized[0] : '';
+    this.saveConfig({ groq: { ...this.config.groq, apiKey: primary, keys: sanitized } });
   }
 
   public setOpenRouterKey(apiKey: string) {
-    this.saveConfig({ openrouter: { ...this.config.openrouter, apiKey: apiKey.trim() } });
+    const clean = this.sanitizeKey(apiKey);
+    const otherKeys = (this.config.openrouter.keys || []).filter(k => k !== clean);
+    const newKeys = clean ? [clean, ...otherKeys] : otherKeys;
+    this.saveConfig({ openrouter: { ...this.config.openrouter, apiKey: clean, keys: newKeys } });
+  }
+
+  public setOpenRouterKeys(keys: string[]) {
+    const sanitized = keys.map(k => this.sanitizeKey(k)).filter(k => k.length > 5 && k !== 'MY_OPENROUTER_API_KEY');
+    const primary = sanitized.length > 0 ? sanitized[0] : '';
+    this.saveConfig({ openrouter: { ...this.config.openrouter, apiKey: primary, keys: sanitized } });
   }
 
   /**
@@ -400,15 +427,23 @@ export class AIProvidersManager {
   }
 
   /**
-   * Chamada ao Groq Cloud via API OpenAI-compatible com Visão
+   * Chamada ao Groq Cloud via API OpenAI-compatible com Visão e Rotação de Chaves
    */
   public async executeGroq(
-    options: UnifiedAIOptions
+    options: UnifiedAIOptions,
+    externalKeys?: string[]
   ): Promise<UnifiedAIResult> {
     const t0 = Date.now();
-    const apiKey = (this.config.groq.apiKey || '').trim();
-    if (!apiKey) {
-      throw new Error("Nenhuma chave Groq Cloud configurada (gsk_...). Adicione sua chave nas configurações de I.A.");
+    const candidateKeys = (externalKeys && externalKeys.length > 0)
+      ? externalKeys
+      : (this.config.groq.keys && this.config.groq.keys.length > 0 ? this.config.groq.keys : (this.config.groq.apiKey ? [this.config.groq.apiKey] : []));
+
+    const keysToTry = candidateKeys
+      .map(k => this.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GROQ_API_KEY');
+
+    if (keysToTry.length === 0) {
+      throw new Error("Nenhuma chave Groq Cloud configurada (gsk_...). Adicione sua chave ou carregue um arquivo .txt.");
     }
 
     const preferredModel = options.model || this.config.groq.model || 'llama-3.2-11b-vision-preview';
@@ -463,55 +498,70 @@ export class AIProvidersManager {
 
     let lastError: any = null;
 
-    for (const model of modelsToTry) {
-      try {
-        if (options.onStatusUpdate) {
-          options.onStatusUpdate(`Solicitando Groq Cloud Vision (${model})...`);
-        }
+    // Loop de chaves com rotação inteligente
+    for (let keyIdx = 0; keyIdx < keysToTry.length; keyIdx++) {
+      const apiKey = keysToTry[keyIdx];
 
-        const response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
-          },
-          signal: AbortSignal.timeout(90000),
-          body: JSON.stringify({
+      for (const model of modelsToTry) {
+        try {
+          if (options.onStatusUpdate) {
+            const rotInfo = keysToTry.length > 1 ? ` [Chave ${keyIdx + 1}/${keysToTry.length}]` : '';
+            options.onStatusUpdate(`Solicitando Groq Cloud Vision (${model})${rotInfo}...`);
+          }
+
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            signal: AbortSignal.timeout(90000),
+            body: JSON.stringify({
+              model,
+              messages,
+              temperature: 0.7,
+              max_tokens: 4096,
+              response_format: { type: "json_object" }
+            })
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            let errJson: any = null;
+            try { errJson = JSON.parse(errText); } catch {}
+            const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+            throw new Error(`Groq ${model} (${response.status}): ${errMsg}`);
+          }
+
+          const data = await response.json();
+          const rawContent = data?.choices?.[0]?.message?.content;
+          if (!rawContent) {
+            throw new Error(`Groq retornou resposta vazia no modelo ${model}.`);
+          }
+
+          const cleanedText = this.cleanJsonResponse(rawContent);
+
+          return {
+            text: cleanedText,
+            provider: 'groq',
             model,
-            messages,
-            temperature: 0.7,
-            max_tokens: 4096,
-            response_format: { type: "json_object" }
-          })
-        });
+            elapsedMs: Date.now() - t0
+          };
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = (err?.message || String(err)).toLowerCase();
+          console.warn(`[Groq] Falha na chave ${keyIdx + 1}/${keysToTry.length}, modelo ${model}:`, err.message);
 
-        if (!response.ok) {
-          const errText = await response.text();
-          let errJson: any = null;
-          try { errJson = JSON.parse(errText); } catch {}
-          const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
-          throw new Error(`Groq ${model} (${response.status}): ${errMsg}`);
-        }
+          const isKeyError = errMsg.includes('401') || 
+                             errMsg.includes('invalid_api_key') || 
+                             errMsg.includes('429') || 
+                             errMsg.includes('rate_limit') || 
+                             errMsg.includes('quota');
 
-        const data = await response.json();
-        const rawContent = data?.choices?.[0]?.message?.content;
-        if (!rawContent) {
-          throw new Error(`Groq retornou resposta vazia no modelo ${model}.`);
-        }
-
-        const cleanedText = this.cleanJsonResponse(rawContent);
-
-        return {
-          text: cleanedText,
-          provider: 'groq',
-          model,
-          elapsedMs: Date.now() - t0
-        };
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[Groq] Falha no modelo ${model}:`, err.message);
-        if (err.message.includes('401') || err.message.includes('invalid_api_key')) {
-          throw err;
+          if (isKeyError) {
+            console.warn(`[Groq] Chave ${keyIdx + 1} sem cota ou inválida. Tentando próxima chave...`);
+            break; // Próxima chave
+          }
         }
       }
     }
@@ -520,15 +570,23 @@ export class AIProvidersManager {
   }
 
   /**
-   * Chamada ao OpenRouter via API OpenAI-compatible com suporte a modelos multimodais Free
+   * Chamada ao OpenRouter via API OpenAI-compatible com suporte a modelos multimodais Free e Rotação de Chaves
    */
   public async executeOpenRouter(
-    options: UnifiedAIOptions
+    options: UnifiedAIOptions,
+    externalKeys?: string[]
   ): Promise<UnifiedAIResult> {
     const t0 = Date.now();
-    const apiKey = (this.config.openrouter.apiKey || '').trim();
-    if (!apiKey) {
-      throw new Error("Nenhuma chave OpenRouter configurada (sk-or-v1-...). Adicione sua chave nas configurações de I.A.");
+    const candidateKeys = (externalKeys && externalKeys.length > 0)
+      ? externalKeys
+      : (this.config.openrouter.keys && this.config.openrouter.keys.length > 0 ? this.config.openrouter.keys : (this.config.openrouter.apiKey ? [this.config.openrouter.apiKey] : []));
+
+    const keysToTry = candidateKeys
+      .map(k => this.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_OPENROUTER_API_KEY');
+
+    if (keysToTry.length === 0) {
+      throw new Error("Nenhuma chave OpenRouter configurada (sk-or-v1-...). Adicione sua chave ou carregue um arquivo .txt.");
     }
 
     const preferredModel = options.model || this.config.openrouter.model || 'openrouter/free';
@@ -584,56 +642,70 @@ export class AIProvidersManager {
 
     let lastError: any = null;
 
-    for (const model of modelsToTry) {
-      try {
-        if (options.onStatusUpdate) {
-          options.onStatusUpdate(`Solicitando OpenRouter (${model})...`);
-        }
+    for (let keyIdx = 0; keyIdx < keysToTry.length; keyIdx++) {
+      const apiKey = keysToTry[keyIdx];
 
-        const response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-            "HTTP-Referer": "https://tiktokshop.app",
-            "X-Title": "Gerador TikTok Shop"
-          },
-          signal: AbortSignal.timeout(90000),
-          body: JSON.stringify({
+      for (const model of modelsToTry) {
+        try {
+          if (options.onStatusUpdate) {
+            const rotInfo = keysToTry.length > 1 ? ` [Chave ${keyIdx + 1}/${keysToTry.length}]` : '';
+            options.onStatusUpdate(`Solicitando OpenRouter (${model})${rotInfo}...`);
+          }
+
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+              "HTTP-Referer": "https://tiktokshop.app",
+              "X-Title": "Gerador TikTok Shop"
+            },
+            signal: AbortSignal.timeout(90000),
+            body: JSON.stringify({
+              model,
+              messages,
+              temperature: 0.7,
+              max_tokens: 4096
+            })
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            let errJson: any = null;
+            try { errJson = JSON.parse(errText); } catch {}
+            const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
+            throw new Error(`OpenRouter ${model} (${response.status}): ${errMsg}`);
+          }
+
+          const data = await response.json();
+          const rawContent = data?.choices?.[0]?.message?.content;
+          if (!rawContent) {
+            throw new Error(`OpenRouter retornou resposta vazia no modelo ${model}.`);
+          }
+
+          const cleanedText = this.cleanJsonResponse(rawContent);
+
+          return {
+            text: cleanedText,
+            provider: 'openrouter',
             model,
-            messages,
-            temperature: 0.7,
-            max_tokens: 4096
-          })
-        });
+            elapsedMs: Date.now() - t0
+          };
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = (err?.message || String(err)).toLowerCase();
+          console.warn(`[OpenRouter] Falha na chave ${keyIdx + 1}/${keysToTry.length}, modelo ${model}:`, err.message);
 
-        if (!response.ok) {
-          const errText = await response.text();
-          let errJson: any = null;
-          try { errJson = JSON.parse(errText); } catch {}
-          const errMsg = errJson?.error?.message || errText || `HTTP ${response.status}`;
-          throw new Error(`OpenRouter ${model} (${response.status}): ${errMsg}`);
-        }
+          const isKeyError = errMsg.includes('401') || 
+                             errMsg.includes('user not found') || 
+                             errMsg.includes('429') || 
+                             errMsg.includes('rate-limit') || 
+                             errMsg.includes('quota');
 
-        const data = await response.json();
-        const rawContent = data?.choices?.[0]?.message?.content;
-        if (!rawContent) {
-          throw new Error(`OpenRouter retornou resposta vazia no modelo ${model}.`);
-        }
-
-        const cleanedText = this.cleanJsonResponse(rawContent);
-
-        return {
-          text: cleanedText,
-          provider: 'openrouter',
-          model,
-          elapsedMs: Date.now() - t0
-        };
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[OpenRouter] Falha no modelo ${model}:`, err.message);
-        if (err.message.includes('401') || err.message.includes('user not found')) {
-          throw err;
+          if (isKeyError) {
+            console.warn(`[OpenRouter] Chave ${keyIdx + 1} sem cota ou inválida. Tentando próxima chave...`);
+            break; // Próxima chave
+          }
         }
       }
     }
@@ -647,7 +719,9 @@ export class AIProvidersManager {
    */
   public async execute(
     options: UnifiedAIOptions,
-    externalGeminiKeys?: string[]
+    externalGeminiKeys?: string[],
+    externalGroqKeys?: string[],
+    externalOpenRouterKeys?: string[]
   ): Promise<UnifiedAIResult> {
     const activeProvider = options.provider || this.config.activeProvider;
     const enableFailover = this.config.enableFailover;
@@ -656,18 +730,22 @@ export class AIProvidersManager {
     const providerChain: AIProviderId[] = [activeProvider];
     if (enableFailover) {
       if (activeProvider === 'gemini') {
-        if (this.config.groq.apiKey) providerChain.push('groq');
-        if (this.config.openrouter.apiKey) providerChain.push('openrouter');
+        const hasGroq = (externalGroqKeys && externalGroqKeys.length > 0) || this.config.groq.keys.length > 0 || Boolean(this.config.groq.apiKey);
+        if (hasGroq) providerChain.push('groq');
+        const hasOpenRouter = (externalOpenRouterKeys && externalOpenRouterKeys.length > 0) || this.config.openrouter.keys.length > 0 || Boolean(this.config.openrouter.apiKey);
+        if (hasOpenRouter) providerChain.push('openrouter');
       } else if (activeProvider === 'groq') {
         const envGemini = this.sanitizeKey(process.env.GEMINI_API_KEY);
         const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(envGemini && envGemini !== 'MY_GEMINI_API_KEY');
         if (hasGemini) providerChain.push('gemini');
-        if (this.config.openrouter.apiKey) providerChain.push('openrouter');
+        const hasOpenRouter = (externalOpenRouterKeys && externalOpenRouterKeys.length > 0) || this.config.openrouter.keys.length > 0 || Boolean(this.config.openrouter.apiKey);
+        if (hasOpenRouter) providerChain.push('openrouter');
       } else if (activeProvider === 'openrouter') {
         const envGemini = this.sanitizeKey(process.env.GEMINI_API_KEY);
         const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(envGemini && envGemini !== 'MY_GEMINI_API_KEY');
         if (hasGemini) providerChain.push('gemini');
-        if (this.config.groq.apiKey) providerChain.push('groq');
+        const hasGroq = (externalGroqKeys && externalGroqKeys.length > 0) || this.config.groq.keys.length > 0 || Boolean(this.config.groq.apiKey);
+        if (hasGroq) providerChain.push('groq');
       }
     }
 
@@ -686,9 +764,9 @@ export class AIProvidersManager {
         if (currentProvider === 'gemini') {
           result = await this.executeGemini(options, externalGeminiKeys);
         } else if (currentProvider === 'groq') {
-          result = await this.executeGroq(options);
+          result = await this.executeGroq(options, externalGroqKeys);
         } else {
-          result = await this.executeOpenRouter(options);
+          result = await this.executeOpenRouter(options, externalOpenRouterKeys);
         }
 
         if (isFailover) {
@@ -745,37 +823,37 @@ export class AIProvidersManager {
         }
         res = await this.executeGemini({ parts: testParts, model: overrideModel }, validKeys);
       } else if (provider === 'groq') {
-        const key = this.sanitizeKey(overrideKey || this.config.groq.apiKey);
-        if (!key || key === 'MY_GROQ_API_KEY') {
+        const candidateKeys = (overrideKey && overrideKey.trim())
+          ? [overrideKey]
+          : (this.config.groq.keys.length > 0 ? this.config.groq.keys : [this.config.groq.apiKey]);
+        const validKeys = candidateKeys
+          .map(k => this.sanitizeKey(k))
+          .filter(k => k.length > 5 && k !== 'MY_GROQ_API_KEY');
+
+        if (validKeys.length === 0) {
           return {
             success: false,
-            message: "Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) nas configurações.",
+            message: "Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) ou carregue um arquivo .txt.",
             elapsedMs: 0
           };
         }
-        const prevKey = this.config.groq.apiKey;
-        this.config.groq.apiKey = key;
-        try {
-          res = await this.executeGroq({ parts: testParts, model: overrideModel });
-        } finally {
-          this.config.groq.apiKey = prevKey;
-        }
+        res = await this.executeGroq({ parts: testParts, model: overrideModel }, validKeys);
       } else {
-        const key = this.sanitizeKey(overrideKey || this.config.openrouter.apiKey);
-        if (!key || key === 'MY_OPENROUTER_API_KEY') {
+        const candidateKeys = (overrideKey && overrideKey.trim())
+          ? [overrideKey]
+          : (this.config.openrouter.keys.length > 0 ? this.config.openrouter.keys : [this.config.openrouter.apiKey]);
+        const validKeys = candidateKeys
+          .map(k => this.sanitizeKey(k))
+          .filter(k => k.length > 5 && k !== 'MY_OPENROUTER_API_KEY');
+
+        if (validKeys.length === 0) {
           return {
             success: false,
-            message: "Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) nas configurações.",
+            message: "Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) ou carregue um arquivo .txt.",
             elapsedMs: 0
           };
         }
-        const prevKey = this.config.openrouter.apiKey;
-        this.config.openrouter.apiKey = key;
-        try {
-          res = await this.executeOpenRouter({ parts: testParts, model: overrideModel });
-        } finally {
-          this.config.openrouter.apiKey = prevKey;
-        }
+        res = await this.executeOpenRouter({ parts: testParts, model: overrideModel }, validKeys);
       }
 
       const elapsed = Date.now() - t0;

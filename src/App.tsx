@@ -1329,6 +1329,8 @@ function MainApp() {
   });
   const [currentKeyIndex, setCurrentKeyIndex] = useState(0);
   const keysFileInputRef = useRef<HTMLInputElement>(null);
+  const groqFileInputRef = useRef<HTMLInputElement>(null);
+  const openrouterFileInputRef = useRef<HTMLInputElement>(null);
   const [isKeysExhaustedAlertOpen, setIsKeysExhaustedAlertOpen] = useState(false);
 
   // Central Multi-Provedores de I.A
@@ -1336,8 +1338,20 @@ function MainApp() {
   const [providerTab, setProviderTab] = useState<AIProviderId | 'general'>('gemini');
   const [groqApiKey, setGroqApiKey] = useState<string>(() => aiProvidersManager.getConfig().groq.apiKey);
   const [groqModel, setGroqModel] = useState<string>(() => aiProvidersManager.getConfig().groq.model);
+  const [groqApiKeys, setGroqApiKeys] = useState<string[]>(() => {
+    const saved = aiProvidersManager.getConfig().groq.keys;
+    if (Array.isArray(saved) && saved.length > 0) return saved;
+    const single = aiProvidersManager.getConfig().groq.apiKey;
+    return single ? [single] : [];
+  });
   const [openrouterApiKey, setOpenrouterApiKey] = useState<string>(() => aiProvidersManager.getConfig().openrouter.apiKey);
   const [openrouterModel, setOpenrouterModel] = useState<string>(() => aiProvidersManager.getConfig().openrouter.model);
+  const [openrouterApiKeys, setOpenrouterApiKeys] = useState<string[]>(() => {
+    const saved = aiProvidersManager.getConfig().openrouter.keys;
+    if (Array.isArray(saved) && saved.length > 0) return saved;
+    const single = aiProvidersManager.getConfig().openrouter.apiKey;
+    return single ? [single] : [];
+  });
   const [geminiModel, setGeminiModel] = useState<string>(() => aiProvidersManager.getConfig().gemini.model);
   const [enableFailover, setEnableFailover] = useState<boolean>(() => aiProvidersManager.getConfig().enableFailover);
   const [isTestingProvider, setIsTestingProvider] = useState<AIProviderId | null>(null);
@@ -2015,9 +2029,15 @@ function MainApp() {
              apiKeys.some(k => k && k !== 'MY_GEMINI_API_KEY') || 
              (Boolean(cfg.gemini.keys) && cfg.gemini.keys.some(k => k && k !== 'MY_GEMINI_API_KEY'));
     } else if (currentProvider === 'groq') {
-      return Boolean(groqApiKey && groqApiKey.trim().length > 0 && groqApiKey !== 'MY_GROQ_API_KEY');
+      const cleanInput = aiProvidersManager.sanitizeKey(groqApiKey);
+      return (Boolean(cleanInput) && cleanInput !== 'MY_GROQ_API_KEY') ||
+             groqApiKeys.some(k => k && k !== 'MY_GROQ_API_KEY') ||
+             (Boolean(cfg.groq.keys) && cfg.groq.keys.some(k => k && k !== 'MY_GROQ_API_KEY'));
     } else if (currentProvider === 'openrouter') {
-      return Boolean(openrouterApiKey && openrouterApiKey.trim().length > 0 && openrouterApiKey !== 'MY_OPENROUTER_API_KEY');
+      const cleanInput = aiProvidersManager.sanitizeKey(openrouterApiKey);
+      return (Boolean(cleanInput) && cleanInput !== 'MY_OPENROUTER_API_KEY') ||
+             openrouterApiKeys.some(k => k && k !== 'MY_OPENROUTER_API_KEY') ||
+             (Boolean(cfg.openrouter.keys) && cfg.openrouter.keys.some(k => k && k !== 'MY_OPENROUTER_API_KEY'));
     }
     return false;
   };
@@ -2025,11 +2045,11 @@ function MainApp() {
   const getMissingKeyMessage = (): string => {
     const prov = aiProvidersManager.getActiveProvider();
     if (prov === 'gemini') {
-      return "Nenhuma chave de API do Gemini configurada. Cole sua chave de API (AIzaSy...) nas configurações (ícone de engrenagem).";
+      return "Nenhuma chave de API do Gemini configurada. Cole sua chave de API (AIzaSy...) ou carregue um .txt nas configurações (ícone de engrenagem).";
     } else if (prov === 'groq') {
-      return "Nenhuma chave de API do Groq configurada (gsk_...). Adicione sua chave nas configurações (ícone de engrenagem).";
+      return "Nenhuma chave de API do Groq configurada (gsk_...). Cole sua chave ou carregue um .txt nas configurações (ícone de engrenagem).";
     } else {
-      return "Nenhuma chave de API do OpenRouter configurada (sk-or-v1-...). Adicione sua chave nas configurações (ícone de engrenagem).";
+      return "Nenhuma chave de API do OpenRouter configurada (sk-or-v1-...). Cole sua chave ou carregue um .txt nas configurações (ícone de engrenagem).";
     }
   };
 
@@ -2038,9 +2058,50 @@ function MainApp() {
     aiProvidersManager.setActiveProvider(prov);
   };
 
-  const handleSaveGroqKey = (key: string) => {
-    setGroqApiKey(key);
-    aiProvidersManager.setGroqKey(key);
+  const handleSaveGroqKey = (rawKey: string) => {
+    setGroqApiKey(rawKey);
+    const cleanKey = aiProvidersManager.sanitizeKey(rawKey);
+    if (cleanKey && cleanKey.length > 5 && cleanKey !== 'MY_GROQ_API_KEY') {
+      const otherKeys = groqApiKeys.filter(k => k !== cleanKey);
+      const newKeys = [cleanKey, ...otherKeys];
+      setGroqApiKeys(newKeys);
+      aiProvidersManager.setGroqKeys(newKeys);
+    } else if (!rawKey.trim()) {
+      if (groqApiKeys.length <= 1) {
+        setGroqApiKeys([]);
+        aiProvidersManager.setGroqKeys([]);
+      } else {
+        const remaining = groqApiKeys.slice(1);
+        setGroqApiKeys(remaining);
+        aiProvidersManager.setGroqKeys(remaining);
+      }
+    }
+  };
+
+  const handleGroqKeysUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const keys = text
+        .split('\n')
+        .map(line => aiProvidersManager.sanitizeKey(line))
+        .filter(line => line.length > 5 && line !== 'MY_GROQ_API_KEY');
+      setGroqApiKeys(keys);
+      if (keys.length > 0) {
+        setGroqApiKey(keys[0]);
+      }
+      aiProvidersManager.setGroqKeys(keys);
+      if (keys.length > 0) {
+        setValidationAlert({
+          title: "Chaves Groq Carregadas",
+          message: `${keys.length} chaves de API do Groq Cloud carregadas e salvas com sucesso!`
+        });
+      }
+    };
+    reader.readAsText(file);
+    if (groqFileInputRef.current) groqFileInputRef.current.value = '';
   };
 
   const handleSaveGroqModel = (model: string) => {
@@ -2048,9 +2109,50 @@ function MainApp() {
     aiProvidersManager.saveConfig({ groq: { ...aiProvidersManager.getConfig().groq, model } });
   };
 
-  const handleSaveOpenRouterKey = (key: string) => {
-    setOpenrouterApiKey(key);
-    aiProvidersManager.setOpenRouterKey(key);
+  const handleSaveOpenRouterKey = (rawKey: string) => {
+    setOpenrouterApiKey(rawKey);
+    const cleanKey = aiProvidersManager.sanitizeKey(rawKey);
+    if (cleanKey && cleanKey.length > 5 && cleanKey !== 'MY_OPENROUTER_API_KEY') {
+      const otherKeys = openrouterApiKeys.filter(k => k !== cleanKey);
+      const newKeys = [cleanKey, ...otherKeys];
+      setOpenrouterApiKeys(newKeys);
+      aiProvidersManager.setOpenRouterKeys(newKeys);
+    } else if (!rawKey.trim()) {
+      if (openrouterApiKeys.length <= 1) {
+        setOpenrouterApiKeys([]);
+        aiProvidersManager.setOpenRouterKeys([]);
+      } else {
+        const remaining = openrouterApiKeys.slice(1);
+        setOpenrouterApiKeys(remaining);
+        aiProvidersManager.setOpenRouterKeys(remaining);
+      }
+    }
+  };
+
+  const handleOpenRouterKeysUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const keys = text
+        .split('\n')
+        .map(line => aiProvidersManager.sanitizeKey(line))
+        .filter(line => line.length > 5 && line !== 'MY_OPENROUTER_API_KEY');
+      setOpenrouterApiKeys(keys);
+      if (keys.length > 0) {
+        setOpenrouterApiKey(keys[0]);
+      }
+      aiProvidersManager.setOpenRouterKeys(keys);
+      if (keys.length > 0) {
+        setValidationAlert({
+          title: "Chaves OpenRouter Carregadas",
+          message: `${keys.length} chaves de API do OpenRouter carregadas e salvas com sucesso!`
+        });
+      }
+    };
+    reader.readAsText(file);
+    if (openrouterFileInputRef.current) openrouterFileInputRef.current.value = '';
   };
 
   const handleSaveOpenRouterModel = (model: string) => {
@@ -2089,12 +2191,13 @@ function MainApp() {
         keyOverride = clean;
         modelOverride = geminiModel;
       } else if (provider === 'groq') {
-        const clean = aiProvidersManager.sanitizeKey(groqApiKey);
+        const candidate = groqApiKey.trim() || groqApiKeys[0];
+        const clean = aiProvidersManager.sanitizeKey(candidate);
         if (!clean || clean === 'MY_GROQ_API_KEY') {
           setTestFeedback({
             provider: 'groq',
             success: false,
-            message: 'Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) nas configurações.'
+            message: 'Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) ou carregue um arquivo .txt.'
           });
           setIsTestingProvider(null);
           return;
@@ -2102,12 +2205,13 @@ function MainApp() {
         keyOverride = clean;
         modelOverride = groqModel;
       } else if (provider === 'openrouter') {
-        const clean = aiProvidersManager.sanitizeKey(openrouterApiKey);
+        const candidate = openrouterApiKey.trim() || openrouterApiKeys[0];
+        const clean = aiProvidersManager.sanitizeKey(candidate);
         if (!clean || clean === 'MY_OPENROUTER_API_KEY') {
           setTestFeedback({
             provider: 'openrouter',
             success: false,
-            message: 'Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) nas configurações.'
+            message: 'Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) ou carregue um arquivo .txt.'
           });
           setIsTestingProvider(null);
           return;
@@ -2131,8 +2235,19 @@ function MainApp() {
     const keysToTry = rawKeys
       .map(k => aiProvidersManager.sanitizeKey(k))
       .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
+
+    const rawGroq = groqApiKeys.length > 0 ? [...groqApiKeys] : (groqApiKey ? [groqApiKey] : []);
+    const groqKeysToTry = rawGroq
+      .map(k => aiProvidersManager.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GROQ_API_KEY');
+
+    const rawOpenRouter = openrouterApiKeys.length > 0 ? [...openrouterApiKeys] : (openrouterApiKey ? [openrouterApiKey] : []);
+    const openrouterKeysToTry = rawOpenRouter
+      .map(k => aiProvidersManager.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_OPENROUTER_API_KEY');
+
     try {
-      const result = await aiProvidersManager.execute(options, keysToTry);
+      const result = await aiProvidersManager.execute(options, keysToTry, groqKeysToTry, openrouterKeysToTry);
       if (result.failoverUsed) {
         console.info(`[Failover] ${result.failoverReason}`);
       }
@@ -3194,6 +3309,20 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 type="file" 
                 ref={keysFileInputRef}
                 onChange={handleApiKeysUpload}
+                accept=".txt"
+                className="hidden" 
+              />
+              <input 
+                type="file" 
+                ref={groqFileInputRef}
+                onChange={handleGroqKeysUpload}
+                accept=".txt"
+                className="hidden" 
+              />
+              <input 
+                type="file" 
+                ref={openrouterFileInputRef}
+                onChange={handleOpenRouterKeysUpload}
                 accept=".txt"
                 className="hidden" 
               />
@@ -6026,67 +6155,112 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       )}
                     </div>
 
-                    {/* Input Chave de API Groq */}
-                    <div className="p-4 rounded-2xl border space-y-3"
+                    {/* Chaves Groq Cloud (Entrada Direta e Lote .txt) */}
+                    <div className="p-4 rounded-2xl border space-y-4"
                       style={{
                         backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
                         borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
                       }}
                     >
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-                          <Key className="w-4 h-4 text-orange-400" />
-                          Chave de API Groq Cloud (gsk_...)
-                        </label>
-                        {groqApiKey && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Chave Configurada
-                          </span>
-                        )}
-                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                            <Key className="w-4 h-4 text-orange-400" />
+                            Chave de API Groq Cloud (gsk_...)
+                          </label>
+                          {(groqApiKey || groqApiKeys.length > 0) && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                              {groqApiKeys.length > 1 ? `${groqApiKeys.length} Chaves Ativas (Rotação)` : 'Chave Configurada'}
+                            </span>
+                          )}
+                        </div>
 
-                      <div className="relative">
-                        <input
-                          type={showGroqKey ? 'text' : 'password'}
-                          placeholder="gsk_..."
-                          value={groqApiKey}
-                          onChange={(e) => handleSaveGroqKey(e.target.value)}
-                          className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 transition-colors"
-                        />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setShowGroqKey(!showGroqKey)}
-                            className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
-                            title={showGroqKey ? 'Ocultar' : 'Exibir'}
-                          >
-                            {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                          {groqApiKey && (
+                        <div className="relative">
+                          <input
+                            type={showGroqKey ? 'text' : 'password'}
+                            placeholder="gsk_..."
+                            value={groqApiKey}
+                            onChange={(e) => handleSaveGroqKey(e.target.value)}
+                            className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 transition-colors"
+                          />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => handleSaveGroqKey('')}
-                              className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
-                              title="Limpar chave"
+                              onClick={() => setShowGroqKey(!showGroqKey)}
+                              className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                              title={showGroqKey ? 'Ocultar' : 'Exibir'}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                             </button>
-                          )}
+                            {groqApiKey && (
+                              <button
+                                type="button"
+                                onClick={() => handleSaveGroqKey('')}
+                                className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                                title="Limpar chave"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-0.5">
+                          <span className="text-zinc-400">
+                            Salva com segurança no navegador. Cota 100% gratuita para modelos Vision.
+                          </span>
+                          <a 
+                            href="https://console.groq.com/keys" 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="text-orange-400 hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            Criar chave no Groq Console <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] pt-1">
-                        <span className="text-zinc-400">
-                          Salva com segurança no navegador. Cota 100% gratuita para modelos Vision.
-                        </span>
-                        <a 
-                          href="https://console.groq.com/keys" 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="text-orange-400 hover:underline flex items-center gap-1 font-semibold"
-                        >
-                          Criar chave no Groq Console <ExternalLink className="w-3 h-3" />
-                        </a>
+                      {/* Divisor Suave para Upload em Lote */}
+                      <div className="border-t border-zinc-800/80 pt-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                              <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
+                              Rotação Avançada em Lote (.txt)
+                            </h4>
+                            <p className="text-[11px] text-zinc-400">
+                              Opcional: carregue um arquivo .txt com várias chaves Groq para rotação automática anti-limite de cota (429).
+                            </p>
+                          </div>
+                          {groqApiKeys.length > 1 && (
+                            <span className="text-[10px] font-mono text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                              {groqApiKeys.length} em rotação
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => groqFileInputRef.current?.click()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl text-xs font-bold transition-all border border-zinc-700 hover:border-zinc-600"
+                          >
+                            <Upload className="w-4 h-4 text-orange-400" />
+                            {groqApiKeys.length > 1 ? 'Substituir Lote de Chaves Groq (.txt)' : 'Carregar Lote de Chaves Groq (.txt)'}
+                          </button>
+                          {groqApiKeys.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setGroqApiKey('');
+                                setGroqApiKeys([]);
+                                aiProvidersManager.setGroqKeys([]);
+                              }}
+                              className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
+                              title="Remover todas as chaves Groq"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -6134,7 +6308,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleTestConnection('groq')}
-                        disabled={isTestingProvider !== null || !groqApiKey}
+                        disabled={isTestingProvider !== null || (!groqApiKey && groqApiKeys.length === 0)}
                         className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
                       >
                         {isTestingProvider === 'groq' ? (
@@ -6205,67 +6379,112 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       )}
                     </div>
 
-                    {/* Input Chave de API OpenRouter */}
-                    <div className="p-4 rounded-2xl border space-y-3"
+                    {/* Chaves OpenRouter (Entrada Direta e Lote .txt) */}
+                    <div className="p-4 rounded-2xl border space-y-4"
                       style={{
                         backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
                         borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
                       }}
                     >
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-                          <Key className="w-4 h-4 text-purple-400" />
-                          Chave de API OpenRouter (sk-or-v1-...)
-                        </label>
-                        {openrouterApiKey && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                            Chave Configurada
-                          </span>
-                        )}
-                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                            <Key className="w-4 h-4 text-purple-400" />
+                            Chave de API OpenRouter (sk-or-v1-...)
+                          </label>
+                          {(openrouterApiKey || openrouterApiKeys.length > 0) && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                              {openrouterApiKeys.length > 1 ? `${openrouterApiKeys.length} Chaves Ativas (Rotação)` : 'Chave Configurada'}
+                            </span>
+                          )}
+                        </div>
 
-                      <div className="relative">
-                        <input
-                          type={showOpenRouterKey ? 'text' : 'password'}
-                          placeholder="sk-or-v1-..."
-                          value={openrouterApiKey}
-                          onChange={(e) => handleSaveOpenRouterKey(e.target.value)}
-                          className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors"
-                        />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setShowOpenRouterKey(!showOpenRouterKey)}
-                            className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
-                            title={showOpenRouterKey ? 'Ocultar' : 'Exibir'}
-                          >
-                            {showOpenRouterKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                          {openrouterApiKey && (
+                        <div className="relative">
+                          <input
+                            type={showOpenRouterKey ? 'text' : 'password'}
+                            placeholder="sk-or-v1-..."
+                            value={openrouterApiKey}
+                            onChange={(e) => handleSaveOpenRouterKey(e.target.value)}
+                            className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors"
+                          />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => handleSaveOpenRouterKey('')}
-                              className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
-                              title="Limpar chave"
+                              onClick={() => setShowOpenRouterKey(!showOpenRouterKey)}
+                              className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                              title={showOpenRouterKey ? 'Ocultar' : 'Exibir'}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {showOpenRouterKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                             </button>
-                          )}
+                            {openrouterApiKey && (
+                              <button
+                                type="button"
+                                onClick={() => handleSaveOpenRouterKey('')}
+                                className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                                title="Limpar chave"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-0.5">
+                          <span className="text-zinc-400">
+                            Todos os modelos com terminação <code className="text-purple-300">:free</code> não cobram créditos nem exigem cartão.
+                          </span>
+                          <a 
+                            href="https://openrouter.ai/settings/keys" 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="text-purple-400 hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            Gerar chave no OpenRouter <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] pt-1">
-                        <span className="text-zinc-400">
-                          Todos os modelos com tag <code className="text-purple-300">:free</code> não debitam saldo.
-                        </span>
-                        <a 
-                          href="https://openrouter.ai/settings/keys" 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="text-purple-400 hover:underline flex items-center gap-1 font-semibold"
-                        >
-                          Gerar chave no OpenRouter <ExternalLink className="w-3 h-3" />
-                        </a>
+                      {/* Divisor Suave para Upload em Lote */}
+                      <div className="border-t border-zinc-800/80 pt-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                              <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+                              Rotação Avançada em Lote (.txt)
+                            </h4>
+                            <p className="text-[11px] text-zinc-400">
+                              Opcional: carregue um arquivo .txt com várias chaves OpenRouter para rotação automática anti-limite de cota.
+                            </p>
+                          </div>
+                          {openrouterApiKeys.length > 1 && (
+                            <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                              {openrouterApiKeys.length} em rotação
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openrouterFileInputRef.current?.click()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl text-xs font-bold transition-all border border-zinc-700 hover:border-zinc-600"
+                          >
+                            <Upload className="w-4 h-4 text-purple-400" />
+                            {openrouterApiKeys.length > 1 ? 'Substituir Lote de Chaves OpenRouter (.txt)' : 'Carregar Lote de Chaves OpenRouter (.txt)'}
+                          </button>
+                          {openrouterApiKeys.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setOpenrouterApiKey('');
+                                setOpenrouterApiKeys([]);
+                                aiProvidersManager.setOpenRouterKeys([]);
+                              }}
+                              className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
+                              title="Remover todas as chaves OpenRouter"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -6313,7 +6532,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleTestConnection('openrouter')}
-                        disabled={isTestingProvider !== null || !openrouterApiKey}
+                        disabled={isTestingProvider !== null || (!openrouterApiKey && openrouterApiKeys.length === 0)}
                         className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
                       >
                         {isTestingProvider === 'openrouter' ? (
