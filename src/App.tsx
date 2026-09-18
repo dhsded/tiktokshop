@@ -63,16 +63,32 @@ import {
   ArrowRight,
   Archive,
   MessageSquareQuote,
-  Star
+  Star,
+  Zap,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  Cpu,
+  RefreshCw
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
+import { 
+  aiProvidersManager, 
+  AIProviderId, 
+  GEMINI_MODELS, 
+  GROQ_MODELS, 
+  OPENROUTER_MODELS, 
+  AIContentPart, 
+  UnifiedAIOptions,
+  UnifiedAIResult 
+} from './services/ai-providers';
 
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 interface VersionEntry {
   version: string;
@@ -82,6 +98,19 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.4.0',
+    date: '18/09/2026',
+    title: 'Central Multi-Provedores de I.A com Visão Computacional Gratuita',
+    changes: [
+      'Novo: Integração oficial com Groq Cloud LPU Vision (Llama 3.2 11B e 90B Vision Preview) 100% gratuito',
+      'Novo: Integração com OpenRouter Free Vision (Qwen 2.5 VL 72B, Meta Llama 3.2 Vision, Google Gemma 3)',
+      'Novo: Failover Automático Triplo (se o provedor ativo atingir a cota 429, comuta automaticamente)',
+      'Novo: Central de I.As dedicada com abas para cada provedor, cartões de seleção e teste em tempo real de visão computacional',
+      'Novo: Badge no cabeçalho indicando o provedor ativo e status do failover instantâneo',
+      'Novo: Rotação e persistência automática de chaves e configurações no armazenamento local seguro'
+    ],
+  },
   {
     version: '1.3.0',
     date: '17/09/2026',
@@ -1292,11 +1321,28 @@ function MainApp() {
   const [generatedScript, setGeneratedScript] = useState<ScriptResponse | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // API Keys
-  const [apiKeys, setApiKeys] = useState<string[]>([]);
+  // API Keys & Provedores de I.A
+  const [apiKeys, setApiKeys] = useState<string[]>(() => {
+    const saved = aiProvidersManager.getConfig().gemini.keys;
+    return Array.isArray(saved) && saved.length > 0 ? saved : [];
+  });
   const [currentKeyIndex, setCurrentKeyIndex] = useState(0);
   const keysFileInputRef = useRef<HTMLInputElement>(null);
   const [isKeysExhaustedAlertOpen, setIsKeysExhaustedAlertOpen] = useState(false);
+
+  // Central Multi-Provedores de I.A
+  const [activeAIProvider, setActiveAIProvider] = useState<AIProviderId>(() => aiProvidersManager.getActiveProvider());
+  const [providerTab, setProviderTab] = useState<AIProviderId | 'general'>('gemini');
+  const [groqApiKey, setGroqApiKey] = useState<string>(() => aiProvidersManager.getConfig().groq.apiKey);
+  const [groqModel, setGroqModel] = useState<string>(() => aiProvidersManager.getConfig().groq.model);
+  const [openrouterApiKey, setOpenrouterApiKey] = useState<string>(() => aiProvidersManager.getConfig().openrouter.apiKey);
+  const [openrouterModel, setOpenrouterModel] = useState<string>(() => aiProvidersManager.getConfig().openrouter.model);
+  const [geminiModel, setGeminiModel] = useState<string>(() => aiProvidersManager.getConfig().gemini.model);
+  const [enableFailover, setEnableFailover] = useState<boolean>(() => aiProvidersManager.getConfig().enableFailover);
+  const [isTestingProvider, setIsTestingProvider] = useState<AIProviderId | null>(null);
+  const [testFeedback, setTestFeedback] = useState<{ provider: AIProviderId; success: boolean; message: string } | null>(null);
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
 
   // Cropping State (ReactCrop Interativo)
   const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string, originalPreview?: string } | null>(null);
@@ -1921,16 +1967,118 @@ function MainApp() {
       const text = event.target?.result as string;
       const keys = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
       setApiKeys(keys);
+      aiProvidersManager.setGeminiKeys(keys);
       setCurrentKeyIndex(0);
       if(keys.length > 0) {
         setValidationAlert({
           title: "Chaves Carregadas",
-          message: `${keys.length} chaves de API carregadas com sucesso!`
+          message: `${keys.length} chaves de API carregadas e salvas com sucesso!`
         });
       }
     };
     reader.readAsText(file);
     if (keysFileInputRef.current) keysFileInputRef.current.value = '';
+  };
+
+  const checkHasValidKey = (): boolean => {
+    const currentProvider = aiProvidersManager.getActiveProvider();
+    const cfg = aiProvidersManager.getConfig();
+    if (currentProvider === 'gemini') {
+      return apiKeys.length > 0 || (cfg.gemini.keys && cfg.gemini.keys.length > 0) || Boolean(process.env.GEMINI_API_KEY);
+    } else if (currentProvider === 'groq') {
+      return Boolean(groqApiKey && groqApiKey.trim().length > 0);
+    } else if (currentProvider === 'openrouter') {
+      return Boolean(openrouterApiKey && openrouterApiKey.trim().length > 0);
+    }
+    return false;
+  };
+
+  const getMissingKeyMessage = (): string => {
+    const prov = aiProvidersManager.getActiveProvider();
+    if (prov === 'gemini') {
+      return "Nenhuma chave de API do Gemini configurada. Carregue seu arquivo .txt com chaves nas configurações (ícone de engrenagem).";
+    } else if (prov === 'groq') {
+      return "Nenhuma chave de API do Groq configurada (gsk_...). Adicione sua chave nas configurações (ícone de engrenagem).";
+    } else {
+      return "Nenhuma chave de API do OpenRouter configurada (sk-or-v1-...). Adicione sua chave nas configurações (ícone de engrenagem).";
+    }
+  };
+
+  const handleSelectActiveProvider = (prov: AIProviderId) => {
+    setActiveAIProvider(prov);
+    aiProvidersManager.setActiveProvider(prov);
+  };
+
+  const handleSaveGroqKey = (key: string) => {
+    setGroqApiKey(key);
+    aiProvidersManager.setGroqKey(key);
+  };
+
+  const handleSaveGroqModel = (model: string) => {
+    setGroqModel(model);
+    aiProvidersManager.saveConfig({ groq: { ...aiProvidersManager.getConfig().groq, model } });
+  };
+
+  const handleSaveOpenRouterKey = (key: string) => {
+    setOpenrouterApiKey(key);
+    aiProvidersManager.setOpenRouterKey(key);
+  };
+
+  const handleSaveOpenRouterModel = (model: string) => {
+    setOpenrouterModel(model);
+    aiProvidersManager.saveConfig({ openrouter: { ...aiProvidersManager.getConfig().openrouter, model } });
+  };
+
+  const handleSaveGeminiModel = (model: string) => {
+    setGeminiModel(model);
+    aiProvidersManager.saveConfig({ gemini: { ...aiProvidersManager.getConfig().gemini, model } });
+  };
+
+  const handleToggleFailover = (enabled: boolean) => {
+    setEnableFailover(enabled);
+    aiProvidersManager.saveConfig({ enableFailover: enabled });
+  };
+
+  const handleTestConnection = async (provider: AIProviderId) => {
+    setIsTestingProvider(provider);
+    setTestFeedback(null);
+    try {
+      let keyOverride: string | undefined;
+      let modelOverride: string | undefined;
+      if (provider === 'gemini') {
+        keyOverride = apiKeys[0];
+        modelOverride = geminiModel;
+      } else if (provider === 'groq') {
+        keyOverride = groqApiKey;
+        modelOverride = groqModel;
+      } else if (provider === 'openrouter') {
+        keyOverride = openrouterApiKey;
+        modelOverride = openrouterModel;
+      }
+      const res = await aiProvidersManager.testProviderConnection(provider, keyOverride, modelOverride);
+      setTestFeedback({ provider, success: res.success, message: res.message });
+    } catch (err: any) {
+      setTestFeedback({ provider, success: false, message: err?.message || String(err) });
+    } finally {
+      setIsTestingProvider(null);
+    }
+  };
+
+  const executeUnifiedAI = async (
+    options: UnifiedAIOptions
+  ): Promise<UnifiedAIResult> => {
+    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    try {
+      const result = await aiProvidersManager.execute(options, keysToTry);
+      if (result.failoverUsed) {
+        console.info(`[Failover] ${result.failoverReason}`);
+      }
+      return result;
+    } catch (error: any) {
+      setIsKeysExhaustedAlertOpen(true);
+      playAlertSound();
+      throw error;
+    }
   };
 
   const getGeminiKey = () => {
@@ -2078,22 +2226,16 @@ function MainApp() {
         name: img.name
       }));
 
-      const response = await executeGeminiCall(async (ai, model) => {
-        return await ai.models.generateContent({
-          model: model,
-          contents: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
+      const response = await executeUnifiedAI({
+        prompt: `Analise estas imagens para uma campanha de moda com o tema "${finalTheme}". 
 Nomes das imagens: ${JSON.stringify(imageListData)}.
 Retorne um array JSON indicando a sequência ideal baseada no nome/descrição das imagens para um fluxo narrativo fluido.
 Exemplo: [2, 0, 1].
 Retorne APENAS o array JSON.`,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: { type: Type.INTEGER }
-            }
-          }
-        });
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.INTEGER }
+        }
       });
 
       const newOrder = JSON.parse(response.text || '[]') as number[];
@@ -2201,11 +2343,10 @@ Retorne APENAS o array JSON.`,
   };
 
   const generateProductScript = async () => {
-    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
-    if (keysToTry.length === 0) {
+    if (!checkHasValidKey()) {
       setValidationAlert({
         title: "Chave de API Faltando",
-        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+        message: getMissingKeyMessage()
       });
       return;
     }
@@ -2347,40 +2488,31 @@ Retorne em estrutura JSON:
 }`
       });
 
-      const response = await executeGeminiCall(async (ai, model) => {
-        return await ai.models.generateContent({
-          model: model,
-          contents: {
-            role: "user",
-            parts: parts
-          },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                campaignTitle: { type: Type.STRING },
-                scenes: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      imageName: { type: Type.STRING },
-                      duration: { type: Type.STRING },
-                      imagePrompt: { type: Type.STRING },
-                      veoPrompt: { type: Type.STRING },
-                      digenPrompt: { type: Type.STRING },
-                      narration: { type: Type.STRING },
-                      description: { type: Type.STRING }
-                    },
-                    required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
-                  }
-                }
-              },
-              required: ["campaignTitle", "scenes"]
+      const response = await executeUnifiedAI({
+        parts: parts,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            campaignTitle: { type: Type.STRING },
+            scenes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  imageName: { type: Type.STRING },
+                  duration: { type: Type.STRING },
+                  imagePrompt: { type: Type.STRING },
+                  veoPrompt: { type: Type.STRING },
+                  digenPrompt: { type: Type.STRING },
+                  narration: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                },
+                required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+              }
             }
-          }
-        });
+          },
+          required: ["campaignTitle", "scenes"]
+        }
       });
 
       if (abortControllerRef.current?.signal.aborted) return;
@@ -2405,11 +2537,10 @@ Retorne em estrutura JSON:
   };
 
   const generateScript = async () => {
-    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
-    if (keysToTry.length === 0) {
+    if (!checkHasValidKey()) {
       setValidationAlert({
         title: "Chave de API Faltando",
-        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+        message: getMissingKeyMessage()
       });
       return;
     }
@@ -2470,15 +2601,11 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
         };
       }));
 
-      const response = await executeGeminiCall(async (ai, model) => {
-        return await ai.models.generateContent({
-          model: model,
-          contents: {
-            role: "user",
-            parts: [
-              ...imageParts,
-              {
-                text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
+      const response = await executeUnifiedAI({
+        parts: [
+          ...imageParts,
+          {
+            text: `Gere um roteiro de campanha profissional para loja de roupas baseado nestas imagens. 
 Tema: ${finalTheme}
 Duração de cada vídeo: ${duration}
 Observações específicas: ${observations || "Seguir estilo padrão de alta costura."}
@@ -2514,36 +2641,31 @@ Retorne em estrutura JSON:
     }
   ]
 }`
-              }
-            ]
-          },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                campaignTitle: { type: Type.STRING },
-                scenes: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      imageName: { type: Type.STRING },
-                      duration: { type: Type.STRING },
-                      imagePrompt: { type: Type.STRING },
-                      veoPrompt: { type: Type.STRING },
-                      digenPrompt: { type: Type.STRING },
-                      narration: { type: Type.STRING },
-                      description: { type: Type.STRING }
-                    },
-                    required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
-                  }
-                }
-              },
-              required: ["campaignTitle", "scenes"]
-            }
           }
-        });
+        ],
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            campaignTitle: { type: Type.STRING },
+            scenes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  imageName: { type: Type.STRING },
+                  duration: { type: Type.STRING },
+                  imagePrompt: { type: Type.STRING },
+                  veoPrompt: { type: Type.STRING },
+                  digenPrompt: { type: Type.STRING },
+                  narration: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                },
+                required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+              }
+            }
+          },
+          required: ["campaignTitle", "scenes"]
+        }
       });
 
       if (abortControllerRef.current?.signal.aborted) return;
@@ -2610,11 +2732,10 @@ Retorne em estrutura JSON:
   };
 
   const generateProductAngles = async () => {
-    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
-    if (keysToTry.length === 0) {
+    if (!checkHasValidKey()) {
       setValidationAlert({
         title: "Chave de API Faltando",
-        message: "Nenhuma chave de API do Gemini configurada. Por favor, carregue um arquivo .txt com suas chaves do Gemini para prosseguir."
+        message: getMissingKeyMessage()
       });
       return;
     }
@@ -2679,34 +2800,28 @@ Angulos a variar (escolha os mais relevantes para o produto):
 - Produto em contexto de uso (Lifestyle in-use shot)`
       };
 
-      const response = await executeGeminiCall(async (ai, model) => {
-        return await ai.models.generateContent({
-          model: model,
-          contents: { role: 'user', parts: [...productParts, textPart] },
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                angles: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      angleName: { type: Type.STRING },
-                      imagePrompt: { type: Type.STRING },
-                      veoPrompt: { type: Type.STRING },
-                      digenPrompt: { type: Type.STRING },
-                      narration: { type: Type.STRING },
-                    },
-                    required: ['angleName', 'imagePrompt', 'veoPrompt', 'digenPrompt', 'narration']
-                  }
-                }
-              },
-              required: ['angles']
+      const response = await executeUnifiedAI({
+        parts: [...productParts, textPart],
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            angles: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  angleName: { type: Type.STRING },
+                  imagePrompt: { type: Type.STRING },
+                  veoPrompt: { type: Type.STRING },
+                  digenPrompt: { type: Type.STRING },
+                  narration: { type: Type.STRING },
+                },
+                required: ['angleName', 'imagePrompt', 'veoPrompt', 'digenPrompt', 'narration']
+              }
             }
-          }
-        });
+          },
+          required: ['angles']
+        }
       });
 
       const parsed = JSON.parse(response.text || '{}') as { angles: GeneratedAngle[] };
@@ -2947,6 +3062,45 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   title="Alternar Tema Claro/Escuro"
                 >
                   {themeMode === 'dark' ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-blue-500" />}
+                </button>
+                {/* Badge do Provedor de I.A Ativo */}
+                <button
+                  onClick={() => {
+                    setProviderTab(activeAIProvider);
+                    setShowSettingsModal(true);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-all hover:opacity-90"
+                  style={{
+                    backgroundColor: activeAIProvider === 'gemini' 
+                      ? 'rgba(16, 185, 129, 0.12)' 
+                      : activeAIProvider === 'groq'
+                      ? 'rgba(249, 115, 22, 0.12)'
+                      : 'rgba(168, 85, 247, 0.12)',
+                    borderColor: activeAIProvider === 'gemini' 
+                      ? 'rgba(16, 185, 129, 0.3)' 
+                      : activeAIProvider === 'groq'
+                      ? 'rgba(249, 115, 22, 0.3)'
+                      : 'rgba(168, 85, 247, 0.3)',
+                    color: activeAIProvider === 'gemini' 
+                      ? '#34d399' 
+                      : activeAIProvider === 'groq'
+                      ? '#fb923c'
+                      : '#c084fc'
+                  }}
+                  title="Clique para alternar ou configurar Provedores de I.A"
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${activeAIProvider === 'gemini' ? 'bg-emerald-400' : activeAIProvider === 'groq' ? 'bg-orange-400' : 'bg-purple-400'}`}></span>
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${activeAIProvider === 'gemini' ? 'bg-emerald-500' : activeAIProvider === 'groq' ? 'bg-orange-500' : 'bg-purple-500'}`}></span>
+                  </span>
+                  <span className="font-bold">
+                    {activeAIProvider === 'gemini' ? 'Gemini 2.5' : activeAIProvider === 'groq' ? 'Groq Vision' : 'OpenRouter Free'}
+                  </span>
+                  {enableFailover && (
+                    <span className="text-[10px] px-1 py-0.2 rounded bg-black/20 font-mono tracking-tighter" title="Failover Automático Ativo">
+                      ⚡Auto
+                    </span>
+                  )}
                 </button>
                 <button 
                   onClick={() => setShowSettingsModal(true)}
@@ -5409,49 +5563,54 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </div>
         </div>
       )}
-      {/* Modal de Configurações (Engrenagem) */}
+      {/* Modal de Configurações & Central de Provedores de I.A */}
       <AnimatePresence>
         {showSettingsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-md rounded-2xl border shadow-2xl p-6 overflow-hidden"
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden"
               style={{
-                backgroundColor: themeMode === 'light' ? '#ffffff' : '#18181b',
+                backgroundColor: themeMode === 'light' ? '#ffffff' : '#141416',
                 borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a',
                 color: themeMode === 'light' ? '#0f172a' : '#ffffff'
               }}
             >
               {/* Cabeçalho do Modal */}
               <div 
-                className="flex items-center justify-between pb-4 mb-5 border-b"
+                className="flex items-center justify-between px-6 py-5 border-b"
                 style={{ borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' }}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3.5">
                   <div 
-                    className="p-2.5 rounded-xl border flex items-center justify-center"
+                    className="p-3 rounded-2xl border flex items-center justify-center"
                     style={{
                       backgroundColor: themeMode === 'light' ? 'rgba(249,115,22,0.1)' : 'rgba(249,115,22,0.15)',
                       borderColor: themeMode === 'light' ? 'rgba(249,115,22,0.2)' : 'rgba(249,115,22,0.3)',
                       color: '#ea580c'
                     }}
                   >
-                    <Settings className="w-5 h-5" />
+                    <Cpu className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 
-                      className="font-bold text-base font-display"
-                      style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
-                    >
-                      Configurações do Sistema
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 
+                        className="font-bold text-lg font-display"
+                        style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                      >
+                        Central de I.As & Provedores
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                        Visão Multimodal Free
+                      </span>
+                    </div>
                     <p 
                       className="text-xs"
                       style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
                     >
-                      Gerencie chaves API e opções do fluxo
+                      Configure modelos de visão computacional gratuitos (Gemini, Groq, OpenRouter) e failover automático.
                     </p>
                   </div>
                 </div>
@@ -5460,133 +5619,781 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   className="p-2 rounded-xl transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                   style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-4">
-                {/* Opção 1: Chaves API */}
-                <div 
-                  className="p-4 rounded-xl border space-y-3"
-                  style={{
-                    backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
-                    borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
-                  }}
+              {/* Barra de Sub-Abas do Modal */}
+              <div 
+                className="flex items-center gap-2 px-6 py-3 border-b overflow-x-auto"
+                style={{ 
+                  backgroundColor: themeMode === 'light' ? '#fafafa' : '#0d0d0f',
+                  borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' 
+                }}
+              >
+                <button
+                  onClick={() => { setProviderTab('gemini'); setTestFeedback(null); }}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    providerTab === 'gemini'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                  }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <Key className="w-4 h-4" style={{ color: '#ea580c' }} />
-                      <div>
-                        <h4 
-                          className="text-xs font-bold uppercase tracking-wider"
-                          style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  Google Gemini
+                  {activeAIProvider === 'gemini' && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-extrabold uppercase">Ativo</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setProviderTab('groq'); setTestFeedback(null); }}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    providerTab === 'groq'
+                      ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-orange-400" />
+                  Groq Cloud (LPU)
+                  {activeAIProvider === 'groq' && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 font-extrabold uppercase">Ativo</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setProviderTab('openrouter'); setTestFeedback(null); }}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    providerTab === 'openrouter'
+                      ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-purple-400" />
+                  OpenRouter Free
+                  {activeAIProvider === 'openrouter' && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-extrabold uppercase">Ativo</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setProviderTab('general'); setTestFeedback(null); }}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    providerTab === 'general'
+                      ? 'bg-zinc-500/20 text-zinc-200 border border-zinc-500/30 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                  }`}
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Geral & Failover
+                </button>
+              </div>
+
+              {/* Corpo com Scroll */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
+                {/* ABA 1: GEMINI */}
+                {providerTab === 'gemini' && (
+                  <div className="space-y-5">
+                    {/* Status & Ativação */}
+                    <div className="p-4 rounded-2xl border flex items-center justify-between"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#18181b',
+                        borderColor: activeAIProvider === 'gemini' ? '#10b981' : (themeMode === 'light' ? '#e4e4e7' : '#27272a')
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm">Google Gemini Flash</h4>
+                            {activeAIProvider === 'gemini' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Provedor Ativo
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-400">Provedor Inativo</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-0.5">
+                            Motor oficial do Google com alta precisão e visão multimodal de produtos e modelos.
+                          </p>
+                        </div>
+                      </div>
+                      {activeAIProvider !== 'gemini' && (
+                        <button
+                          onClick={() => handleSelectActiveProvider('gemini')}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
                         >
-                          Chaves de API Gemini
-                        </h4>
-                        <p 
-                          className="text-[11px]"
-                          style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
-                        >
-                          Carregar arquivo .txt com chaves
-                        </p>
+                          Tornar Ativo
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Seleção de Modelo Vision Gemini */}
+                    <div className="space-y-2.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+                        Modelo Gemini Selecionado (Visão Computacional)
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {GEMINI_MODELS.map((m) => {
+                          const isSelected = geminiModel === m.id;
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => handleSaveGeminiModel(m.id)}
+                              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-emerald-500/10 border-emerald-500/50 shadow-md ring-1 ring-emerald-500/30'
+                                  : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                                  {m.name}
+                                </span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300">
+                                  GRÁTIS
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-400 leading-snug">
+                                {m.desc}
+                              </p>
+                              <div className="mt-2 text-[10px] text-emerald-400/90 font-mono font-semibold">
+                                {m.tag}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    {apiKeys.length > 0 && (
-                      <span 
-                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+
+                    {/* Chaves Gemini (Upload de .txt e Contagem) */}
+                    <div className="p-4 rounded-2xl border space-y-3"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                        borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <Key className="w-4 h-4 text-emerald-400" />
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider">
+                              Chaves de API Gemini (.txt)
+                            </h4>
+                            <p className="text-[11px] text-zinc-400">
+                              Suporte a rotação de múltiplas chaves gratuitas do Google AI Studio.
+                            </p>
+                          </div>
+                        </div>
+                        {apiKeys.length > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            {apiKeys.length} {apiKeys.length === 1 ? 'Chave Ativa' : 'Chaves Ativas'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => keysFileInputRef.current?.click()}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10"
+                        >
+                          <Upload className="w-4 h-4" />
+                          {apiKeys.length > 0 ? 'Substituir Chaves (.txt)' : 'Carregar Chaves (.txt)'}
+                        </button>
+                        {apiKeys.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setApiKeys([]);
+                              aiProvidersManager.setGeminiKeys([]);
+                            }}
+                            className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
+                            title="Remover todas as chaves"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <a 
+                          href="https://aistudio.google.com/apikey" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
+                        >
+                          Criar chave gratuita no Google AI Studio <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Teste de Conexão Gemini */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleTestConnection('gemini')}
+                        disabled={isTestingProvider !== null}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
+                      >
+                        {isTestingProvider === 'gemini' ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                            Testando Conexão & Visão...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 text-emerald-400" />
+                            Testar Conexão e Análise Visual
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Feedback do Teste */}
+                    {testFeedback && testFeedback.provider === 'gemini' && (
+                      <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-start gap-2.5 ${
+                        testFeedback.success
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      }`}>
+                        {testFeedback.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-400" /> : <AlertCircle className="w-4 h-4 mt-0.5 text-red-400" />}
+                        <div className="flex-1">{testFeedback.message}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ABA 2: GROQ CLOUD */}
+                {providerTab === 'groq' && (
+                  <div className="space-y-5">
+                    {/* Status & Ativação */}
+                    <div className="p-4 rounded-2xl border flex items-center justify-between"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#18181b',
+                        borderColor: activeAIProvider === 'groq' ? '#f97316' : (themeMode === 'light' ? '#e4e4e7' : '#27272a')
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                          <Zap className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm">Groq Cloud (LPU Inference)</h4>
+                            {activeAIProvider === 'groq' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Provedor Ativo
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-400">Provedor Inativo</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-0.5">
+                            Velocidade ultrarrápida via processadores LPU da Groq com modelos Meta Llama 3.2 Vision.
+                          </p>
+                        </div>
+                      </div>
+                      {activeAIProvider !== 'groq' && (
+                        <button
+                          onClick={() => handleSelectActiveProvider('groq')}
+                          className="px-3.5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-500/20"
+                        >
+                          Tornar Ativo
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Input Chave de API Groq */}
+                    <div className="p-4 rounded-2xl border space-y-3"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                        borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                          <Key className="w-4 h-4 text-orange-400" />
+                          Chave de API Groq Cloud (gsk_...)
+                        </label>
+                        {groqApiKey && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Chave Configurada
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <input
+                          type={showGroqKey ? 'text' : 'password'}
+                          placeholder="gsk_..."
+                          value={groqApiKey}
+                          onChange={(e) => handleSaveGroqKey(e.target.value)}
+                          className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowGroqKey(!showGroqKey)}
+                            className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                            title={showGroqKey ? 'Ocultar' : 'Exibir'}
+                          >
+                            {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          {groqApiKey && (
+                            <button
+                              type="button"
+                              onClick={() => handleSaveGroqKey('')}
+                              className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                              title="Limpar chave"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="text-zinc-400">
+                          Salva com segurança no navegador. Cota 100% gratuita para modelos Vision.
+                        </span>
+                        <a 
+                          href="https://console.groq.com/keys" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-orange-400 hover:underline flex items-center gap-1 font-semibold"
+                        >
+                          Criar chave no Groq Console <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Seleção de Modelo Vision Groq */}
+                    <div className="space-y-2.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-orange-400" />
+                        Modelos de Visão Multimodal Groq (100% Gratuitos)
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {GROQ_MODELS.map((m) => {
+                          const isSelected = groqModel === m.id;
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => handleSaveGroqModel(m.id)}
+                              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-orange-500/10 border-orange-500/50 shadow-md ring-1 ring-orange-500/30'
+                                  : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-orange-400' : 'bg-zinc-600'}`} />
+                                  {m.name}
+                                </span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-orange-500/20 text-orange-300">
+                                  FREE LPU
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-400 leading-snug">
+                                {m.desc}
+                              </p>
+                              <div className="mt-2 text-[10px] text-orange-400/90 font-mono font-semibold">
+                                {m.tag}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Teste de Conexão Groq */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleTestConnection('groq')}
+                        disabled={isTestingProvider !== null || !groqApiKey}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
+                      >
+                        {isTestingProvider === 'groq' ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+                            Testando Conexão & Visão LPU...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 text-orange-400" />
+                            Testar Conexão e Análise Visual
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Feedback do Teste Groq */}
+                    {testFeedback && testFeedback.provider === 'groq' && (
+                      <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-start gap-2.5 ${
+                        testFeedback.success
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      }`}>
+                        {testFeedback.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-400" /> : <AlertCircle className="w-4 h-4 mt-0.5 text-red-400" />}
+                        <div className="flex-1">{testFeedback.message}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ABA 3: OPENROUTER FREE */}
+                {providerTab === 'openrouter' && (
+                  <div className="space-y-5">
+                    {/* Status & Ativação */}
+                    <div className="p-4 rounded-2xl border flex items-center justify-between"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#18181b',
+                        borderColor: activeAIProvider === 'openrouter' ? '#a855f7' : (themeMode === 'light' ? '#e4e4e7' : '#27272a')
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm">OpenRouter (Modelos de Visão Gratuitos)</h4>
+                            {activeAIProvider === 'openrouter' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Provedor Ativo
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-400">Provedor Inativo</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-0.5">
+                            Acesso a Qwen 2.5 VL 72B, Meta Llama 3.2 Vision e Google Gemma 3 sem custo de créditos.
+                          </p>
+                        </div>
+                      </div>
+                      {activeAIProvider !== 'openrouter' && (
+                        <button
+                          onClick={() => handleSelectActiveProvider('openrouter')}
+                          className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-purple-600/20"
+                        >
+                          Tornar Ativo
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Input Chave de API OpenRouter */}
+                    <div className="p-4 rounded-2xl border space-y-3"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                        borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                          <Key className="w-4 h-4 text-purple-400" />
+                          Chave de API OpenRouter (sk-or-v1-...)
+                        </label>
+                        {openrouterApiKey && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                            Chave Configurada
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <input
+                          type={showOpenRouterKey ? 'text' : 'password'}
+                          placeholder="sk-or-v1-..."
+                          value={openrouterApiKey}
+                          onChange={(e) => handleSaveOpenRouterKey(e.target.value)}
+                          className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowOpenRouterKey(!showOpenRouterKey)}
+                            className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                            title={showOpenRouterKey ? 'Ocultar' : 'Exibir'}
+                          >
+                            {showOpenRouterKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          {openrouterApiKey && (
+                            <button
+                              type="button"
+                              onClick={() => handleSaveOpenRouterKey('')}
+                              className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                              title="Limpar chave"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="text-zinc-400">
+                          Todos os modelos com tag <code className="text-purple-300">:free</code> não debitam saldo.
+                        </span>
+                        <a 
+                          href="https://openrouter.ai/settings/keys" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-purple-400 hover:underline flex items-center gap-1 font-semibold"
+                        >
+                          Gerar chave no OpenRouter <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Seleção de Modelos Gratuitos com Visão OpenRouter */}
+                    <div className="space-y-2.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-purple-400" />
+                        Modelos de Visão Gratuitos no OpenRouter (:free)
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {OPENROUTER_MODELS.map((m) => {
+                          const isSelected = openrouterModel === m.id;
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => handleSaveOpenRouterModel(m.id)}
+                              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-purple-500/10 border-purple-500/50 shadow-md ring-1 ring-purple-500/30'
+                                  : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-purple-400' : 'bg-zinc-600'}`} />
+                                  {m.name}
+                                </span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300">
+                                  FREE
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-400 leading-snug">
+                                {m.desc}
+                              </p>
+                              <div className="mt-2 text-[10px] text-purple-400/90 font-mono font-semibold">
+                                {m.tag}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Teste de Conexão OpenRouter */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleTestConnection('openrouter')}
+                        disabled={isTestingProvider !== null || !openrouterApiKey}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all border border-zinc-700 disabled:opacity-50"
+                      >
+                        {isTestingProvider === 'openrouter' ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                            Testando Conexão & Visão OpenRouter...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 text-purple-400" />
+                            Testar Conexão e Análise Visual
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Feedback do Teste OpenRouter */}
+                    {testFeedback && testFeedback.provider === 'openrouter' && (
+                      <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-start gap-2.5 ${
+                        testFeedback.success
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      }`}>
+                        {testFeedback.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-400" /> : <AlertCircle className="w-4 h-4 mt-0.5 text-red-400" />}
+                        <div className="flex-1">{testFeedback.message}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ABA 4: GERAL & FAILOVER */}
+                {providerTab === 'general' && (
+                  <div className="space-y-5">
+                    {/* Seletor Rápido de Provedor Ativo */}
+                    <div className="space-y-2.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-orange-400" />
+                        Provedor Principal para Geração de Prompts
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectActiveProvider('gemini')}
+                          className={`p-4 rounded-xl border text-left transition-all ${
+                            activeAIProvider === 'gemini'
+                              ? 'bg-emerald-500/15 border-emerald-500 ring-1 ring-emerald-500/40 text-white'
+                              : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <Sparkles className="w-5 h-5 text-emerald-400" />
+                            {activeAIProvider === 'gemini' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">Ativo</span>
+                            )}
+                          </div>
+                          <p className="font-bold text-xs text-white">Google Gemini</p>
+                          <p className="text-[11px] text-zinc-400 mt-1">2.5 Flash / 2.0 Flash</p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectActiveProvider('groq')}
+                          className={`p-4 rounded-xl border text-left transition-all ${
+                            activeAIProvider === 'groq'
+                              ? 'bg-orange-500/15 border-orange-500 ring-1 ring-orange-500/40 text-white'
+                              : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <Zap className="w-5 h-5 text-orange-400" />
+                            {activeAIProvider === 'groq' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold uppercase">Ativo</span>
+                            )}
+                          </div>
+                          <p className="font-bold text-xs text-white">Groq Cloud (LPU)</p>
+                          <p className="text-[11px] text-zinc-400 mt-1">Llama 3.2 Vision</p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectActiveProvider('openrouter')}
+                          className={`p-4 rounded-xl border text-left transition-all ${
+                            activeAIProvider === 'openrouter'
+                              ? 'bg-purple-500/15 border-purple-500 ring-1 ring-purple-500/40 text-white'
+                              : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <Globe className="w-5 h-5 text-purple-400" />
+                            {activeAIProvider === 'openrouter' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold uppercase">Ativo</span>
+                            )}
+                          </div>
+                          <p className="font-bold text-xs text-white">OpenRouter Free</p>
+                          <p className="text-[11px] text-zinc-400 mt-1">Qwen 2.5 VL / Gemma 3</p>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Failover Automático Triplo */}
+                    <div className="p-4 rounded-2xl border flex items-center justify-between gap-4"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                        borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20 mt-0.5">
+                          <ShieldCheck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wider">
+                              Failover Automático Triplo
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-orange-500/15 text-orange-400">
+                              RECOMENDADO
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed mt-1">
+                            Se a cota do provedor ativo atingir o limite (429 / Rate Limit), a requisição é transferida instantaneamente para os outros provedores gratuitos configurados (ex: Gemini ⇄ Groq ⇄ OpenRouter).
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleToggleFailover(!enableFailover)}
+                        className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
                         style={{
-                          backgroundColor: themeMode === 'light' ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.1)',
-                          borderColor: themeMode === 'light' ? 'rgba(22,163,74,0.2)' : 'rgba(74,222,128,0.3)',
-                          color: themeMode === 'light' ? '#16a34a' : '#4ade80'
+                          backgroundColor: enableFailover 
+                            ? '#ea580c' 
+                            : (themeMode === 'light' ? '#d4d4d8' : '#3f3f46')
                         }}
                       >
-                        {apiKeys.length} {apiKeys.length === 1 ? 'Chave' : 'Chaves'}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => keysFileInputRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-500/10"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      {apiKeys.length > 0 ? 'Substituir Chaves (.txt)' : 'Carregar Chaves (.txt)'}
-                    </button>
-                    {apiKeys.length > 0 && (
-                      <button
-                        onClick={() => setApiKeys([])}
-                        className="p-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
-                        title="Remover Chaves"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <span
+                          className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                          style={{
+                            transform: enableFailover ? 'translateX(20px)' : 'translateX(0)'
+                          }}
+                        />
                       </button>
-                    )}
-                  </div>
-                  {apiKeys.length > 0 && (
-                    <p 
-                      className="text-[10px] font-mono flex items-center gap-1"
-                      style={{ color: themeMode === 'light' ? '#16a34a' : '#4ade80' }}
-                    >
-                      <Check className="w-3.5 h-3.5" /> Chaves ativas prontas para rotação automática.
-                    </p>
-                  )}
-                </div>
+                    </div>
 
-                {/* Opção 2: Fluxo de Automação Ativo */}
-                <div 
-                  className="p-4 rounded-xl border flex items-center justify-between gap-4"
-                  style={{
-                    backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
-                    borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
-                  }}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <Activity className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#a855f7' }} />
-                    <div>
-                      <h4 
-                        className="text-xs font-bold uppercase tracking-wider"
-                        style={{ color: themeMode === 'light' ? '#0f172a' : '#ffffff' }}
+                    {/* Painel Fluxo de Automação Ativo (N8N) */}
+                    <div className="p-4 rounded-2xl border flex items-center justify-between gap-4"
+                      style={{
+                        backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
+                        borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-0.5">
+                          <Activity className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider">
+                            Fluxo de Automação Visual (N8N)
+                          </h4>
+                          <p className="text-[11px] text-zinc-400 leading-snug mt-1">
+                            Exibir o painel visual flutuante com o progresso do fluxo de automação.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => toggleAutomationFlow(!showAutomationFlow)}
+                        className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                        style={{
+                          backgroundColor: showAutomationFlow 
+                            ? '#a855f7' 
+                            : (themeMode === 'light' ? '#d4d4d8' : '#3f3f46')
+                        }}
                       >
-                        Fluxo de Automação Ativo
-                      </h4>
-                      <p 
-                        className="text-[11px] leading-snug"
-                        style={{ color: themeMode === 'light' ? '#71717a' : '#a1a1aa' }}
-                      >
-                        Exibir o painel visual flutuante com o progresso do fluxo.
-                      </p>
+                        <span
+                          className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                          style={{
+                            transform: showAutomationFlow ? 'translateX(20px)' : 'translateX(0)'
+                          }}
+                        />
+                      </button>
                     </div>
                   </div>
-
-                  {/* Toggle switch */}
-                  <button
-                    onClick={() => toggleAutomationFlow(!showAutomationFlow)}
-                    className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                    style={{
-                      backgroundColor: showAutomationFlow 
-                        ? '#a855f7' 
-                        : (themeMode === 'light' ? '#d4d4d8' : '#3f3f46')
-                    }}
-                  >
-                    <span
-                      className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      style={{
-                        transform: showAutomationFlow ? 'translateX(20px)' : 'translateX(0)'
-                      }}
-                    />
-                  </button>
-                </div>
+                )}
               </div>
 
               {/* Rodapé do Modal */}
               <div 
-                className="mt-6 pt-4 border-t flex justify-end"
-                style={{ borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' }}
+                className="px-6 py-4 border-t flex items-center justify-between"
+                style={{ 
+                  backgroundColor: themeMode === 'light' ? '#fafafa' : '#0d0d0f',
+                  borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a' 
+                }}
               >
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Configurações salvas automaticamente.</span>
+                </div>
                 <button
                   onClick={() => setShowSettingsModal(false)}
-                  className="px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-orange-500/20 text-white-force"
+                  className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-orange-500/20 text-white-force"
                 >
                   Concluído
                 </button>
