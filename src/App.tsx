@@ -248,6 +248,16 @@ function dataUrlToFile(dataUrl: string, filename: string): File {
 
 const TIKTOK_PDP_SCRAPER_SCRIPT = `
 (() => {
+  const currentUrl = window.location.href || '';
+  if (
+    currentUrl.includes('/login') ||
+    currentUrl.includes('/auth') ||
+    currentUrl.includes('/signup') ||
+    currentUrl.includes('/passport')
+  ) {
+    return { status: 'auth_page', title: '' };
+  }
+
   const isCaptcha = document.title.includes('Security Check') || !!document.getElementById('captcha_container');
   if (isCaptcha) {
     return { status: 'captcha', title: document.title };
@@ -332,6 +342,14 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       uniqueImages.push(url);
     }
   });
+
+  if (uniqueImages.length === 0) {
+    return {
+      status: 'no_product_images',
+      title: '',
+      images: []
+    };
+  }
 
   return {
     status: 'success',
@@ -769,26 +787,39 @@ function MainApp() {
   // Polling automático da extração do produto no Webview do TikTok Shop
   useEffect(() => {
     if (!isTikTokModalOpen || !activeTikTokUrl || extractedTikTokProduct) return;
+    if (!isExtractingTikTok) return;
+    if (activeTikTokUrl.includes('/login') || activeTikTokUrl.includes('/auth')) return;
 
     const interval = setInterval(async () => {
       const webview = tiktokWebviewRef.current;
       if (!webview) return;
 
       try {
+        let currentUrl = '';
+        try {
+          currentUrl = await webview.getURL();
+        } catch (e) {
+          currentUrl = activeTikTokUrl;
+        }
+
+        if (currentUrl.includes('/login') || currentUrl.includes('/auth') || currentUrl.includes('/passport')) {
+          return;
+        }
+
         const result = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
         if (result) {
           if (result.status === 'captcha') {
             setIsTikTokCaptchaDetected(true);
             setTiktokExtractionStatus('Verificação visual do TikTok detectada. Por favor, deslize o quebra-cabeça abaixo para continuar.');
-          } else if (result.status === 'success') {
-            if ((result.images && result.images.length > 0) || result.title) {
-              setIsTikTokCaptchaDetected(false);
-              setExtractedTikTokProduct(result);
-              setSelectedTikTokImages(result.images || []);
-              setIsExtractingTikTok(false);
-              setTiktokExtractionStatus(`✅ Extração concluída! ${result.images?.length || 0} fotos encontradas.`);
-              clearInterval(interval);
-            }
+          } else if (result.status === 'auth_page') {
+            setIsTikTokCaptchaDetected(false);
+          } else if (result.status === 'success' && result.images && result.images.length > 0) {
+            setIsTikTokCaptchaDetected(false);
+            setExtractedTikTokProduct(result);
+            setSelectedTikTokImages(result.images || []);
+            setIsExtractingTikTok(false);
+            setTiktokExtractionStatus(`✅ Extração concluída! ${result.images.length} fotos encontradas.`);
+            clearInterval(interval);
           }
         }
       } catch (err) {
@@ -797,7 +828,7 @@ function MainApp() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct]);
+  }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct, isExtractingTikTok]);
 
   // Shared
   const [observations, setObservations] = useState('');
@@ -3814,11 +3845,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           setTiktokExtractionStatus('Forçando leitura do DOM...');
                           try {
                             const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
-                            if (res && res.status === 'success' && ((res.images && res.images.length > 0) || res.title)) {
+                            if (res && res.status === 'success' && res.images && res.images.length > 0) {
                               setExtractedTikTokProduct(res);
-                              setSelectedTikTokImages(res.images || []);
+                              setSelectedTikTokImages(res.images);
                               setIsExtractingTikTok(false);
-                              setTiktokExtractionStatus(`✅ Extração concluída! ${res.images?.length || 0} fotos encontradas.`);
+                              setTiktokExtractionStatus(`✅ Extração concluída! ${res.images.length} fotos encontradas.`);
+                            } else if (res && res.status === 'auth_page') {
+                              setTiktokExtractionStatus('Página de login/autenticação detectada.');
+                            } else {
+                              setTiktokExtractionStatus('Nenhuma foto de produto encontrada ainda.');
                             }
                           } catch (e) {}
                         }
@@ -3828,7 +3863,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <Sparkles className="w-3 h-3 text-pink-300" /> Forçar Leitura
                     </button>
                   </div>
-                ) : extractedTikTokProduct ? (
+                ) : (extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0) ? (
                   <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-xs text-emerald-300 font-medium">
                       <Check className="w-4 h-4 text-emerald-400" />
@@ -3915,15 +3950,30 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     isWebviewExpanded ? 'flex-1 min-h-[580px]' : ''
                   }`}>
                     <webview
-                      ref={tiktokWebviewRef}
+                      ref={(el: any) => {
+                        tiktokWebviewRef.current = el;
+                        if (el && !el.dataset.listenerAttached) {
+                          el.dataset.listenerAttached = 'true';
+                          el.addEventListener('will-navigate', (e: any) => {
+                            if (e.url && !e.url.startsWith('http://') && !e.url.startsWith('https://')) {
+                              e.preventDefault();
+                            }
+                          });
+                          el.addEventListener('new-window', (e: any) => {
+                            if (e.url && !e.url.startsWith('http://') && !e.url.startsWith('https://')) {
+                              e.preventDefault();
+                            }
+                          });
+                        }
+                      }}
                       src={activeTikTokUrl}
                       partition="persist:tiktok_shop"
                       className={`w-full transition-all duration-300 ${
                         isWebviewExpanded 
-                          ? 'h-[65vh] min-h-[560px]' 
+                          ? 'h-[72vh] min-h-[580px]' 
                           : (isTikTokCaptchaDetected 
-                              ? 'h-[520px]' 
-                              : (extractedTikTokProduct ? 'h-60' : 'h-[500px]'))
+                              ? 'h-[540px]' 
+                              : (extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0 ? 'h-60' : 'h-[520px]'))
                       }`}
                       style={{ width: '100%' }}
                     />
@@ -3931,7 +3981,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 </div>
 
                 {/* Extracted Product Data */}
-                {extractedTikTokProduct && (
+                {extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0 && (
                   <div className="space-y-4">
                     {/* Info Card */}
                     <div 

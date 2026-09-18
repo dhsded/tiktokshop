@@ -52,7 +52,10 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    const rawUrl = details.url || '';
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      shell.openExternal(rawUrl);
+    }
     return { action: 'deny' };
   });
 
@@ -541,6 +544,50 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.tiktokshop.gerador');
+
+    // Interceptar e neutralizar chamadas de deep-link (bytedance://, tiktok://, snssdk://, intent://)
+    const tiktokSession = session.fromPartition('persist:tiktok_shop');
+    tiktokSession.webRequest.onBeforeRequest((details, callback) => {
+      const url = details.url.toLowerCase();
+      if (
+        url.startsWith('bytedance:') ||
+        url.startsWith('tiktok:') ||
+        url.startsWith('snssdk') ||
+        url.startsWith('intent:')
+      ) {
+        console.log('[Main] Bloqueado deep-link do TikTok:', details.url);
+        callback({ cancel: true });
+        return;
+      }
+      callback({ cancel: false });
+    });
+
+    // Proteger todas as webContents criadas (inclusive <webview> e janelas filhas)
+    app.on('web-contents-created', (_event, contents) => {
+      contents.setWindowOpenHandler((details) => {
+        const rawUrl = details.url || '';
+        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+          shell.openExternal(rawUrl);
+        } else {
+          console.log('[Main] Bloqueado window.open não-web:', rawUrl);
+        }
+        return { action: 'deny' };
+      });
+
+      contents.on('will-navigate', (event, navigationUrl) => {
+        if (!navigationUrl.startsWith('http://') && !navigationUrl.startsWith('https://')) {
+          event.preventDefault();
+          console.log('[Main] Bloqueada navegação will-navigate não-web:', navigationUrl);
+        }
+      });
+
+      contents.on('will-redirect', (event, navigationUrl) => {
+        if (!navigationUrl.startsWith('http://') && !navigationUrl.startsWith('https://')) {
+          event.preventDefault();
+          console.log('[Main] Bloqueado redirecionamento will-redirect não-web:', navigationUrl);
+        }
+      });
+    });
 
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window);
