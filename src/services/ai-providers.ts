@@ -277,6 +277,17 @@ export class AIProvidersManager {
   }
 
   /**
+   * Sanitiza e limpa chaves de API
+   */
+  public sanitizeKey(key?: string): string {
+    if (!key) return '';
+    let k = key.trim();
+    k = k.replace(/^["']|["']$/g, '').trim();
+    k = k.replace(/^(?:GEMINI_API_KEY|GROQ_API_KEY|OPENROUTER_API_KEY|API_KEY)\s*=\s*/i, '').trim();
+    return k;
+  }
+
+  /**
    * Chamada direta ao Google Gemini com rotação de chaves e cadeia de modelos
    */
   public async executeGemini(
@@ -284,12 +295,16 @@ export class AIProvidersManager {
     externalKeys?: string[]
   ): Promise<UnifiedAIResult> {
     const t0 = Date.now();
-    const keysToTry = (externalKeys && externalKeys.length > 0)
+    const rawKeys = (externalKeys && externalKeys.length > 0)
       ? externalKeys
       : (this.config.gemini.keys.length > 0 ? this.config.gemini.keys : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []));
 
+    const keysToTry = rawKeys
+      .map(k => this.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
+
     if (keysToTry.length === 0) {
-      throw new Error("Nenhuma chave Gemini configurada. Adicione sua chave de API nas configurações.");
+      throw new Error("Nenhuma chave Gemini válida configurada. Insira sua chave de API (AIzaSy...) nas configurações.");
     }
 
     const preferredModel = options.model || this.config.gemini.model || 'gemini-2.5-flash';
@@ -644,11 +659,13 @@ export class AIProvidersManager {
         if (this.config.groq.apiKey) providerChain.push('groq');
         if (this.config.openrouter.apiKey) providerChain.push('openrouter');
       } else if (activeProvider === 'groq') {
-        const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(process.env.GEMINI_API_KEY);
+        const envGemini = this.sanitizeKey(process.env.GEMINI_API_KEY);
+        const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(envGemini && envGemini !== 'MY_GEMINI_API_KEY');
         if (hasGemini) providerChain.push('gemini');
         if (this.config.openrouter.apiKey) providerChain.push('openrouter');
       } else if (activeProvider === 'openrouter') {
-        const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(process.env.GEMINI_API_KEY);
+        const envGemini = this.sanitizeKey(process.env.GEMINI_API_KEY);
+        const hasGemini = (externalGeminiKeys && externalGeminiKeys.length > 0) || this.config.gemini.keys.length > 0 || Boolean(envGemini && envGemini !== 'MY_GEMINI_API_KEY');
         if (hasGemini) providerChain.push('gemini');
         if (this.config.groq.apiKey) providerChain.push('groq');
       }
@@ -712,19 +729,48 @@ export class AIProvidersManager {
 
       let res: UnifiedAIResult;
       if (provider === 'gemini') {
-        const keys = overrideKey ? [overrideKey] : undefined;
-        res = await this.executeGemini({ parts: testParts, model: overrideModel }, keys);
+        const candidateKeys = (overrideKey && overrideKey.trim())
+          ? [overrideKey]
+          : this.config.gemini.keys;
+        const validKeys = candidateKeys
+          .map(k => this.sanitizeKey(k))
+          .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
+
+        if (validKeys.length === 0) {
+          return {
+            success: false,
+            message: "Nenhuma chave Gemini válida informada. Insira sua chave de API (AIzaSy...) ou carregue um arquivo .txt.",
+            elapsedMs: 0
+          };
+        }
+        res = await this.executeGemini({ parts: testParts, model: overrideModel }, validKeys);
       } else if (provider === 'groq') {
+        const key = this.sanitizeKey(overrideKey || this.config.groq.apiKey);
+        if (!key || key === 'MY_GROQ_API_KEY') {
+          return {
+            success: false,
+            message: "Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) nas configurações.",
+            elapsedMs: 0
+          };
+        }
         const prevKey = this.config.groq.apiKey;
-        if (overrideKey) this.config.groq.apiKey = overrideKey;
+        this.config.groq.apiKey = key;
         try {
           res = await this.executeGroq({ parts: testParts, model: overrideModel });
         } finally {
           this.config.groq.apiKey = prevKey;
         }
       } else {
+        const key = this.sanitizeKey(overrideKey || this.config.openrouter.apiKey);
+        if (!key || key === 'MY_OPENROUTER_API_KEY') {
+          return {
+            success: false,
+            message: "Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) nas configurações.",
+            elapsedMs: 0
+          };
+        }
         const prevKey = this.config.openrouter.apiKey;
-        if (overrideKey) this.config.openrouter.apiKey = overrideKey;
+        this.config.openrouter.apiKey = key;
         try {
           res = await this.executeOpenRouter({ parts: testParts, model: overrideModel });
         } finally {
@@ -742,11 +788,51 @@ export class AIProvidersManager {
       const elapsed = Date.now() - t0;
       return {
         success: false,
-        message: `Falha na conexão: ${err?.message || err}`,
+        message: formatAIError(err, provider),
         elapsedMs: elapsed
       };
     }
   }
+}
+
+export function formatAIError(err: any, provider: AIProviderId): string {
+  if (!err) return "Erro desconhecido";
+  const rawMsg = err?.message || String(err);
+  
+  try {
+    if (rawMsg.includes('{') && rawMsg.includes('}')) {
+      const start = rawMsg.indexOf('{');
+      const end = rawMsg.lastIndexOf('}');
+      const jsonMatch = rawMsg.substring(start, end + 1);
+      const parsed = JSON.parse(jsonMatch);
+      const innerErr = parsed?.error || parsed;
+      const code = innerErr?.code || innerErr?.status;
+      const msg = innerErr?.message || innerErr?.details?.[0]?.message;
+      
+      if (msg && (msg.toLowerCase().includes('api key not valid') || msg.toLowerCase().includes('api_key_invalid'))) {
+        return `Chave de API do ${provider.toUpperCase()} inválida ou expirada (API_KEY_INVALID). Verifique se copiou a chave correta (AIzaSy... sem aspas ou espaços) ou gere uma nova chave gratuita em https://aistudio.google.com/apikey`;
+      }
+      if (code === 400 && msg) {
+        return `Requisição inválida (${code}): ${msg}`;
+      }
+      if (code === 429) {
+        return `Limite de requisições excedido (${code}) no ${provider.toUpperCase()}. Cota esgotada temporariamente. Experimente alternar para Groq/OpenRouter ou aguarde a renovação da cota.`;
+      }
+      if (msg) {
+        return `${msg}`;
+      }
+    }
+  } catch {}
+
+  const lower = rawMsg.toLowerCase();
+  if (lower.includes('api key not valid') || lower.includes('api_key_invalid') || lower.includes('invalid api key')) {
+    return `Chave de API do ${provider.toUpperCase()} inválida ou expirada. Verifique se copiou a chave correta ou gere uma nova chave gratuita.`;
+  }
+  if (lower.includes('429') || lower.includes('quota') || lower.includes('resource_exhausted')) {
+    return `Limite de cota gratuito atingido no ${provider.toUpperCase()} (429 - Cota esgotada). Experimente usar Groq ou OpenRouter no topo.`;
+  }
+
+  return rawMsg;
 }
 
 export const aiProvidersManager = new AIProvidersManager();

@@ -82,7 +82,8 @@ import {
   OPENROUTER_MODELS, 
   AIContentPart, 
   UnifiedAIOptions,
-  UnifiedAIResult 
+  UnifiedAIResult,
+  formatAIError 
 } from './services/ai-providers';
 
 // ============================================================
@@ -1343,6 +1344,11 @@ function MainApp() {
   const [testFeedback, setTestFeedback] = useState<{ provider: AIProviderId; success: boolean; message: string } | null>(null);
   const [showGroqKey, setShowGroqKey] = useState(false);
   const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() => {
+    const saved = aiProvidersManager.getConfig().gemini.keys;
+    return (Array.isArray(saved) && saved.length > 0) ? saved[0] : '';
+  });
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Cropping State (ReactCrop Interativo)
   const [imageToCrop, setImageToCrop] = useState<{ id: string, type: 'collection' | 'model' | 'product', preview: string, originalPreview?: string } | null>(null);
@@ -1965,8 +1971,14 @@ function MainApp() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const keys = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      const keys = text
+        .split('\n')
+        .map(line => aiProvidersManager.sanitizeKey(line))
+        .filter(line => line.length > 5 && line !== 'MY_GEMINI_API_KEY');
       setApiKeys(keys);
+      if (keys.length > 0) {
+        setGeminiApiKeyInput(keys[0]);
+      }
       aiProvidersManager.setGeminiKeys(keys);
       setCurrentKeyIndex(0);
       if(keys.length > 0) {
@@ -1980,15 +1992,32 @@ function MainApp() {
     if (keysFileInputRef.current) keysFileInputRef.current.value = '';
   };
 
+  const handleSaveGeminiSingleKey = (rawKey: string) => {
+    setGeminiApiKeyInput(rawKey);
+    const cleanKey = aiProvidersManager.sanitizeKey(rawKey);
+    if (cleanKey && cleanKey.length > 5 && cleanKey !== 'MY_GEMINI_API_KEY') {
+      const otherKeys = apiKeys.filter(k => k !== cleanKey);
+      const newKeys = [cleanKey, ...otherKeys];
+      setApiKeys(newKeys);
+      aiProvidersManager.setGeminiKeys(newKeys);
+    } else if (!rawKey.trim()) {
+      setApiKeys([]);
+      aiProvidersManager.setGeminiKeys([]);
+    }
+  };
+
   const checkHasValidKey = (): boolean => {
     const currentProvider = aiProvidersManager.getActiveProvider();
     const cfg = aiProvidersManager.getConfig();
     if (currentProvider === 'gemini') {
-      return apiKeys.length > 0 || (cfg.gemini.keys && cfg.gemini.keys.length > 0) || Boolean(process.env.GEMINI_API_KEY);
+      const cleanInput = aiProvidersManager.sanitizeKey(geminiApiKeyInput);
+      return (Boolean(cleanInput) && cleanInput !== 'MY_GEMINI_API_KEY') || 
+             apiKeys.some(k => k && k !== 'MY_GEMINI_API_KEY') || 
+             (Boolean(cfg.gemini.keys) && cfg.gemini.keys.some(k => k && k !== 'MY_GEMINI_API_KEY'));
     } else if (currentProvider === 'groq') {
-      return Boolean(groqApiKey && groqApiKey.trim().length > 0);
+      return Boolean(groqApiKey && groqApiKey.trim().length > 0 && groqApiKey !== 'MY_GROQ_API_KEY');
     } else if (currentProvider === 'openrouter') {
-      return Boolean(openrouterApiKey && openrouterApiKey.trim().length > 0);
+      return Boolean(openrouterApiKey && openrouterApiKey.trim().length > 0 && openrouterApiKey !== 'MY_OPENROUTER_API_KEY');
     }
     return false;
   };
@@ -1996,7 +2025,7 @@ function MainApp() {
   const getMissingKeyMessage = (): string => {
     const prov = aiProvidersManager.getActiveProvider();
     if (prov === 'gemini') {
-      return "Nenhuma chave de API do Gemini configurada. Carregue seu arquivo .txt com chaves nas configurações (ícone de engrenagem).";
+      return "Nenhuma chave de API do Gemini configurada. Cole sua chave de API (AIzaSy...) nas configurações (ícone de engrenagem).";
     } else if (prov === 'groq') {
       return "Nenhuma chave de API do Groq configurada (gsk_...). Adicione sua chave nas configurações (ícone de engrenagem).";
     } else {
@@ -2046,19 +2075,50 @@ function MainApp() {
       let keyOverride: string | undefined;
       let modelOverride: string | undefined;
       if (provider === 'gemini') {
-        keyOverride = apiKeys[0];
+        const candidate = geminiApiKeyInput.trim() || apiKeys[0];
+        const clean = aiProvidersManager.sanitizeKey(candidate);
+        if (!clean || clean === 'MY_GEMINI_API_KEY') {
+          setTestFeedback({
+            provider: 'gemini',
+            success: false,
+            message: 'Nenhuma chave Gemini informada. Por favor, cole sua chave de API (AIzaSy...) ou carregue um arquivo .txt.'
+          });
+          setIsTestingProvider(null);
+          return;
+        }
+        keyOverride = clean;
         modelOverride = geminiModel;
       } else if (provider === 'groq') {
-        keyOverride = groqApiKey;
+        const clean = aiProvidersManager.sanitizeKey(groqApiKey);
+        if (!clean || clean === 'MY_GROQ_API_KEY') {
+          setTestFeedback({
+            provider: 'groq',
+            success: false,
+            message: 'Nenhuma chave Groq Cloud informada. Cole sua chave de API (gsk_...) nas configurações.'
+          });
+          setIsTestingProvider(null);
+          return;
+        }
+        keyOverride = clean;
         modelOverride = groqModel;
       } else if (provider === 'openrouter') {
-        keyOverride = openrouterApiKey;
+        const clean = aiProvidersManager.sanitizeKey(openrouterApiKey);
+        if (!clean || clean === 'MY_OPENROUTER_API_KEY') {
+          setTestFeedback({
+            provider: 'openrouter',
+            success: false,
+            message: 'Nenhuma chave OpenRouter informada. Cole sua chave de API (sk-or-v1-...) nas configurações.'
+          });
+          setIsTestingProvider(null);
+          return;
+        }
+        keyOverride = clean;
         modelOverride = openrouterModel;
       }
       const res = await aiProvidersManager.testProviderConnection(provider, keyOverride, modelOverride);
       setTestFeedback({ provider, success: res.success, message: res.message });
     } catch (err: any) {
-      setTestFeedback({ provider, success: false, message: err?.message || String(err) });
+      setTestFeedback({ provider, success: false, message: formatAIError(err, provider) });
     } finally {
       setIsTestingProvider(null);
     }
@@ -2067,7 +2127,10 @@ function MainApp() {
   const executeUnifiedAI = async (
     options: UnifiedAIOptions
   ): Promise<UnifiedAIResult> => {
-    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    const rawKeys = apiKeys.length > 0 ? [...apiKeys] : (geminiApiKeyInput ? [geminiApiKeyInput] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []));
+    const keysToTry = rawKeys
+      .map(k => aiProvidersManager.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
     try {
       const result = await aiProvidersManager.execute(options, keysToTry);
       if (result.failoverUsed) {
@@ -2082,12 +2145,16 @@ function MainApp() {
   };
 
   const getGeminiKey = () => {
-    if (apiKeys.length > 0) {
-      const key = apiKeys[currentKeyIndex % apiKeys.length];
+    const validKeys = (apiKeys.length > 0 ? apiKeys : (geminiApiKeyInput ? [geminiApiKeyInput] : []))
+      .map(k => aiProvidersManager.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
+    if (validKeys.length > 0) {
+      const key = validKeys[currentKeyIndex % validKeys.length];
       setCurrentKeyIndex(prev => prev + 1);
       return key;
     }
-    return process.env.GEMINI_API_KEY;
+    const envKey = aiProvidersManager.sanitizeKey(process.env.GEMINI_API_KEY);
+    return (envKey && envKey !== 'MY_GEMINI_API_KEY') ? envKey : '';
   };
 
   // Modelo primário + fallbacks (todos suportados na API v1beta oficial do Google)
@@ -2129,10 +2196,13 @@ function MainApp() {
 
   const executeGeminiCall = async <T,>(apiCall: (ai: GoogleGenAI, model: string) => Promise<T>): Promise<T> => {
     // Captura as chaves no momento da chamada (evita problema de React state assíncrono)
-    const keysToTry = apiKeys.length > 0 ? [...apiKeys] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []);
+    const rawKeys = apiKeys.length > 0 ? [...apiKeys] : (geminiApiKeyInput ? [geminiApiKeyInput] : (process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY] : []));
+    const keysToTry = rawKeys
+      .map(k => aiProvidersManager.sanitizeKey(k))
+      .filter(k => k.length > 5 && k !== 'MY_GEMINI_API_KEY');
     
     if (keysToTry.length === 0) {
-      throw new Error("Nenhuma chave de API do Gemini configurada. Carregue um arquivo .txt com suas chaves.");
+      throw new Error("Nenhuma chave de API do Gemini configurada. Cole sua chave de API (AIzaSy...) nas configurações.");
     }
 
     let lastError: any = null;
@@ -5771,63 +5841,113 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </div>
                     </div>
 
-                    {/* Chaves Gemini (Upload de .txt e Contagem) */}
-                    <div className="p-4 rounded-2xl border space-y-3"
+                    {/* Chaves Gemini (Entrada Direta e Lote .txt) */}
+                    <div className="p-4 rounded-2xl border space-y-4"
                       style={{
                         backgroundColor: themeMode === 'light' ? '#f4f4f5' : '#09090b',
                         borderColor: themeMode === 'light' ? '#e4e4e7' : '#27272a'
                       }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <Key className="w-4 h-4 text-emerald-400" />
-                          <div>
-                            <h4 className="text-xs font-bold uppercase tracking-wider">
-                              Chaves de API Gemini (.txt)
-                            </h4>
-                            <p className="text-[11px] text-zinc-400">
-                              Suporte a rotação de múltiplas chaves gratuitas do Google AI Studio.
-                            </p>
+                      {/* Entrada Direta de Chave Única */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                            <Key className="w-4 h-4 text-emerald-400" />
+                            Chave de API Google Gemini (AIzaSy...)
+                          </label>
+                          {(geminiApiKeyInput || apiKeys.length > 0) && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              {apiKeys.length > 1 ? `${apiKeys.length} Chaves Ativas (Rotação)` : 'Chave Configurada'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <input
+                            type={showGeminiKey ? 'text' : 'password'}
+                            placeholder="Cole sua chave AIzaSy..."
+                            value={geminiApiKeyInput}
+                            onChange={(e) => handleSaveGeminiSingleKey(e.target.value)}
+                            className="w-full px-4 py-2.5 pr-20 bg-zinc-900 border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                          />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowGeminiKey(!showGeminiKey)}
+                              className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                              title={showGeminiKey ? 'Ocultar' : 'Exibir'}
+                            >
+                              {showGeminiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                            {geminiApiKeyInput && (
+                              <button
+                                type="button"
+                                onClick={() => handleSaveGeminiSingleKey('')}
+                                className="p-1.5 text-red-400 hover:text-red-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                                title="Limpar chave"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
-                        {apiKeys.length > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                            {apiKeys.length} {apiKeys.length === 1 ? 'Chave Ativa' : 'Chaves Ativas'}
+
+                        <div className="flex items-center justify-between text-[11px] pt-0.5">
+                          <span className="text-zinc-400">
+                            Cota gratuita oficial para Gemini Flash e visão multimodal.
                           </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          onClick={() => keysFileInputRef.current?.click()}
-                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10"
-                        >
-                          <Upload className="w-4 h-4" />
-                          {apiKeys.length > 0 ? 'Substituir Chaves (.txt)' : 'Carregar Chaves (.txt)'}
-                        </button>
-                        {apiKeys.length > 0 && (
-                          <button
-                            onClick={() => {
-                              setApiKeys([]);
-                              aiProvidersManager.setGeminiKeys([]);
-                            }}
-                            className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
-                            title="Remover todas as chaves"
+                          <a 
+                            href="https://aistudio.google.com/apikey" 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                            Criar chave gratuita no Google AI Studio <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-1">
-                        <a 
-                          href="https://aistudio.google.com/apikey" 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
-                        >
-                          Criar chave gratuita no Google AI Studio <ExternalLink className="w-3 h-3" />
-                        </a>
+                      {/* Divisor Suave */}
+                      <div className="border-t border-zinc-800/80 pt-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                              Rotação Avançada em Lote (.txt)
+                            </h4>
+                            <p className="text-[11px] text-zinc-400">
+                              Opcional: carregue um arquivo .txt com várias chaves para rotação automática anti-limite de cota.
+                            </p>
+                          </div>
+                          {apiKeys.length > 1 && (
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              {apiKeys.length} em rotação
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => keysFileInputRef.current?.click()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl text-xs font-bold transition-all border border-zinc-700 hover:border-zinc-600"
+                          >
+                            <Upload className="w-4 h-4 text-emerald-400" />
+                            {apiKeys.length > 1 ? 'Substituir Lote de Chaves (.txt)' : 'Carregar Lote de Chaves (.txt)'}
+                          </button>
+                          {apiKeys.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setGeminiApiKeyInput('');
+                                setApiKeys([]);
+                                aiProvidersManager.setGeminiKeys([]);
+                              }}
+                              className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl transition-all"
+                              title="Remover todas as chaves"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
 
