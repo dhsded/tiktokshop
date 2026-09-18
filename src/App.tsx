@@ -60,10 +60,12 @@ import {
   Minimize2,
   LogIn,
   ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  Archive
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
+import JSZip from 'jszip';
 
 // ============================================================
 // Versão e Histórico
@@ -306,40 +308,63 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   const rawImages = [];
   const allImgs = Array.from(document.querySelectorAll('img'));
   allImgs.forEach(img => {
-    const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-    if (!src) return;
+    // Obter melhor URL direto do elemento
+    let originalSrc = '';
+    if (img.srcset) {
+      const candidates = img.srcset.split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean);
+      if (candidates.length > 0) {
+        originalSrc = candidates[candidates.length - 1];
+      }
+    }
+    if (!originalSrc) {
+      originalSrc = img.currentSrc || img.getAttribute('data-src') || img.src || '';
+    }
+    if (!originalSrc) return;
     
     // Validar se é do CDN de mídia do TikTok
-    const isTikTokCdn = src.includes('ibyteimg.com') || src.includes('tiktokcdn.com') || src.includes('tos-');
+    const isTikTokCdn = originalSrc.includes('ibyteimg.com') || originalSrc.includes('tiktokcdn.com') || originalSrc.includes('tos-');
     if (!isTikTokCdn) return;
 
     // Descartar ícones, avatares e SVGs pequenos
-    if (src.includes('svg') || src.includes('icon') || src.includes('avatar') || src.includes('logo')) return;
+    if (originalSrc.includes('svg') || originalSrc.includes('icon') || originalSrc.includes('avatar') || originalSrc.includes('logo')) return;
     
     const w = img.naturalWidth || img.width || 0;
     const h = img.naturalHeight || img.height || 0;
     if (w > 0 && w < 80 && h > 0 && h < 80) return;
 
-    // Converter para URL em alta resolução original
-    let highResUrl = src;
-    if (highResUrl.includes('~tplv-')) {
-      highResUrl = highResUrl.replace(/~tplv-[a-z0-9]+-[^.]+\\./i, '~tplv-aphluv4xwc-origin-jpeg.');
+    // Gerar versão de alta resolução mantendo a integridade da chave do bucket
+    let highResUrl = originalSrc;
+    const tplvMatch = originalSrc.match(/~tplv-([a-z0-9_-]+)-/i);
+    if (tplvMatch) {
+      const bucketKey = tplvMatch[1];
+      // Se for template de resize, expandir dimensões mantendo o mesmo bucket original
+      if (originalSrc.includes('resize-')) {
+        highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-resize-[^:]+:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
+      }
     }
-    highResUrl = highResUrl.split('?')[0];
 
-    if (!rawImages.includes(highResUrl)) {
-      rawImages.push(highResUrl);
+    // Limpar query string desnecessária (exceto se tiver assinatura x-tos)
+    if (highResUrl.includes('?') && !highResUrl.includes('x-tos-') && !highResUrl.includes('signature=')) {
+      highResUrl = highResUrl.split('?')[0];
     }
+    if (originalSrc.includes('?') && !originalSrc.includes('x-tos-') && !originalSrc.includes('signature=')) {
+      originalSrc = originalSrc.split('?')[0];
+    }
+
+    rawImages.push({
+      highResUrl,
+      fallbackUrl: originalSrc
+    });
   });
 
   // Deduplicar URLs por hash do caminho
   const uniqueImages = [];
   const seenHashes = new Set();
-  rawImages.forEach(url => {
-    const pathPart = url.split('/').pop()?.split('~')[0] || url;
+  rawImages.forEach(item => {
+    const pathPart = item.fallbackUrl.split('/').pop()?.split('~')[0] || item.fallbackUrl;
     if (!seenHashes.has(pathPart)) {
       seenHashes.add(pathPart);
-      uniqueImages.push(url);
+      uniqueImages.push(item);
     }
   });
 
@@ -356,7 +381,11 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     title,
     price,
     description: descParts.slice(0, 15).join('\\n'),
-    images: uniqueImages
+    images: uniqueImages.map((img, i) => ({
+      id: 'img_' + i,
+      url: img.highResUrl,
+      fallbackUrl: img.fallbackUrl
+    }))
   };
 })()
 `;
@@ -668,16 +697,24 @@ function MainApp() {
   const [activeTikTokUrl, setActiveTikTokUrl] = useState('');
   const [isExtractingTikTok, setIsExtractingTikTok] = useState(false);
   const [isTikTokCaptchaDetected, setIsTikTokCaptchaDetected] = useState(false);
+  interface TikTokExtractedImage {
+    id: string;
+    url: string;
+    fallbackUrl: string;
+  }
+
   const [tiktokExtractionStatus, setTiktokExtractionStatus] = useState('');
   const [extractedTikTokProduct, setExtractedTikTokProduct] = useState<{
     title: string;
     price: string;
     description: string;
-    images: string[];
+    images: TikTokExtractedImage[];
   } | null>(null);
-  const [selectedTikTokImages, setSelectedTikTokImages] = useState<string[]>([]);
+  const [selectedTikTokImageIds, setSelectedTikTokImageIds] = useState<string[]>([]);
   const [isImportingTikTokImages, setIsImportingTikTokImages] = useState(false);
   const [tiktokImportProgress, setTiktokImportProgress] = useState<string | null>(null);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [zipDownloadProgress, setZipDownloadProgress] = useState<string | null>(null);
   const [isWebviewExpanded, setIsWebviewExpanded] = useState(false);
   const tiktokWebviewRef = useRef<any>(null);
 
@@ -689,7 +726,7 @@ function MainApp() {
     }
     setActiveTikTokUrl(cleanUrl);
     setExtractedTikTokProduct(null);
-    setSelectedTikTokImages([]);
+    setSelectedTikTokImageIds([]);
     setIsTikTokCaptchaDetected(false);
     setIsExtractingTikTok(true);
     setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
@@ -700,7 +737,7 @@ function MainApp() {
     const loginUrl = 'https://www.tiktok.com/login';
     setActiveTikTokUrl(loginUrl);
     setExtractedTikTokProduct(null);
-    setSelectedTikTokImages([]);
+    setSelectedTikTokImageIds([]);
     setIsTikTokCaptchaDetected(false);
     setIsExtractingTikTok(false);
     setIsWebviewExpanded(true);
@@ -715,47 +752,69 @@ function MainApp() {
   };
 
   const handleApplyTikTokProduct = async () => {
-    if (!extractedTikTokProduct || selectedTikTokImages.length === 0) return;
+    if (!extractedTikTokProduct) return;
+    const selectedImages = extractedTikTokProduct.images.filter(img => selectedTikTokImageIds.includes(img.id));
+    if (selectedImages.length === 0) return;
+
     setIsImportingTikTokImages(true);
-    setTiktokImportProgress(`Baixando 0/${selectedTikTokImages.length} imagens...`);
+    setTiktokImportProgress(`Baixando 0/${selectedImages.length} imagens...`);
 
     const newSceneImages: SceneImage[] = [];
 
-    for (let i = 0; i < selectedTikTokImages.length; i++) {
-      const imgUrl = selectedTikTokImages[i];
-      setTiktokImportProgress(`Baixando foto ${i + 1}/${selectedTikTokImages.length}...`);
+    for (let i = 0; i < selectedImages.length; i++) {
+      const item = selectedImages[i];
+      setTiktokImportProgress(`Baixando foto ${i + 1}/${selectedImages.length}...`);
       
       try {
         let dataUrl = '';
         if (window.electronAPI?.fetchImageAsBase64) {
-          const res = await window.electronAPI.fetchImageAsBase64(imgUrl);
+          const res = await window.electronAPI.fetchImageAsBase64(item.url);
           if (res && res.success && res.dataUrl) {
             dataUrl = res.dataUrl;
+          } else if (item.fallbackUrl) {
+            const resFallback = await window.electronAPI.fetchImageAsBase64(item.fallbackUrl);
+            if (resFallback && resFallback.success && resFallback.dataUrl) {
+              dataUrl = resFallback.dataUrl;
+            }
           }
         }
         
         if (!dataUrl) {
-          const resp = await fetch(imgUrl);
-          const blob = await resp.blob();
-          dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
+          try {
+            const resp = await fetch(item.url);
+            const blob = await resp.blob();
+            dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            if (item.fallbackUrl) {
+              const resp2 = await fetch(item.fallbackUrl);
+              const blob2 = await resp2.blob();
+              dataUrl = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob2);
+              });
+            }
+          }
         }
 
-        const cleanFileName = `tiktok_${i + 1}_${Date.now()}.jpg`;
-        const file = dataUrlToFile(dataUrl, cleanFileName);
-        const sceneImg: SceneImage = {
-          id: Math.random().toString(36).substring(2, 9),
-          file,
-          preview: dataUrl,
-          originalPreview: dataUrl,
-          name: cleanFileName
-        };
-        newSceneImages.push(sceneImg);
+        if (dataUrl) {
+          const cleanFileName = `tiktok_${i + 1}_${Date.now()}.jpg`;
+          const file = dataUrlToFile(dataUrl, cleanFileName);
+          const sceneImg: SceneImage = {
+            id: Math.random().toString(36).substring(2, 9),
+            file,
+            preview: dataUrl,
+            originalPreview: dataUrl,
+            name: cleanFileName
+          };
+          newSceneImages.push(sceneImg);
+        }
       } catch (err) {
-        console.error(`Falha ao baixar imagem ${imgUrl}:`, err);
+        console.error(`Falha ao baixar imagem ${item.url}:`, err);
       }
     }
 
@@ -782,6 +841,101 @@ function MainApp() {
       title: "Produto Importado com Sucesso!",
       message: `${newSceneImages.length} fotos em alta resolução e as informações do produto foram adicionadas ao seu projeto.`
     });
+  };
+
+  const handleDownloadZip = async () => {
+    if (!extractedTikTokProduct) return;
+    const selectedImages = extractedTikTokProduct.images.filter(img => selectedTikTokImageIds.includes(img.id));
+    if (selectedImages.length === 0) return;
+
+    setIsDownloadingZip(true);
+    setZipDownloadProgress(`Preparando download de ${selectedImages.length} fotos...`);
+
+    try {
+      const zip = new JSZip();
+      const rawTitle = extractedTikTokProduct.title || 'produto_tiktok';
+      const cleanTitle = rawTitle
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .replace(/\s+/g, '_')
+        .trim()
+        .substring(0, 60) || 'produto_tiktok';
+
+      for (let i = 0; i < selectedImages.length; i++) {
+        const item = selectedImages[i];
+        setZipDownloadProgress(`Baixando foto ${i + 1}/${selectedImages.length}...`);
+
+        let dataUrl = '';
+        if (window.electronAPI?.fetchImageAsBase64) {
+          const res = await window.electronAPI.fetchImageAsBase64(item.url);
+          if (res && res.success && res.dataUrl) {
+            dataUrl = res.dataUrl;
+          } else if (item.fallbackUrl) {
+            const resFallback = await window.electronAPI.fetchImageAsBase64(item.fallbackUrl);
+            if (resFallback && resFallback.success && resFallback.dataUrl) {
+              dataUrl = resFallback.dataUrl;
+            }
+          }
+        }
+
+        if (!dataUrl) {
+          try {
+            const resp = await fetch(item.url);
+            const blob = await resp.blob();
+            dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            if (item.fallbackUrl) {
+              const resp2 = await fetch(item.fallbackUrl);
+              const blob2 = await resp2.blob();
+              dataUrl = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob2);
+              });
+            }
+          }
+        }
+
+        if (dataUrl && dataUrl.includes(',')) {
+          const base64Data = dataUrl.split(',')[1];
+          const mime = dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+          const ext = mime.includes('png') ? 'png' : (mime.includes('webp') ? 'webp' : 'jpg');
+          const num = String(i + 1).padStart(2, '0');
+          const fileName = `${cleanTitle}_foto_${num}.${ext}`;
+          zip.file(fileName, base64Data, { base64: true });
+        }
+      }
+
+      setZipDownloadProgress('Compactando arquivo .ZIP...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipFileName = `${cleanTitle}_fotos.zip`;
+
+      const downloadUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = zipFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+
+      setValidationAlert({
+        title: "Download Concluído com Sucesso!",
+        message: `O arquivo ZIP "${zipFileName}" com ${selectedImages.length} fotos em alta resolução foi baixado na sua pasta de Downloads.`
+      });
+    } catch (err: any) {
+      console.error('Erro ao gerar arquivo ZIP:', err);
+      setValidationAlert({
+        title: "Erro no Download",
+        message: `Não foi possível gerar o arquivo ZIP: ${err?.message || err}`
+      });
+    } finally {
+      setIsDownloadingZip(false);
+      setZipDownloadProgress(null);
+    }
   };
 
   // Polling automático da extração do produto no Webview do TikTok Shop
@@ -816,7 +970,7 @@ function MainApp() {
           } else if (result.status === 'success' && result.images && result.images.length > 0) {
             setIsTikTokCaptchaDetected(false);
             setExtractedTikTokProduct(result);
-            setSelectedTikTokImages(result.images || []);
+            setSelectedTikTokImageIds(result.images.map((img: any) => img.id));
             setIsExtractingTikTok(false);
             setTiktokExtractionStatus(`✅ Extração concluída! ${result.images.length} fotos encontradas.`);
             clearInterval(interval);
@@ -3871,14 +4025,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setSelectedTikTokImages(extractedTikTokProduct.images)}
-                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                        onClick={() => setSelectedTikTokImageIds(extractedTikTokProduct.images.map(img => img.id))}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all cursor-pointer"
                       >
                         Marcar Todas ({extractedTikTokProduct.images.length})
                       </button>
                       <button
-                        onClick={() => setSelectedTikTokImages([])}
-                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all"
+                        onClick={() => setSelectedTikTokImageIds([])}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
                       >
                         Desmarcar
                       </button>
@@ -4019,10 +4173,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold uppercase tracking-wider opacity-70 flex items-center gap-2">
                           <ImageIcon className="w-4 h-4 text-pink-400" />
-                          Fotos do Produto em Alta Resolução ({selectedTikTokImages.length} de {extractedTikTokProduct.images.length} selecionadas)
+                          Fotos do Produto ({selectedTikTokImageIds.length} de {extractedTikTokProduct.images.length} selecionadas)
                         </span>
                         <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                          Resolução Original (Full HD / 4K)
+                          Resolução Original Garantida
                         </span>
                       </div>
 
@@ -4032,17 +4186,17 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 max-h-72 overflow-y-auto p-1">
-                          {extractedTikTokProduct.images.map((imgUrl, idx) => {
-                            const isSelected = selectedTikTokImages.includes(imgUrl);
+                          {extractedTikTokProduct.images.map((imgItem, idx) => {
+                            const isSelected = selectedTikTokImageIds.includes(imgItem.id);
                             return (
                               <div
-                                key={idx}
+                                key={imgItem.id}
                                 onClick={() => {
-                                  if (isSelected) {
-                                    setSelectedTikTokImages(prev => prev.filter(u => u !== imgUrl));
-                                  } else {
-                                    setSelectedTikTokImages(prev => [...prev, imgUrl]);
-                                  }
+                                  setSelectedTikTokImageIds(prev =>
+                                    prev.includes(imgItem.id)
+                                      ? prev.filter(id => id !== imgItem.id)
+                                      : [...prev, imgItem.id]
+                                  );
                                 }}
                                 className={`group relative aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 ${
                                   isSelected 
@@ -4051,8 +4205,17 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 }`}
                               >
                                 <img 
-                                  src={imgUrl} 
+                                  src={imgItem.url} 
                                   alt={`Foto ${idx + 1}`} 
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.dataset.triedFallback) {
+                                      target.dataset.triedFallback = '1';
+                                      if (imgItem.fallbackUrl && imgItem.fallbackUrl !== target.src) {
+                                        target.src = imgItem.fallbackUrl;
+                                      }
+                                    }
+                                  }}
                                   className="w-full h-full object-cover select-none"
                                   loading="lazy"
                                 />
@@ -4084,9 +4247,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
-                      if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
+                      if (!isImportingTikTokImages && !isDownloadingZip) setIsTikTokModalOpen(false);
                     }}
-                    disabled={isImportingTikTokImages}
+                    disabled={isImportingTikTokImages || isDownloadingZip}
                     className="px-5 py-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-xs font-semibold transition-all disabled:opacity-50 cursor-pointer"
                   >
                     Cancelar
@@ -4097,27 +4260,57 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {tiktokImportProgress}
                     </span>
                   )}
+                  {isDownloadingZip && zipDownloadProgress && (
+                    <span className="text-xs text-purple-300 font-mono animate-pulse flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                      {zipDownloadProgress}
+                    </span>
+                  )}
                 </div>
 
-                <button
-                  onClick={handleApplyTikTokProduct}
-                  disabled={!extractedTikTokProduct || selectedTikTokImages.length === 0 || isImportingTikTokImages}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs shadow-lg shadow-pink-600/25 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  {isImportingTikTokImages ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Baixando Fotos...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      <span>
-                        Importar {selectedTikTokImages.length > 0 ? `${selectedTikTokImages.length} Fotos` : 'Fotos'} & Informações
-                      </span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2.5">
+                  {/* Botão Baixar ZIP */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadZip}
+                    disabled={!extractedTikTokProduct || selectedTikTokImageIds.length === 0 || isDownloadingZip || isImportingTikTokImages}
+                    className="px-5 py-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 hover:text-white disabled:opacity-40 disabled:pointer-events-none font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                    title="Baixar todas as fotos selecionadas em um arquivo .ZIP com o nome do produto"
+                  >
+                    {isDownloadingZip ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                        <span>Baixando ZIP...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="w-4 h-4 text-purple-300" />
+                        <span>Baixar ZIP ({selectedTikTokImageIds.length} Fotos)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Botão Importar para o Projeto */}
+                  <button
+                    onClick={handleApplyTikTokProduct}
+                    disabled={!extractedTikTokProduct || selectedTikTokImageIds.length === 0 || isImportingTikTokImages || isDownloadingZip}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs shadow-lg shadow-pink-600/25 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    {isImportingTikTokImages ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Baixando Fotos...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        <span>
+                          Importar {selectedTikTokImageIds.length > 0 ? `${selectedTikTokImageIds.length} Fotos` : 'Fotos'} & Informações
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
