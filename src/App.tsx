@@ -306,46 +306,47 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     });
   }
 
-  // 4. Imagens de Alta Resolução do Produto
+  // 4. Imagens de Alta Resolução do Produto (Apenas Galeria Oficial do Produto)
   const rawImages = [];
-  const allImgs = Array.from(document.querySelectorAll('img'));
-  allImgs.forEach(img => {
-    // Obter melhor URL direto do elemento
-    let originalSrc = '';
-    if (img.srcset) {
-      const candidates = img.srcset.split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean);
-      if (candidates.length > 0) {
-        originalSrc = candidates[candidates.length - 1];
-      }
-    }
-    if (!originalSrc) {
-      originalSrc = img.currentSrc || img.getAttribute('data-src') || img.src || '';
-    }
-    if (!originalSrc) return;
+  const addImageCandidate = (originalSrc) => {
+    if (!originalSrc || typeof originalSrc !== 'string') return;
     
     // Validar se é do CDN de mídia do TikTok
     const isTikTokCdn = originalSrc.includes('ibyteimg.com') || originalSrc.includes('tiktokcdn.com') || originalSrc.includes('tos-');
     if (!isTikTokCdn) return;
 
-    // Descartar ícones, avatares e SVGs pequenos
-    if (originalSrc.includes('svg') || originalSrc.includes('icon') || originalSrc.includes('avatar') || originalSrc.includes('logo')) return;
-    
-    const w = img.naturalWidth || img.width || 0;
-    const h = img.naturalHeight || img.height || 0;
-    if (w > 0 && w < 80 && h > 0 && h < 80) return;
+    // Descartar estritamente fotos de perfil, avatares, logotipos da loja, ícones e badges
+    const isNonProductMedia = 
+      originalSrc.includes('-avt-') || 
+      originalSrc.includes('avatar') || 
+      originalSrc.includes('profile') || 
+      originalSrc.includes('seller') || 
+      originalSrc.includes('shop_logo') || 
+      originalSrc.includes('shop-logo') || 
+      originalSrc.includes('shop_icon') || 
+      originalSrc.includes('user_avatar') || 
+      originalSrc.includes('c5_100x100') || 
+      originalSrc.includes('c5_50x50') || 
+      originalSrc.includes('c5_72x72') || 
+      originalSrc.includes('c5_150x150') || 
+      originalSrc.includes('logo') || 
+      originalSrc.includes('icon') || 
+      originalSrc.includes('badge') || 
+      originalSrc.includes('favicon') || 
+      originalSrc.includes('.svg');
+
+    if (isNonProductMedia) return;
 
     // Gerar versão de alta resolução mantendo a integridade da chave do bucket
     let highResUrl = originalSrc;
     const tplvMatch = originalSrc.match(/~tplv-([a-z0-9_-]+)-/i);
     if (tplvMatch) {
       const bucketKey = tplvMatch[1];
-      // Se for template de resize, expandir dimensões mantendo o mesmo bucket original
       if (originalSrc.includes('resize-')) {
         highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-resize-[^:]+:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
       }
     }
 
-    // Limpar query string desnecessária (exceto se tiver assinatura x-tos)
     if (highResUrl.includes('?') && !highResUrl.includes('x-tos-') && !highResUrl.includes('signature=')) {
       highResUrl = highResUrl.split('?')[0];
     }
@@ -357,6 +358,72 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       highResUrl,
       fallbackUrl: originalSrc
     });
+  };
+
+  // 4.1 Prioridade 1: Extrair imagens do JSON de hidratação oficial do produto
+  try {
+    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+    const scanObjForProductImages = (obj, depth) => {
+      if (!obj || depth > 8 || typeof obj !== 'object') return;
+      try {
+        for (const k of Object.keys(obj)) {
+          const lk = k.toLowerCase();
+          const val = obj[k];
+          if ((lk === 'main_images' || lk === 'mainimages' || lk === 'image_list' || lk === 'product_images') && Array.isArray(val)) {
+            val.forEach(item => {
+              const url = typeof item === 'string' ? item : (item.url_list?.[0] || item.url || item.src || '');
+              if (url) addImageCandidate(url);
+            });
+          }
+          scanObjForProductImages(val, depth + 1);
+        }
+      } catch (e) {}
+    };
+
+    jsonScripts.forEach(s => {
+      try {
+        const txt = s.textContent || '';
+        if (txt.includes('main_images') || txt.includes('image_list')) {
+          scanObjForProductImages(JSON.parse(txt), 0);
+        }
+      } catch (e) {}
+    });
+
+    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
+      scanObjForProductImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+    }
+  } catch (e) {}
+
+  // 4.2 Prioridade 2: Extrair imagens do DOM focando estritamente na galeria/carrossel do produto
+  const galleryContainers = Array.from(document.querySelectorAll('[class*="gallery"], [class*="carousel"], [class*="slider"], [class*="swiper"], [class*="pdp-image"], [class*="product-image"], [class*="main-image"], [class*="preview-list"], [class*="media-list"], [data-testid*="gallery"], [data-testid*="product-image"]'));
+
+  const candidateImgs = galleryContainers.length > 0
+    ? galleryContainers.flatMap(c => Array.from(c.querySelectorAll('img')))
+    : Array.from(document.querySelectorAll('img'));
+
+  candidateImgs.forEach(img => {
+    // Rejeitar qualquer elemento que pertença a cabeçalho, perfil, vendedor, avaliações ou produtos recomendados
+    const isBadAncestor = img.closest('header, nav, footer, [class*="avatar"], [class*="seller"], [class*="shop-header"], [class*="shop-info"], [class*="profile"], [class*="author"], [class*="user-"], [class*="recommend"], [class*="similar"], [class*="related"], [class*="suggest"], [class*="review"], [class*="comment"]') !== null;
+    if (isBadAncestor) return;
+
+    // Descartar imagens pequenas (avatares, miniaturas de navegação)
+    const w = img.naturalWidth || img.width || 0;
+    const h = img.naturalHeight || img.height || 0;
+    if ((w > 0 && w < 200) || (h > 0 && h < 200)) return;
+
+    let originalSrc = '';
+    if (img.srcset) {
+      const candidates = img.srcset.split(',').map(s => s.trim().split(/\\s+/)[0]).filter(Boolean);
+      if (candidates.length > 0) {
+        originalSrc = candidates[candidates.length - 1];
+      }
+    }
+    if (!originalSrc) {
+      originalSrc = img.currentSrc || img.getAttribute('data-src') || img.src || '';
+    }
+    if (originalSrc) {
+      addImageCandidate(originalSrc);
+    }
   });
 
   // Deduplicar URLs por hash do caminho
@@ -898,6 +965,7 @@ function MainApp() {
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [zipDownloadProgress, setZipDownloadProgress] = useState<string | null>(null);
   const [isWebviewExpanded, setIsWebviewExpanded] = useState(false);
+  const [tiktokModalTab, setTiktokModalTab] = useState<'photos' | 'reviews' | 'details' | 'browser'>('browser');
   const tiktokWebviewRef = useRef<any>(null);
 
   const handleStartTikTokImport = () => {
@@ -913,6 +981,7 @@ function MainApp() {
     setIncludeTikTokReviews(true);
     setIsTikTokCaptchaDetected(false);
     setIsExtractingTikTok(true);
+    setTiktokModalTab('browser');
     setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
     setIsTikTokModalOpen(true);
   };
@@ -925,6 +994,7 @@ function MainApp() {
     setIsTikTokCaptchaDetected(false);
     setIsExtractingTikTok(false);
     setIsWebviewExpanded(true);
+    setTiktokModalTab('browser');
     setTiktokExtractionStatus('Página de login do TikTok aberta em janela expandida.');
     setIsTikTokModalOpen(true);
     const webview = tiktokWebviewRef.current;
@@ -1187,6 +1257,7 @@ function MainApp() {
         if (result) {
           if (result.status === 'captcha') {
             setIsTikTokCaptchaDetected(true);
+            setTiktokModalTab('browser');
             setTiktokExtractionStatus('Verificação visual do TikTok detectada. Por favor, deslize o quebra-cabeça abaixo para continuar.');
           } else if (result.status === 'auth_page') {
             setIsTikTokCaptchaDetected(false);
@@ -1198,6 +1269,7 @@ function MainApp() {
               setSelectedTikTokCommentIds(result.reviews.comments.map((c: any) => c.id));
             }
             setIsExtractingTikTok(false);
+            setTiktokModalTab('photos');
             const reviewCount = result.reviews?.comments?.length || 0;
             const reviewText = reviewCount > 0 ? ` e ${reviewCount} avaliações de clientes` : '';
             setTiktokExtractionStatus(`✅ Extração concluída! ${result.images.length} fotos${reviewText} encontradas.`);
@@ -4225,7 +4297,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
               className={`relative z-10 w-full transition-all duration-300 rounded-[2rem] shadow-2xl border flex flex-col overflow-hidden ${
                 isWebviewExpanded 
                   ? 'max-w-7xl h-[95vh]' 
-                  : 'max-w-5xl max-h-[92vh]'
+                  : 'max-w-5xl h-[88vh] max-h-[92vh]'
               }`}
             >
               {/* Header */}
@@ -4305,12 +4377,24 @@ Angulos a variar (escolha os mais relevantes para o produto):
               {/* Status / Alert Bar */}
               <div className="px-6 pt-4 pb-2 flex-shrink-0">
                 {isTikTokCaptchaDetected ? (
-                  <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3.5 flex items-start gap-3 shadow-md shadow-amber-500/10">
-                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5 animate-bounce" />
-                    <div className="text-xs text-amber-200 leading-relaxed">
-                      <strong className="font-semibold block text-amber-300 text-sm">Verificação de Segurança (Slide Captcha)</strong>
-                      O TikTok solicitou uma confirmação visual humana. Por favor, arraste a peça do quebra-cabeça na janela abaixo. Assim que você resolver, a extração das imagens continuará automaticamente!
+                  <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3.5 flex items-start justify-between gap-3 shadow-md shadow-amber-500/10">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5 animate-bounce" />
+                      <div className="text-xs text-amber-200 leading-relaxed">
+                        <strong className="font-semibold block text-amber-300 text-sm">Verificação de Segurança (Slide Captcha)</strong>
+                        O TikTok solicitou uma confirmação visual humana. Por favor, arraste a peça do quebra-cabeça na janela abaixo. Assim que você resolver, a extração das imagens continuará automaticamente!
+                      </div>
                     </div>
+                    {tiktokModalTab !== 'browser' && (
+                      <button
+                        type="button"
+                        onClick={() => setTiktokModalTab('browser')}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer flex-shrink-0 flex items-center gap-1.5"
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                        <span>Abrir Navegador</span>
+                      </button>
+                    )}
                   </div>
                 ) : isExtractingTikTok ? (
                   <div className="bg-pink-500/10 border border-pink-500/25 rounded-2xl p-3 flex items-center justify-between shadow-sm">
@@ -4332,6 +4416,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 setSelectedTikTokCommentIds(res.reviews.comments.map((c: any) => c.id));
                               }
                               setIsExtractingTikTok(false);
+                              setTiktokModalTab('photos');
                               const revCount = res.reviews?.comments?.length || 0;
                               const revTxt = revCount > 0 ? ` e ${revCount} avaliações` : '';
                               setTiktokExtractionStatus(`✅ Extração concluída! ${res.images.length} fotos${revTxt} encontradas.`);
@@ -4349,33 +4434,110 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </button>
                   </div>
                 ) : (extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0) ? (
-                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3 flex items-center justify-between">
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-2.5 px-4 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-xs text-emerald-300 font-medium">
-                      <Check className="w-4 h-4 text-emerald-400" />
+                      <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                       <span>{tiktokExtractionStatus || `Extração concluída com sucesso! ${extractedTikTokProduct.images.length} fotos prontas.`}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-emerald-400/80 font-mono">
+                      {selectedTikTokImageIds.length} de {extractedTikTokProduct.images.length} fotos selecionadas
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Navigation Tabs when Product is Extracted */}
+              {extractedTikTokProduct && (
+                <div 
+                  className="px-6 pt-2 pb-0 flex items-center justify-between border-b flex-shrink-0"
+                  style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}
+                >
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTiktokModalTab('photos')}
+                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        tiktokModalTab === 'photos'
+                          ? 'border-pink-500 text-pink-400 font-extrabold'
+                          : 'border-transparent opacity-60 hover:opacity-100 text-white'
+                      }`}
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      <span>Fotos do Produto ({selectedTikTokImageIds.length}/{extractedTikTokProduct.images.length})</span>
+                    </button>
+
+                    {extractedTikTokProduct.reviews && (
                       <button
+                        type="button"
+                        onClick={() => setTiktokModalTab('reviews')}
+                        className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                          tiktokModalTab === 'reviews'
+                            ? 'border-purple-500 text-purple-400 font-extrabold'
+                            : 'border-transparent opacity-60 hover:opacity-100 text-white'
+                        }`}
+                      >
+                        <MessageSquareQuote className="w-4 h-4" />
+                        <span>Avaliações {extractedTikTokProduct.reviews.comments?.length ? `(${extractedTikTokProduct.reviews.comments.length})` : ''}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setTiktokModalTab('details')}
+                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        tiktokModalTab === 'details'
+                          ? 'border-pink-500 text-pink-400 font-extrabold'
+                          : 'border-transparent opacity-60 hover:opacity-100 text-white'
+                      }`}
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Detalhes do Produto</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTiktokModalTab('browser')}
+                      className={`pb-3 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                        tiktokModalTab === 'browser'
+                          ? 'border-pink-500 text-pink-400 font-extrabold'
+                          : 'border-transparent opacity-60 hover:opacity-100 text-white'
+                      }`}
+                    >
+                      <Globe className="w-4 h-4" />
+                      <span>Navegador {isTikTokCaptchaDetected ? '⚠️ Captcha' : ''}</span>
+                    </button>
+                  </div>
+
+                  {/* Ações rápidas de seleção para a aba de Fotos */}
+                  {tiktokModalTab === 'photos' && (
+                    <div className="flex items-center gap-2 pb-2">
+                      <button
+                        type="button"
                         onClick={() => setSelectedTikTokImageIds(extractedTikTokProduct.images.map(img => img.id))}
-                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-all cursor-pointer"
                       >
                         Marcar Todas ({extractedTikTokProduct.images.length})
                       </button>
                       <button
+                        type="button"
                         onClick={() => setSelectedTikTokImageIds([])}
                         className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
                       >
                         Desmarcar
                       </button>
                     </div>
-                  </div>
-                ) : null}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Body Content */}
               <div className="p-6 overflow-y-auto space-y-5 flex-1">
-                {/* Embedded Webview */}
-                <div className="space-y-2 flex-1 flex flex-col">
+                {/* Embedded Webview - Mantido sempre ativo no DOM, mas oculto visualmente quando fora da aba 'browser' */}
+                <div className={
+                  (tiktokModalTab === 'browser' || !extractedTikTokProduct)
+                    ? 'space-y-2 flex-1 flex flex-col'
+                    : 'absolute -left-[99999px] top-0 w-1 h-1 pointer-events-none opacity-0 overflow-hidden'
+                }>
                   <div className="flex items-center justify-between text-[11px] opacity-80">
                     <div className="flex items-center gap-2">
                       <span className="flex items-center gap-1 font-bold uppercase tracking-wider text-pink-400">
@@ -4456,268 +4618,304 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       className={`w-full transition-all duration-300 ${
                         isWebviewExpanded 
                           ? 'h-[72vh] min-h-[580px]' 
-                          : (isTikTokCaptchaDetected 
-                              ? 'h-[540px]' 
-                              : (extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0 ? 'h-60' : 'h-[520px]'))
+                          : (isTikTokCaptchaDetected ? 'h-[540px]' : 'h-[500px]')
                       }`}
                       style={{ width: '100%' }}
                     />
                   </div>
                 </div>
 
-                {/* Extracted Product Data */}
-                {extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0 && (
+                {/* ABA 1: FOTOS DO PRODUTO (Destaque Principal) */}
+                {extractedTikTokProduct && tiktokModalTab === 'photos' && (
                   <div className="space-y-4">
-                    {/* Info Card */}
+                    {/* Header explicativo com contadores e instrução clara */}
                     <div 
-                      className="p-4 rounded-2xl border space-y-3"
+                      className="p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm"
                       style={{
-                        backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+                        backgroundColor: themeMode === 'dark' ? 'rgba(236, 72, 153, 0.06)' : 'rgba(236, 72, 153, 0.03)',
+                        borderColor: themeMode === 'dark' ? 'rgba(236, 72, 153, 0.25)' : 'rgba(236, 72, 153, 0.25)'
                       }}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1 flex-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
                           <span className="text-[10px] uppercase font-bold tracking-wider text-pink-400 flex items-center gap-1.5">
-                            <Package className="w-3 h-3" /> Detalhes do Produto Extraído
+                            <ImageIcon className="w-3.5 h-3.5" /> Galeria Oficial do Produto
                           </span>
-                          <h4 className="text-sm font-semibold leading-snug">
-                            {extractedTikTokProduct.title || 'Produto TikTok Shop'}
-                          </h4>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                            Alta Resolução Original
+                          </span>
                         </div>
-                        {extractedTikTokProduct.price && (
-                          <span className="px-3 py-1 rounded-xl bg-pink-500/20 border border-pink-500/30 text-pink-400 font-mono font-bold text-sm flex-shrink-0">
-                            {extractedTikTokProduct.price}
+                        <h4 className="text-sm font-semibold leading-snug">
+                          {extractedTikTokProduct.title || 'Produto TikTok Shop'}
+                        </h4>
+                        <p className="text-xs opacity-70">
+                          Clique nas fotos para marcar ou desmarcar. Somente as fotos selecionadas serão incluídas no arquivo .ZIP e adicionadas ao projeto.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/30">
+                          {selectedTikTokImageIds.length} de {extractedTikTokProduct.images.length} selecionadas
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Grade de Imagens em Destaque */}
+                    {extractedTikTokProduct.images.length === 0 ? (
+                      <div className="p-12 text-center border border-dashed rounded-2xl border-white/10 opacity-60 text-xs">
+                        Nenhuma foto de produto foi encontrada nesta página. Use a aba "Navegador" para verificar a página do produto.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 max-h-[58vh] overflow-y-auto p-1 pr-2">
+                        {extractedTikTokProduct.images.map((imgItem, idx) => {
+                          const isSelected = selectedTikTokImageIds.includes(imgItem.id);
+                          return (
+                            <div
+                              key={imgItem.id}
+                              onClick={() => {
+                                setSelectedTikTokImageIds(prev =>
+                                  prev.includes(imgItem.id)
+                                    ? prev.filter(id => id !== imgItem.id)
+                                    : [...prev, imgItem.id]
+                                );
+                              }}
+                              className={`group relative aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 select-none ${
+                                isSelected 
+                                  ? 'border-pink-500 ring-2 ring-pink-500/30 shadow-lg shadow-pink-500/25 scale-[0.98]' 
+                                  : 'border-white/10 hover:border-white/30 opacity-60 hover:opacity-100 hover:scale-[1.01]'
+                              }`}
+                            >
+                              <img 
+                                src={imgItem.url} 
+                                alt={`Foto ${idx + 1}`} 
+                                onError={(e) => {
+                                  const target = e.currentTarget;
+                                  if (!target.dataset.triedFallback) {
+                                    target.dataset.triedFallback = '1';
+                                    if (imgItem.fallbackUrl && imgItem.fallbackUrl !== target.src) {
+                                      target.src = imgItem.fallbackUrl;
+                                    }
+                                  }
+                                }}
+                                className="w-full h-full object-cover select-none pointer-events-none"
+                                loading="lazy"
+                              />
+
+                              {/* Checkbox badge */}
+                              <div className={`absolute top-2.5 right-2.5 w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                                isSelected 
+                                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/50 scale-105' 
+                                  : 'bg-black/60 text-white/40 border border-white/30 group-hover:border-white/60'
+                              }`}>
+                                {isSelected ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : null}
+                              </div>
+
+                              {/* Tag com índice */}
+                              <div className="absolute bottom-2 left-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] font-mono text-white/90">
+                                #{idx + 1}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ABA 2: AVALIAÇÕES E COMENTÁRIOS */}
+                {extractedTikTokProduct && extractedTikTokProduct.reviews && tiktokModalTab === 'reviews' && (
+                  <div 
+                    className="p-5 rounded-2xl border space-y-4"
+                    style={{
+                      backgroundColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.06)' : 'rgba(168, 85, 247, 0.04)',
+                      borderColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(168, 85, 247, 0.25)'
+                    }}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase font-bold tracking-wider text-purple-400 flex items-center gap-1.5">
+                          <MessageSquareQuote className="w-4 h-4" /> Avaliações & Depoimentos de Clientes
+                        </span>
+                        {extractedTikTokProduct.reviews.rating && (
+                          <span className="text-[11px] bg-amber-500/20 text-amber-300 font-bold px-2.5 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                            <Star className="w-3 h-3 fill-amber-300" /> {extractedTikTokProduct.reviews.rating}
+                          </span>
+                        )}
+                        {extractedTikTokProduct.reviews.totalReviews && (
+                          <span className="text-[11px] bg-white/5 text-white/70 font-mono px-2.5 py-0.5 rounded-full">
+                            ({extractedTikTokProduct.reviews.totalReviews} avaliações)
                           </span>
                         )}
                       </div>
 
-                      {extractedTikTokProduct.description && (
-                        <div className="text-[11px] opacity-70 bg-black/30 p-3 rounded-xl border border-white/5 max-h-24 overflow-y-auto leading-relaxed whitespace-pre-line font-mono">
-                          {extractedTikTokProduct.description}
-                        </div>
-                      )}
+                      {/* Toggle master: Incluir no roteiro de IA */}
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none bg-purple-500/15 border border-purple-500/30 px-3 py-1.5 rounded-xl">
+                        <input
+                          type="checkbox"
+                          checked={includeTikTokReviews}
+                          onChange={(e) => setIncludeTikTokReviews(e.target.checked)}
+                          className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-white/5 border-white/20 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-purple-200">
+                          Incluir no Roteiro de IA (Social Proof)
+                        </span>
+                      </label>
                     </div>
 
-                    {/* Reviews & Comments Section */}
-                    {extractedTikTokProduct.reviews && (
-                      <div 
-                        className="p-4 rounded-2xl border space-y-3"
-                        style={{
-                          backgroundColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.06)' : 'rgba(168, 85, 247, 0.04)',
-                          borderColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(168, 85, 247, 0.25)'
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400 flex items-center gap-1.5">
-                              <MessageSquareQuote className="w-3.5 h-3.5" /> Avaliações & Comentários de Clientes
+                    {/* Feedback Tags / Praise categories */}
+                    {extractedTikTokProduct.reviews.tags.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-purple-300/80">
+                          Destaques mais elogiados pelos compradores:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {extractedTikTokProduct.reviews.tags.map((tag, tIdx) => (
+                            <span key={tIdx} className="text-xs bg-purple-500/15 border border-purple-500/30 text-purple-300 px-2.5 py-1 rounded-lg">
+                              {tag}
                             </span>
-                            {extractedTikTokProduct.reviews.rating && (
-                              <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
-                                <Star className="w-2.5 h-2.5 fill-amber-300" /> {extractedTikTokProduct.reviews.rating}
-                              </span>
-                            )}
-                            {extractedTikTokProduct.reviews.totalReviews && (
-                              <span className="text-[10px] bg-white/5 text-white/70 font-mono px-2 py-0.5 rounded-full">
-                                ({extractedTikTokProduct.reviews.totalReviews} avaliações)
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Toggle master: Incluir no roteiro de IA */}
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={includeTikTokReviews}
-                              onChange={(e) => setIncludeTikTokReviews(e.target.checked)}
-                              className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-white/5 border-white/20 cursor-pointer"
-                            />
-                            <span className="text-xs font-bold text-purple-200">
-                              Incluir no Roteiro de IA (Social Proof)
-                            </span>
-                          </label>
+                          ))}
                         </div>
-
-                        {/* Feedback Tags / Praise categories */}
-                        {extractedTikTokProduct.reviews.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {extractedTikTokProduct.reviews.tags.map((tag, tIdx) => (
-                              <span key={tIdx} className="text-[10px] bg-purple-500/15 border border-purple-500/25 text-purple-300 px-2 py-0.5 rounded-lg">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* List of customer comments */}
-                        {extractedTikTokProduct.reviews.comments.length > 0 ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-[11px] opacity-70">
-                              <span>
-                                Depoimentos encontrados ({selectedTikTokCommentIds.length} de {extractedTikTokProduct.reviews.comments.length} selecionados):
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedTikTokCommentIds(extractedTikTokProduct.reviews!.comments.map(c => c.id))}
-                                  className="text-[10px] text-purple-300 hover:underline cursor-pointer font-semibold"
-                                >
-                                  Marcar Todos
-                                </button>
-                                <span>•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedTikTokCommentIds([])}
-                                  className="text-[10px] text-white/50 hover:underline cursor-pointer"
-                                >
-                                  Desmarcar
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                              {extractedTikTokProduct.reviews.comments.map((comm) => {
-                                const isSelected = selectedTikTokCommentIds.includes(comm.id);
-                                return (
-                                  <div
-                                    key={comm.id}
-                                    onClick={() => {
-                                      if (!includeTikTokReviews) return;
-                                      setSelectedTikTokCommentIds(prev => 
-                                        prev.includes(comm.id) ? prev.filter(id => id !== comm.id) : [...prev, comm.id]
-                                      );
-                                    }}
-                                    className={`p-2 rounded-xl border text-[11px] flex items-start gap-2.5 transition-all cursor-pointer ${
-                                      !includeTikTokReviews
-                                        ? 'opacity-40 bg-white/5 border-white/5'
-                                        : isSelected
-                                          ? 'bg-purple-500/15 border-purple-500/30 text-purple-100 shadow-sm'
-                                          : 'bg-white/5 border-white/5 opacity-60 hover:opacity-100'
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      disabled={!includeTikTokReviews}
-                                      checked={includeTikTokReviews && isSelected}
-                                      onChange={() => {}} 
-                                      className="mt-0.5 rounded text-purple-600 bg-white/10 border-white/20 cursor-pointer pointer-events-none"
-                                    />
-                                    <div className="flex-1 space-y-0.5">
-                                      <p className="leading-snug">"{comm.text}"</p>
-                                      {comm.author && (
-                                        <span className="text-[9px] opacity-60 font-mono block">
-                                          — {comm.author}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between gap-3 text-xs opacity-75">
-                            <span className="text-[11px]">
-                              Nenhum comentário visível no topo da página. Role o navegador acima até a seção de avaliações para carregá-los.
-                            </span>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const webview = tiktokWebviewRef.current;
-                                if (webview) {
-                                  try {
-                                    await webview.executeJavaScript("window.scrollBy({ top: 1000, behavior: 'smooth' })");
-                                    setTimeout(async () => {
-                                      try {
-                                        const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
-                                        if (res && res.reviews) {
-                                          setExtractedTikTokProduct(prev => prev ? { ...prev, reviews: res.reviews } : prev);
-                                          if (res.reviews.comments && res.reviews.comments.length > 0) {
-                                            setSelectedTikTokCommentIds(res.reviews.comments.map((c: any) => c.id));
-                                          }
-                                        }
-                                      } catch (e) {}
-                                    }, 800);
-                                  } catch (e) {}
-                                }
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer flex-shrink-0"
-                            >
-                              <RefreshCcw className="w-3 h-3" /> Rolar e Buscar Comentários
-                            </button>
-                          </div>
-                        )}
                       </div>
                     )}
 
-                    {/* Image Selector Grid */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider opacity-70 flex items-center gap-2">
-                          <ImageIcon className="w-4 h-4 text-pink-400" />
-                          Fotos do Produto ({selectedTikTokImageIds.length} de {extractedTikTokProduct.images.length} selecionadas)
-                        </span>
-                        <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                          Resolução Original Garantida
-                        </span>
-                      </div>
-
-                      {extractedTikTokProduct.images.length === 0 ? (
-                        <div className="p-8 text-center border border-dashed rounded-2xl border-white/10 opacity-50 text-xs">
-                          Nenhuma foto de produto foi encontrada nesta página.
+                    {/* List of customer comments */}
+                    {extractedTikTokProduct.reviews.comments.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs opacity-75">
+                          <span>
+                            Depoimentos encontrados ({selectedTikTokCommentIds.length} de {extractedTikTokProduct.reviews.comments.length} selecionados):
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTikTokCommentIds(extractedTikTokProduct.reviews!.comments.map(c => c.id))}
+                              className="text-[11px] text-purple-300 hover:underline cursor-pointer font-bold"
+                            >
+                              Marcar Todos
+                            </button>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTikTokCommentIds([])}
+                              className="text-[11px] text-white/50 hover:underline cursor-pointer"
+                            >
+                              Desmarcar
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 max-h-72 overflow-y-auto p-1">
-                          {extractedTikTokProduct.images.map((imgItem, idx) => {
-                            const isSelected = selectedTikTokImageIds.includes(imgItem.id);
+
+                        <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                          {extractedTikTokProduct.reviews.comments.map((comm) => {
+                            const isSelected = selectedTikTokCommentIds.includes(comm.id);
                             return (
                               <div
-                                key={imgItem.id}
+                                key={comm.id}
                                 onClick={() => {
-                                  setSelectedTikTokImageIds(prev =>
-                                    prev.includes(imgItem.id)
-                                      ? prev.filter(id => id !== imgItem.id)
-                                      : [...prev, imgItem.id]
+                                  if (!includeTikTokReviews) return;
+                                  setSelectedTikTokCommentIds(prev => 
+                                    prev.includes(comm.id) ? prev.filter(id => id !== comm.id) : [...prev, comm.id]
                                   );
                                 }}
-                                className={`group relative aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 ${
-                                  isSelected 
-                                    ? 'border-pink-500 shadow-lg shadow-pink-500/25 scale-[0.98]' 
-                                    : 'border-white/10 hover:border-white/30 opacity-60 hover:opacity-100'
+                                className={`p-3 rounded-xl border text-xs flex items-start gap-3 transition-all cursor-pointer ${
+                                  !includeTikTokReviews
+                                    ? 'opacity-40 bg-white/5 border-white/5'
+                                    : isSelected
+                                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-100 shadow-sm'
+                                      : 'bg-white/5 border-white/5 opacity-60 hover:opacity-100'
                                 }`}
                               >
-                                <img 
-                                  src={imgItem.url} 
-                                  alt={`Foto ${idx + 1}`} 
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    if (!target.dataset.triedFallback) {
-                                      target.dataset.triedFallback = '1';
-                                      if (imgItem.fallbackUrl && imgItem.fallbackUrl !== target.src) {
-                                        target.src = imgItem.fallbackUrl;
-                                      }
-                                    }
-                                  }}
-                                  className="w-full h-full object-cover select-none"
-                                  loading="lazy"
+                                <input
+                                  type="checkbox"
+                                  disabled={!includeTikTokReviews}
+                                  checked={includeTikTokReviews && isSelected}
+                                  onChange={() => {}} 
+                                  className="mt-0.5 rounded text-purple-600 bg-white/10 border-white/20 cursor-pointer pointer-events-none"
                                 />
-                                <div className={`absolute top-2 right-2 w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                                  isSelected 
-                                    ? 'bg-pink-600 text-white shadow-md shadow-pink-600/50' 
-                                    : 'bg-black/70 text-white/40 border border-white/30'
-                                }`}>
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
-                                <div className="absolute bottom-1.5 left-1.5 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded-md text-[10px] font-mono text-white/90">
-                                  #{idx + 1}
+                                <div className="flex-1 space-y-1">
+                                  <p className="leading-relaxed">"{comm.text}"</p>
+                                  {comm.author && (
+                                    <span className="text-[10px] opacity-60 font-mono block">
+                                      — {comm.author}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between gap-3 text-xs opacity-75">
+                        <span className="text-xs">
+                          Nenhum comentário visível no topo da página. Role o navegador para carregar mais avaliações.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const webview = tiktokWebviewRef.current;
+                            if (webview) {
+                              try {
+                                await webview.executeJavaScript("window.scrollBy({ top: 1000, behavior: 'smooth' })");
+                                setTimeout(async () => {
+                                  try {
+                                    const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
+                                    if (res && res.reviews) {
+                                      setExtractedTikTokProduct(prev => prev ? { ...prev, reviews: res.reviews } : prev);
+                                      if (res.reviews.comments && res.reviews.comments.length > 0) {
+                                        setSelectedTikTokCommentIds(res.reviews.comments.map((c: any) => c.id));
+                                      }
+                                    }
+                                  } catch (e) {}
+                                }, 800);
+                              } catch (e) {}
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+                        >
+                          <RefreshCcw className="w-3.5 h-3.5" /> Rolar e Buscar Comentários
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ABA 3: DETALHES DO PRODUTO */}
+                {extractedTikTokProduct && tiktokModalTab === 'details' && (
+                  <div 
+                    className="p-5 rounded-2xl border space-y-4"
+                    style={{
+                      backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1.5 flex-1">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-pink-400 flex items-center gap-1.5">
+                          <Package className="w-3.5 h-3.5" /> Detalhes do Produto
+                        </span>
+                        <h4 className="text-base font-bold leading-snug">
+                          {extractedTikTokProduct.title || 'Produto TikTok Shop'}
+                        </h4>
+                      </div>
+                      {extractedTikTokProduct.price && (
+                        <span className="px-3.5 py-1.5 rounded-xl bg-pink-500/20 border border-pink-500/30 text-pink-400 font-mono font-bold text-sm flex-shrink-0">
+                          {extractedTikTokProduct.price}
+                        </span>
                       )}
                     </div>
+
+                    {extractedTikTokProduct.description ? (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] uppercase font-bold tracking-wider opacity-60">
+                          Especificações Técnicas / Descrição:
+                        </span>
+                        <div className="text-xs opacity-80 bg-black/40 p-4 rounded-xl border border-white/5 max-h-72 overflow-y-auto leading-relaxed whitespace-pre-line font-mono">
+                          {extractedTikTokProduct.description}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs opacity-50 italic">Nenhuma descrição em texto encontrada no produto.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -4758,7 +4956,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     onClick={handleDownloadZip}
                     disabled={!extractedTikTokProduct || selectedTikTokImageIds.length === 0 || isDownloadingZip || isImportingTikTokImages}
                     className="px-5 py-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-200 hover:text-white disabled:opacity-40 disabled:pointer-events-none font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
-                    title="Baixar todas as fotos selecionadas em um arquivo .ZIP com o nome do produto"
+                    title={selectedTikTokImageIds.length === 0 ? "Selecione pelo menos uma foto para baixar no arquivo .ZIP" : `Baixar as ${selectedTikTokImageIds.length} fotos selecionadas em arquivo .ZIP`}
                   >
                     {isDownloadingZip ? (
                       <>
@@ -4768,7 +4966,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     ) : (
                       <>
                         <Archive className="w-4 h-4 text-purple-300" />
-                        <span>Baixar ZIP ({selectedTikTokImageIds.length} Fotos)</span>
+                        <span>
+                          {selectedTikTokImageIds.length > 0 
+                            ? `Baixar ZIP (${selectedTikTokImageIds.length} Fotos)` 
+                            : 'Baixar ZIP (Selecione Fotos)'}
+                        </span>
                       </>
                     )}
                   </button>
@@ -4778,6 +4980,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     onClick={handleApplyTikTokProduct}
                     disabled={!extractedTikTokProduct || selectedTikTokImageIds.length === 0 || isImportingTikTokImages || isDownloadingZip}
                     className="px-6 py-3 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs shadow-lg shadow-pink-600/25 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+                    title={selectedTikTokImageIds.length === 0 ? "Selecione pelo menos uma foto para importar para o projeto" : `Importar as ${selectedTikTokImageIds.length} fotos selecionadas e dados do produto`}
                   >
                     {isImportingTikTokImages ? (
                       <>
@@ -4788,7 +4991,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <>
                         <Download className="w-4 h-4" />
                         <span>
-                          Importar {selectedTikTokImageIds.length > 0 ? `${selectedTikTokImageIds.length} Fotos` : 'Fotos'} & Informações
+                          {selectedTikTokImageIds.length > 0 
+                            ? `Importar ${selectedTikTokImageIds.length} Fotos & Detalhes` 
+                            : 'Importar Fotos & Detalhes'}
                         </span>
                       </>
                     )}
