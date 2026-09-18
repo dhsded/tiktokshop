@@ -55,7 +55,12 @@ import {
   Terminal,
   Filter,
   Link,
-  ExternalLink
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  LogIn,
+  ArrowLeft,
+  ArrowRight
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
@@ -655,6 +660,7 @@ function MainApp() {
   const [selectedTikTokImages, setSelectedTikTokImages] = useState<string[]>([]);
   const [isImportingTikTokImages, setIsImportingTikTokImages] = useState(false);
   const [tiktokImportProgress, setTiktokImportProgress] = useState<string | null>(null);
+  const [isWebviewExpanded, setIsWebviewExpanded] = useState(false);
   const tiktokWebviewRef = useRef<any>(null);
 
   const handleStartTikTokImport = () => {
@@ -670,6 +676,24 @@ function MainApp() {
     setIsExtractingTikTok(true);
     setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
     setIsTikTokModalOpen(true);
+  };
+
+  const handleOpenTikTokLogin = () => {
+    const loginUrl = 'https://www.tiktok.com/login';
+    setActiveTikTokUrl(loginUrl);
+    setExtractedTikTokProduct(null);
+    setSelectedTikTokImages([]);
+    setIsTikTokCaptchaDetected(false);
+    setIsExtractingTikTok(false);
+    setIsWebviewExpanded(true);
+    setTiktokExtractionStatus('Página de login do TikTok aberta em janela expandida.');
+    setIsTikTokModalOpen(true);
+    const webview = tiktokWebviewRef.current;
+    if (webview) {
+      try {
+        webview.loadURL(loginUrl);
+      } catch (e) {}
+    }
   };
 
   const handleApplyTikTokProduct = async () => {
@@ -2480,9 +2504,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
                         <Link className="w-4 h-4" /> Importar do TikTok Shop por Link
                       </span>
-                      <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
-                        Auto-Sync
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleOpenTikTokLogin}
+                          className="text-[10px] text-pink-300 hover:text-white bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                          title="Fazer login no TikTok em janela expandida"
+                        >
+                          <LogIn className="w-3 h-3" /> Fazer Login
+                        </button>
+                        <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                          Auto-Sync
+                        </span>
+                      </div>
                     </div>
                     <p className="text-xs text-white/50 leading-relaxed">
                       Cole o link do produto para puxar automaticamente todas as fotos em alta resolução original e especificações.
@@ -2717,9 +2751,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
                         <Link className="w-4 h-4" /> Importar do TikTok Shop por Link
                       </span>
-                      <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
-                        Auto-Sync
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleOpenTikTokLogin}
+                          className="text-[10px] text-pink-300 hover:text-white bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                          title="Fazer login no TikTok em janela expandida"
+                        >
+                          <LogIn className="w-3 h-3" /> Fazer Login
+                        </button>
+                        <span className="text-[10px] text-pink-400/90 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                          Auto-Sync
+                        </span>
+                      </div>
                     </div>
                     <p className="text-xs text-white/50 leading-relaxed">
                       Cole o link de qualquer produto para puxar automaticamente todas as fotos em alta resolução original, título e especificações completas.
@@ -3667,7 +3711,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e4e4e7',
                 color: themeMode === 'dark' ? '#fafafa' : '#18181b'
               }}
-              className="relative z-10 w-full max-w-4xl max-h-[92vh] rounded-[2rem] shadow-2xl border flex flex-col overflow-hidden"
+              className={`relative z-10 w-full transition-all duration-300 rounded-[2rem] shadow-2xl border flex flex-col overflow-hidden ${
+                isWebviewExpanded 
+                  ? 'max-w-7xl h-[95vh]' 
+                  : 'max-w-5xl max-h-[92vh]'
+              }`}
             >
               {/* Header */}
               <div 
@@ -3693,12 +3741,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
+                    onClick={handleOpenTikTokLogin}
+                    className="px-3 py-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 hover:text-white transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Abrir página oficial de login do TikTok em janela expandida"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Tela de Login</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsWebviewExpanded(prev => !prev)}
+                    title={isWebviewExpanded ? "Reduzir visualização da janela" : "Expandir para tela cheia (ideal para login e captchas)"}
+                    className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                      isWebviewExpanded 
+                        ? 'border-pink-500/60 bg-pink-500/20 text-pink-300' 
+                        : 'border-white/10 hover:bg-white/10 text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {isWebviewExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                  <button
                     onClick={() => {
                       const webview = tiktokWebviewRef.current;
                       if (webview) webview.reload();
                     }}
                     title="Recarregar página do TikTok"
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
                   >
                     <RefreshCcw className="w-4 h-4" />
                   </button>
@@ -3707,7 +3776,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       if (activeTikTokUrl) window.open(activeTikTokUrl, '_blank');
                     }}
                     title="Abrir no navegador externo"
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </button>
@@ -3715,7 +3784,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     onClick={() => {
                       if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
                     }}
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -3786,24 +3855,75 @@ Angulos a variar (escolha os mais relevantes para o produto):
               {/* Body Content */}
               <div className="p-6 overflow-y-auto space-y-5 flex-1">
                 {/* Embedded Webview */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] opacity-60">
-                    <span className="flex items-center gap-1 font-bold uppercase tracking-wider">
-                      <Globe className="w-3.5 h-3.5 text-pink-400" /> Navegador TikTok Shop (Sessão Isolada Segura)
-                    </span>
-                    <span className="font-mono text-[10px]">
-                      {isTikTokCaptchaDetected ? '🔒 Aguardando resolução do Captcha' : '⚡ Auto-Sync ativo'}
-                    </span>
+                <div className="space-y-2 flex-1 flex flex-col">
+                  <div className="flex items-center justify-between text-[11px] opacity-80">
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1 font-bold uppercase tracking-wider text-pink-400">
+                        <Globe className="w-3.5 h-3.5" /> Navegador TikTok Shop (Sessão Isolada Segura)
+                      </span>
+                      {/* Navigation controls */}
+                      <div className="flex items-center gap-0.5 bg-white/5 border border-white/10 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try { tiktokWebviewRef.current?.goBack(); } catch (e) {}
+                          }}
+                          className="p-1 hover:bg-white/10 rounded text-white/60 hover:text-white transition-colors cursor-pointer"
+                          title="Página Anterior"
+                        >
+                          <ArrowLeft className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try { tiktokWebviewRef.current?.goForward(); } catch (e) {}
+                          }}
+                          className="p-1 hover:bg-white/10 rounded text-white/60 hover:text-white transition-colors cursor-pointer"
+                          title="Próxima Página"
+                        >
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try { tiktokWebviewRef.current?.reload(); } catch (e) {}
+                          }}
+                          className="p-1 hover:bg-white/10 rounded text-white/60 hover:text-white transition-colors cursor-pointer"
+                          title="Recarregar"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsWebviewExpanded(prev => !prev)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
+                      >
+                        {isWebviewExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5 text-pink-400" />}
+                        <span>{isWebviewExpanded ? 'Reduzir Janela' : 'Ampliar Janela para Login / Captcha'}</span>
+                      </button>
+                      <span className="font-mono text-[10px] opacity-60">
+                        {isTikTokCaptchaDetected ? '🔒 Captcha' : '⚡ Auto-Sync ativo'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/60 shadow-inner">
+
+                  <div className={`rounded-2xl overflow-hidden border border-white/10 bg-black/60 shadow-inner ${
+                    isWebviewExpanded ? 'flex-1 min-h-[580px]' : ''
+                  }`}>
                     <webview
                       ref={tiktokWebviewRef}
                       src={activeTikTokUrl}
                       partition="persist:tiktok_shop"
                       className={`w-full transition-all duration-300 ${
-                        isTikTokCaptchaDetected 
-                          ? 'h-96' 
-                          : (extractedTikTokProduct ? 'h-40' : 'h-72')
+                        isWebviewExpanded 
+                          ? 'h-[65vh] min-h-[560px]' 
+                          : (isTikTokCaptchaDetected 
+                              ? 'h-[520px]' 
+                              : (extractedTikTokProduct ? 'h-60' : 'h-[500px]'))
                       }`}
                       style={{ width: '100%' }}
                     />
