@@ -302,14 +302,34 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     return { status: 'auth_page', title: '' };
   }
 
-  const captchaContainer = document.getElementById('captcha_container') || document.getElementById('captcha-verify-container');
-  const hasCaptchaContent = captchaContainer && (
-    captchaContainer.children.length > 0 || 
-    captchaContainer.innerHTML.trim().length > 0 ||
-    captchaContainer.offsetHeight > 50
+  // 1. Se o produto já está carregado no DOM (título, preço, nome ou dados de compra), NÃO é captcha
+  const hasProductContent = !!(
+    document.querySelector('h1') || 
+    document.querySelector('[data-testid*="title"]') || 
+    document.querySelector('[class*="product-title"]') || 
+    document.querySelector('[class*="product_name"]') ||
+    document.querySelector('[class*="sale-price"]') ||
+    document.querySelector('[class*="price-val"]') ||
+    document.querySelector('[class*="price"]') ||
+    (document.body && (
+      document.body.innerText.includes('R$') || 
+      document.body.innerText.includes('Vendido por') || 
+      document.body.innerText.includes('Frete grátis') ||
+      document.body.innerText.includes('Comprar agora')
+    ))
   );
-  const captchaVerifyWrapper = document.querySelector('.secsdk-captcha-drag-icon, #captcha-verify-image, .captcha_verify_img--wrapper, [class*="captcha-verify-container"], [id*="secsdk-captcha"]');
-  const isCaptcha = document.title.includes('Security Check') || (hasCaptchaContent && !!captchaVerifyWrapper);
+
+  // 2. Só é captcha se o produto NÃO está presente E o quebra-cabeça visual estiver ativo
+  const isSecurityTitle = (document.title || '').toLowerCase().includes('security check');
+  const captchaImg = document.getElementById('captcha-verify-image');
+  const isCaptchaImgVisible = captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20);
+  const captchaContainer = document.getElementById('captcha_container');
+  const isContainerVisible = captchaContainer && 
+    captchaContainer.style.display !== 'none' && 
+    captchaContainer.style.visibility !== 'hidden' && 
+    (captchaContainer.offsetWidth > 30 || captchaContainer.offsetHeight > 30);
+
+  const isCaptcha = !hasProductContent && (isSecurityTitle || isCaptchaImgVisible || isContainerVisible);
   if (isCaptcha) {
     return { status: 'captcha', title: document.title };
   }
@@ -505,7 +525,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     // Descartar SVGs e dados vazios
     if (originalSrc.startsWith('data:image/svg') || originalSrc.includes('.svg')) return;
 
-    // Descartar estritamente fotos de perfil, avatares, logotipos e badges pequenos
+    // Descartar estritamente fotos de perfil, avatares, logotipos e badges pequenos, e peças de captcha
     const lower = originalSrc.toLowerCase();
     const isNonProductMedia = 
       lower.includes('-avt-') || 
@@ -514,12 +534,15 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       lower.includes('shop_logo') || 
       lower.includes('shop-logo') || 
       lower.includes('shop_icon') || 
-      lower.includes('favicon');
+      lower.includes('favicon') ||
+      lower.includes('captcha') ||
+      lower.includes('secsdk');
 
     if (isNonProductMedia) return;
 
     // Descartar se já foi adicionado
-    const baseKey = originalSrc.split('?')[0].split('/').pop()?.split('~')[0] || originalSrc;
+    const rawKey = originalSrc.split('?')[0].split('/').pop()?.split('~')[0] || '';
+    const baseKey = (rawKey && rawKey.length > 4) ? rawKey : originalSrc;
     if (seenUrls.has(baseKey)) return;
     seenUrls.add(baseKey);
 
@@ -527,8 +550,12 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     let highResUrl = originalSrc;
     if (highResUrl.includes('~tplv-')) {
       const parts = highResUrl.split('~tplv-');
+      const bucketMatch = highResUrl.match(/~tplv-([a-z0-9_-]+)-/i);
+      const bucketKey = bucketMatch ? bucketMatch[1] : '';
       if (parts[0].includes('.jpeg') || parts[0].includes('.jpg') || parts[0].includes('.png') || parts[0].includes('.webp')) {
         highResUrl = parts[0];
+      } else if (bucketKey) {
+        highResUrl = parts[0] + '~tplv-' + bucketKey + '-origin-jpeg.jpeg';
       } else {
         highResUrl = highResUrl.replace(/resize-[^:]+:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
                                .replace(/shrink:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
@@ -596,7 +623,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   try {
     const allImgs = Array.from(document.querySelectorAll('img'));
     allImgs.forEach(img => {
-      if (img.closest('header, nav, footer, [class*="avatar"], [class*="profile"]')) return;
+      if (img.closest('header, nav, footer, [class*="avatar"], [class*="profile"], #captcha_container, [class*="captcha"]')) return;
 
       const w = img.naturalWidth || img.width || 0;
       const h = img.naturalHeight || img.height || 0;
@@ -611,7 +638,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
         }
       }
       if (!originalSrc) {
-        originalSrc = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.src || '';
+        originalSrc = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-origin-src') || img.getAttribute('data-highres') || img.src || img.getAttribute('src') || '';
       }
       if (originalSrc && originalSrc.startsWith('http')) {
         addImageCandidate(originalSrc);
@@ -1439,6 +1466,7 @@ function MainApp() {
   const handleCancelSingleImport = () => {
     setIsExtractingTikTok(false);
     setIsQueueRunning(false);
+    setIsTikTokCaptchaDetected(false);
     abortQueueRef.current = true;
     setTiktokExtractionStatus('Extração cancelada pelo usuário.');
     const webview = tiktokWebviewRef.current;
@@ -1692,6 +1720,14 @@ function MainApp() {
     setTiktokModalTab('browser');
     setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
     setIsTikTokModalOpen(true);
+    setTimeout(() => {
+      try {
+        const webview = tiktokWebviewRef.current;
+        if (webview && typeof webview.loadURL === 'function') {
+          webview.loadURL(cleanUrl);
+        }
+      } catch (e) {}
+    }, 100);
   };
 
   const handleOpenTikTokLogin = () => {
@@ -2059,15 +2095,52 @@ function MainApp() {
     if (isQueueRunning) return;
     if (activeTikTokUrl.includes('/login') || activeTikTokUrl.includes('/auth')) return;
 
-    const startTime = Date.now();
-    const timeoutMs = 25000;
+    let startTime = Date.now();
+    const timeoutMs = 45000;
 
     const interval = setInterval(async () => {
-      // Evitar loop infinito: timeout de 25s
+      // Se captcha estiver ativo aguardando resolução humana, não consome tempo de timeout
+      if (isTikTokCaptchaDetected) {
+        startTime = Date.now();
+        const webview = tiktokWebviewRef.current;
+        if (webview) {
+          try {
+            // Verificar se o captcha foi resolvido e a página do produto abriu
+            const checkRes = await webview.executeJavaScript(`(() => {
+              const hasProduct = !!(
+                document.querySelector('h1') || 
+                document.querySelector('[data-testid*="title"]') || 
+                document.querySelector('[class*="product-title"]') || 
+                document.querySelector('[class*="product_name"]') ||
+                document.querySelector('[class*="sale-price"]') ||
+                document.querySelector('[class*="price-val"]') ||
+                document.querySelector('[class*="price"]') ||
+                (document.body && (
+                  document.body.innerText.includes('R$') || 
+                  document.body.innerText.includes('Vendido por') || 
+                  document.body.innerText.includes('Frete grátis') ||
+                  document.body.innerText.includes('Comprar agora')
+                ))
+              );
+              const isSecTitle = (document.title || '').toLowerCase().includes('security check');
+              const captchaImg = document.getElementById('captcha-verify-image');
+              const isCaptchaVisible = captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20);
+              return hasProduct || (!isSecTitle && !isCaptchaVisible);
+            })()`);
+            if (checkRes) {
+              setIsTikTokCaptchaDetected(false);
+              setTiktokExtractionStatus('Verificação concluída! Extraindo fotos...');
+            }
+          } catch (e) {}
+        }
+        return;
+      }
+
+      // Evitar loop infinito: timeout de 45s
       if (Date.now() - startTime > timeoutMs) {
         clearInterval(interval);
         setIsExtractingTikTok(false);
-        setTiktokExtractionStatus('⏱️ Tempo limite de extração esgotado (25s). Link sem fotos detectadas ou bloqueado.');
+        setTiktokExtractionStatus('⏱️ Tempo limite de extração esgotado. Clique em "Capturar Fotos Agora" se a página estiver visível.');
         return;
       }
 
@@ -2117,7 +2190,7 @@ function MainApp() {
     }, 800);
 
     return () => clearInterval(interval);
-  }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct, isExtractingTikTok, isQueueRunning]);
+  }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct, isExtractingTikTok, isQueueRunning, isTikTokCaptchaDetected]);
 
   // Shared
   const [observations, setObservations] = useState('');
@@ -5766,6 +5839,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         const webview = tiktokWebviewRef.current;
                         if (webview) {
                           setTiktokExtractionStatus('Capturando fotos visíveis no navegador...');
+                          setIsTikTokCaptchaDetected(false);
                           try {
                             const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
                             if (res && res.status === 'success' && res.images && res.images.length > 0) {
@@ -5779,13 +5853,18 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               const revCount = res.reviews?.comments?.length || 0;
                               const revTxt = revCount > 0 ? ` e ${revCount} avaliações` : '';
                               setTiktokExtractionStatus(`✅ Extração concluída! ${res.images.length} fotos${revTxt} encontradas.`);
+                            } else if (res && res.status === 'captcha') {
+                              setIsTikTokCaptchaDetected(true);
+                              setTiktokExtractionStatus('Verificação de segurança (captcha) ainda ativa. Por favor, conclua o quebra-cabeça.');
                             } else if (res && res.status === 'auth_page') {
                               setTiktokExtractionStatus('Página de login/autenticação detectada.');
+                            } else if (res && res.title) {
+                              setTiktokExtractionStatus(`Identificando fotos para: ${res.title.slice(0, 45)}...`);
                             } else {
                               setTiktokExtractionStatus('Tentando localizar fotos do produto no DOM...');
                             }
-                          } catch (e) {
-                            setTiktokExtractionStatus('Erro ao ler página.');
+                          } catch (e: any) {
+                            setTiktokExtractionStatus(`Erro ao ler página: ${e?.message || 'Falha de comunicação'}`);
                           }
                         }
                       }}
