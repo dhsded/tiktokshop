@@ -304,7 +304,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
                   document.querySelector('[class*="title"]') || 
                   document.querySelector('[class*="product_name"]');
   if (titleEl) {
-    title = titleEl.innerText.trim();
+    title = (titleEl.textContent || titleEl.innerText || '').trim();
   } else {
     title = (document.title || '').replace(/\\s*\\|\\s*TikTok\\s*Shop.*/i, '').replace(/\\s*\\|\\s*TikTok.*/i, '').trim();
   }
@@ -313,14 +313,14 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   let price = '';
   const priceEl = document.querySelector('[class*="price-val"], [class*="price_val"], [class*="sale-price"], [class*="product-price"], [data-testid*="price"]');
   if (priceEl) {
-    price = priceEl.innerText.trim();
+    price = (priceEl.textContent || priceEl.innerText || '').trim();
   }
 
   // 3. Descrição e Especificações
   const descParts = [];
   const descElements = Array.from(document.querySelectorAll('[class*="spec-item"], [class*="property-item"], [class*="desc-content"], [class*="detail-desc"], [class*="rich-text"], [data-testid*="desc"]'));
   descElements.forEach(el => {
-    const text = el.innerText?.trim();
+    const text = (el.textContent || el.innerText || '').trim();
     if (text && !descParts.includes(text) && text.length > 3) {
       descParts.push(text);
     }
@@ -329,43 +329,44 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   if (descParts.length === 0) {
     const pElements = Array.from(document.querySelectorAll('div[class*="desc"] p, div[class*="detail"] p, div[class*="content"] p, li'));
     pElements.forEach(p => {
-      const text = p.innerText?.trim();
+      const text = (p.textContent || p.innerText || '').trim();
       if (text && text.length > 5 && !descParts.includes(text)) {
         descParts.push(text);
       }
     });
   }
 
-  // 4. Imagens de Alta Resolução do Produto (Apenas Galeria Oficial do Produto)
+  // 4. Imagens do Produto em Alta Resolução
   const rawImages = [];
+  const seenUrls = new Set();
+
   const addImageCandidate = (originalSrc) => {
     if (!originalSrc || typeof originalSrc !== 'string') return;
     
-    // Validar se é do CDN de mídia do TikTok
-    const isTikTokCdn = originalSrc.includes('ibyteimg.com') || originalSrc.includes('tiktokcdn.com') || originalSrc.includes('tos-');
-    if (!isTikTokCdn) return;
+    // Descartar SVGs e dados vazios
+    if (originalSrc.startsWith('data:image/svg') || originalSrc.includes('.svg')) return;
 
-    // Descartar estritamente fotos de perfil, avatares, logotipos da loja, ícones e badges
+    // Descartar estritamente fotos de perfil, avatares, logotipos e badges pequenos
+    const lower = originalSrc.toLowerCase();
     const isNonProductMedia = 
-      originalSrc.includes('-avt-') || 
-      originalSrc.includes('avatar') || 
-      originalSrc.includes('profile') || 
-      originalSrc.includes('seller') || 
-      originalSrc.includes('shop_logo') || 
-      originalSrc.includes('shop-logo') || 
-      originalSrc.includes('shop_icon') || 
-      originalSrc.includes('user_avatar') || 
-      originalSrc.includes('c5_100x100') || 
-      originalSrc.includes('c5_50x50') || 
-      originalSrc.includes('c5_72x72') || 
-      originalSrc.includes('c5_150x150') || 
-      originalSrc.includes('logo') || 
-      originalSrc.includes('icon') || 
-      originalSrc.includes('badge') || 
-      originalSrc.includes('favicon') || 
-      originalSrc.includes('.svg');
+      lower.includes('-avt-') || 
+      lower.includes('/avatar/') || 
+      lower.includes('user_avatar') || 
+      lower.includes('shop_logo') || 
+      lower.includes('shop-logo') || 
+      lower.includes('shop_icon') || 
+      lower.includes('c5_100x100') || 
+      lower.includes('c5_50x50') || 
+      lower.includes('c5_72x72') || 
+      lower.includes('c5_150x150') || 
+      lower.includes('favicon');
 
     if (isNonProductMedia) return;
+
+    // Descartar se já foi adicionado
+    const baseKey = originalSrc.split('?')[0].split('/').pop() || originalSrc;
+    if (seenUrls.has(baseKey)) return;
+    seenUrls.add(baseKey);
 
     // Gerar versão de alta resolução mantendo a integridade da chave do bucket
     let highResUrl = originalSrc;
@@ -374,95 +375,128 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       const bucketKey = tplvMatch[1];
       if (originalSrc.includes('resize-')) {
         highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-resize-[^:]+:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
+      } else if (originalSrc.includes('-shrink:')) {
+        highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-shrink:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
       }
     }
 
     if (highResUrl.includes('?') && !highResUrl.includes('x-tos-') && !highResUrl.includes('signature=')) {
       highResUrl = highResUrl.split('?')[0];
     }
-    if (originalSrc.includes('?') && !originalSrc.includes('x-tos-') && !originalSrc.includes('signature=')) {
-      originalSrc = originalSrc.split('?')[0];
+    let fallback = originalSrc;
+    if (fallback.includes('?') && !fallback.includes('x-tos-') && !fallback.includes('signature=')) {
+      fallback = fallback.split('?')[0];
     }
 
     rawImages.push({
       highResUrl,
-      fallbackUrl: originalSrc
+      fallbackUrl: fallback
     });
   };
 
-  // 4.1 Prioridade 1: Extrair imagens do JSON de hidratação oficial do produto
+  // 4.1 Prioridade 1: JSONs embutidos e estado de hidratação (Next.js / TikTok Universal Data)
   try {
-    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
-    const scanObjForProductImages = (obj, depth) => {
+    const scanObjForImages = (obj, depth) => {
       if (!obj || depth > 8 || typeof obj !== 'object') return;
       try {
         for (const k of Object.keys(obj)) {
           const lk = k.toLowerCase();
           const val = obj[k];
-          if ((lk === 'main_images' || lk === 'mainimages' || lk === 'image_list' || lk === 'product_images') && Array.isArray(val)) {
+          if ((lk.includes('image') || lk.includes('cover') || lk.includes('pic') || lk === 'photos' || lk === 'gallery') && Array.isArray(val)) {
             val.forEach(item => {
-              const url = typeof item === 'string' ? item : (item.url_list?.[0] || item.url || item.src || '');
-              if (url) addImageCandidate(url);
+              const u = typeof item === 'string' ? item : (item.url_list?.[0] || item.url || item.src || item.uri || item.origin_url || '');
+              if (u && typeof u === 'string') addImageCandidate(u);
             });
           }
-          scanObjForProductImages(val, depth + 1);
+          scanObjForImages(val, depth + 1);
         }
       } catch (e) {}
     };
 
+    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
+      scanObjForImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+    }
+    if (window.SIGI_STATE) {
+      scanObjForImages(window.SIGI_STATE, 0);
+    }
+    if (window.__INIT_DATA__) {
+      scanObjForImages(window.__INIT_DATA__, 0);
+    }
+    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"], script[id*="DATA"], script[id*="STATE"]'));
     jsonScripts.forEach(s => {
       try {
         const txt = s.textContent || '';
-        if (txt.includes('main_images') || txt.includes('image_list')) {
-          scanObjForProductImages(JSON.parse(txt), 0);
+        if (txt.includes('http') && (txt.includes('image') || txt.includes('tos-') || txt.includes('ibyteimg') || txt.includes('tiktokcdn'))) {
+          scanObjForImages(JSON.parse(txt), 0);
         }
       } catch (e) {}
     });
-
-    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
-      scanObjForProductImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
-    }
   } catch (e) {}
 
-  // 4.2 Prioridade 2: Extrair imagens do DOM focando estritamente na galeria/carrossel do produto
-  const galleryContainers = Array.from(document.querySelectorAll('[class*="gallery"], [class*="carousel"], [class*="slider"], [class*="swiper"], [class*="pdp-image"], [class*="product-image"], [class*="main-image"], [class*="preview-list"], [class*="media-list"], [data-testid*="gallery"], [data-testid*="product-image"]'));
+  // 4.2 Prioridade 2: Imagens do DOM (Galeria, Carrossel e Imagens Principais)
+  try {
+    const allImgs = Array.from(document.querySelectorAll('img'));
+    allImgs.forEach(img => {
+      // Ignorar cabeçalho global, rodapé e perfis
+      if (img.closest('header, nav, footer, [class*="avatar"], [class*="profile"]')) return;
 
-  const candidateImgs = galleryContainers.length > 0
-    ? galleryContainers.flatMap(c => Array.from(c.querySelectorAll('img')))
-    : Array.from(document.querySelectorAll('img'));
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      if (w > 0 && w < 80 && h > 0 && h < 80) return;
 
-  candidateImgs.forEach(img => {
-    // Rejeitar qualquer elemento que pertença a cabeçalho, perfil, vendedor, avaliações ou produtos recomendados
-    const isBadAncestor = img.closest('header, nav, footer, [class*="avatar"], [class*="seller"], [class*="shop-header"], [class*="shop-info"], [class*="profile"], [class*="author"], [class*="user-"], [class*="recommend"], [class*="similar"], [class*="related"], [class*="suggest"], [class*="review"], [class*="comment"]') !== null;
-    if (isBadAncestor) return;
-
-    // Descartar imagens pequenas (avatares, miniaturas de navegação)
-    const w = img.naturalWidth || img.width || 0;
-    const h = img.naturalHeight || img.height || 0;
-    if ((w > 0 && w < 200) || (h > 0 && h < 200)) return;
-
-    let originalSrc = '';
-    if (img.srcset) {
-      const candidates = img.srcset.split(',').map(s => s.trim().split(/\\s+/)[0]).filter(Boolean);
-      if (candidates.length > 0) {
-        originalSrc = candidates[candidates.length - 1];
+      let originalSrc = '';
+      if (img.srcset) {
+        const candidates = img.srcset.split(',').map(s => s.trim().split(/\\s+/)[0]).filter(Boolean);
+        if (candidates.length > 0) {
+          originalSrc = candidates[candidates.length - 1];
+        }
       }
-    }
-    if (!originalSrc) {
-      originalSrc = img.currentSrc || img.getAttribute('data-src') || img.src || '';
-    }
-    if (originalSrc) {
-      addImageCandidate(originalSrc);
-    }
-  });
+      if (!originalSrc) {
+        originalSrc = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.src || '';
+      }
+      if (originalSrc) {
+        addImageCandidate(originalSrc);
+      }
+    });
 
-  // Deduplicar URLs por hash do caminho
+    // Fontes em <picture><source srcset>
+    Array.from(document.querySelectorAll('picture source[srcset]')).forEach(s => {
+      const srcset = s.getAttribute('srcset') || '';
+      const candidates = srcset.split(',').map(str => str.trim().split(/\\s+/)[0]).filter(Boolean);
+      if (candidates.length > 0) addImageCandidate(candidates[candidates.length - 1]);
+    });
+
+    // Elementos com background-image
+    Array.from(document.querySelectorAll('[style*="background-image"]')).forEach(el => {
+      const bg = el.style.backgroundImage || '';
+      const m = bg.match(/url\\(['"]?(https?:[^'"\\)]+)['"]?\\)/i);
+      if (m && m[1]) addImageCandidate(m[1]);
+    });
+  } catch (e) {}
+
+  // 4.3 Fallback visual: se nenhuma imagem foi capturada, captura imagens visíveis na tela
+  if (rawImages.length === 0) {
+    try {
+      const visibleImgs = Array.from(document.querySelectorAll('img')).filter(img => {
+        const r = img.getBoundingClientRect();
+        return r.width >= 100 && r.height >= 100 && (img.src || img.currentSrc);
+      });
+      visibleImgs.forEach(img => {
+        const s = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+        if (s && !s.includes('.svg') && !s.includes('-avt-')) {
+          addImageCandidate(s);
+        }
+      });
+    } catch (e) {}
+  }
+
+  // Deduplicar URLs
   const uniqueImages = [];
-  const seenHashes = new Set();
+  const finalHashes = new Set();
   rawImages.forEach(item => {
-    const pathPart = item.fallbackUrl.split('/').pop()?.split('~')[0] || item.fallbackUrl;
-    if (!seenHashes.has(pathPart)) {
-      seenHashes.add(pathPart);
+    const key = item.fallbackUrl.split('/').pop()?.split('~')[0] || item.fallbackUrl;
+    if (!finalHashes.has(key)) {
+      finalHashes.add(key);
       uniqueImages.push(item);
     }
   });
@@ -470,12 +504,13 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   if (uniqueImages.length === 0) {
     return {
       status: 'no_product_images',
-      title: '',
+      title,
+      price,
       images: []
     };
   }
 
-  // 5. Avaliações e Comentários do Produto (Reviews & Customer Feedback)
+  // 5. Avaliações e Comentários (Otimizado sem travar a thread da página)
   const reviewsData = {
     rating: '',
     totalReviews: '',
@@ -484,129 +519,49 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   };
 
   try {
-    // 5.1 Varredura em JSONs embutidos (Universal Data / Next.js / Hydration)
-    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
-    const scanObjectForReviews = (obj, depth) => {
-      if (!obj || depth > 7 || typeof obj !== 'object') return;
-      try {
-        for (const k of Object.keys(obj)) {
-          const lk = k.toLowerCase();
-          const val = obj[k];
-
-          // Tags de elogios dos compradores
-          if ((lk.includes('review_tag') || lk === 'reviewtags' || lk === 'taglist') && Array.isArray(val)) {
-            val.forEach(t => {
-              const tagText = typeof t === 'string' ? t : (t.tag_name || t.name || t.text || t.content || '');
-              const tagCount = t.count || t.tag_count || '';
-              const fullTag = tagCount ? (tagText + ' (' + tagCount + ')') : tagText;
-              if (tagText && !reviewsData.tags.includes(fullTag) && tagText.length < 50) {
-                reviewsData.tags.push(fullTag);
-              }
-            });
-          }
-
-          // Nota média
-          if ((lk === 'rating_score' || lk === 'star_score' || lk === 'averagerating') && val) {
-            if (!reviewsData.rating) reviewsData.rating = String(val);
-          }
-
-          // Total de avaliações
-          if ((lk === 'review_count' || lk === 'total_review_count' || lk === 'reviewcount') && val) {
-            if (!reviewsData.totalReviews) reviewsData.totalReviews = String(val);
-          }
-
-          // Lista de depoimentos / comentários reais
-          if ((lk.includes('review_list') || lk === 'reviewlist' || lk === 'reviews' || lk === 'commentlist' || lk === 'comments') && Array.isArray(val)) {
-            val.forEach(item => {
-              if (!item || typeof item !== 'object') return;
-              const text = item.review_text || item.content || item.text || item.comment || item.desc || '';
-              const author = item.user_name || item.nickname || item.buyer_name || '';
-              const ratingVal = item.rating || item.star || item.rating_score || '';
-              if (text && typeof text === 'string' && text.trim().length > 6) {
-                const cleanText = text.trim();
-                if (!reviewsData.comments.some(c => c.text === cleanText)) {
-                  reviewsData.comments.push({
-                    id: 'rev_' + reviewsData.comments.length,
-                    text: cleanText,
-                    author: author || undefined,
-                    rating: ratingVal ? String(ratingVal) : undefined
-                  });
-                }
-              }
-            });
-          }
-
-          scanObjectForReviews(val, depth + 1);
-        }
-      } catch (e) {}
-    };
-
-    jsonScripts.forEach(s => {
-      try {
-        const text = s.textContent || '';
-        if (text.includes('review') || text.includes('rating') || text.includes('comment')) {
-          const parsed = JSON.parse(text);
-          scanObjectForReviews(parsed, 0);
-        }
-      } catch (e) {}
-    });
-
-    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
-      scanObjectForReviews(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+    // 5.1 Nota e contagem rápida
+    const ratingEl = document.querySelector('[class*="rating-score"], [class*="rating_score"], [class*="rate-num"], [class*="rating-val"], [data-testid*="rating"]');
+    if (ratingEl) {
+      const m = (ratingEl.textContent || '').match(/([1-5]\\.[0-9])/);
+      if (m) reviewsData.rating = m[1];
     }
-  } catch (e) {}
-
-  // 5.2 Varredura no DOM
-  try {
-    // Nota média no DOM
-    if (!reviewsData.rating) {
-      const ratingEl = document.querySelector('[class*="rating-score"], [class*="rating_score"], [class*="rate-num"], [class*="rating-val"], [data-testid*="rating"]');
-      if (ratingEl) {
-        const m = (ratingEl.innerText || '').match(/([1-5]\\.[0-9])/);
-        if (m) reviewsData.rating = m[1];
-      }
+    const countEl = document.querySelector('[class*="review-count"], [class*="rate-count"], [class*="evaluation-count"], [data-testid*="review-count"]');
+    if (countEl) {
+      const m = (countEl.textContent || '').match(/(\\d+[\\d.,]*[kK]?)/);
+      if (m) reviewsData.totalReviews = m[1];
     }
 
-    // Contagem total no DOM
-    if (!reviewsData.totalReviews) {
-      const countEl = document.querySelector('[class*="review-count"], [class*="rate-count"], [class*="evaluation-count"], [data-testid*="review-count"]');
-      if (countEl) {
-        const m = (countEl.innerText || '').match(/(\\d+[\\d.,]*[kK]?)/);
-        if (m) reviewsData.totalReviews = m[1];
-      }
-    }
-
-    // Tags / chips de feedback no DOM
-    const tagEls = Array.from(document.querySelectorAll('[class*="tag-item"], [class*="review-tag"], [class*="tag_item"], [class*="tagItem"], [class*="filter-item"], [class*="chip-item"], [data-testid*="review-tag"]'));
+    // 5.2 Tags de review
+    const tagEls = Array.from(document.querySelectorAll('[class*="tag-item"], [class*="review-tag"], [class*="tag_item"], [class*="filter-item"], [class*="chip-item"], [data-testid*="review-tag"]'));
     tagEls.forEach(el => {
-      const t = el.innerText ? el.innerText.trim() : '';
+      const t = (el.textContent || '').trim();
       if (t && t.length > 2 && t.length < 40 && !reviewsData.tags.includes(t)) {
         reviewsData.tags.push(t);
       }
     });
 
-    // Comentários de clientes no DOM com extração de autor, variante, data e texto limpo
+    // 5.3 Comentários dos clientes
     const parseCard = (card, idx) => {
-      const rawText = card.innerText ? card.innerText.trim() : '';
+      const rawText = (card.textContent || '').trim();
       if (!rawText || rawText.length < 6) return null;
 
       let author = '';
-      const authorMatch = rawText.match(/^([^\n·]+?)\s*·\s*(?:Compras verificadas|Verified purchase)/im);
+      const authorMatch = rawText.match(/^([^\\n·]+?)\\s*·\\s*(?:Compras verificadas|Verified purchase)/im);
       if (authorMatch) {
         author = authorMatch[1].trim();
       } else {
         const authorEl = card.querySelector('[class*="user"], [class*="name"], [class*="nick"], [class*="author"]');
-        if (authorEl) author = authorEl.innerText.trim();
+        if (authorEl) author = (authorEl.textContent || '').trim();
       }
 
       let variant = '';
-      const varMatch = rawText.match(/Item:\s*([^\n]+)/i);
+      const varMatch = rawText.match(/Item:\\s*([^\\n]+)/i);
       if (varMatch) {
         variant = varMatch[1].trim();
       }
 
       let date = '';
-      const dateMatch = rawText.match(/(\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})/);
+      const dateMatch = rawText.match(/(\\d{4}[-/.]\\d{2}[-/.]\\d{2}|\\d{2}[-/.]\\d{2}[-/.]\\d{4})/);
       if (dateMatch) {
         date = dateMatch[1].trim();
       }
@@ -617,9 +572,9 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
           if (!l || l.length < 2) return false;
           if (author && (l === author || l.startsWith(author + ' ·'))) return false;
           if (l === 'BR' || l.includes('Compras verificadas') || l.includes('Verified purchase')) return false;
-          if (/^item:\s*/i.test(l)) return false;
+          if (/^item:\\s*/i.test(l)) return false;
           if (date && l === date) return false;
-          if (/^\d{4}[-/.]\d{2}[-/.]\d{2}/.test(l)) return false;
+          if (/^\\d{4}[-/.]\\d{2}[-/.]\\d{2}/.test(l)) return false;
           if (l.includes('Exibindo') || l.includes('Limpar filtros') || l.includes('Tudo') || l.includes('Inclui imagens')) return false;
           if (l.includes('Anterior') || l.includes('Próximo') || l.includes('Next')) return false;
           return true;
@@ -638,15 +593,17 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       };
     };
 
-    const verifiedBadges = Array.from(document.querySelectorAll('*')).filter(el => {
-      const txt = (el.innerText || el.textContent || '').trim();
-      return (txt === 'Compras verificadas' || txt.includes('Compras verificadas') || txt.includes('Verified purchase')) && el.children.length <= 1;
+    // Procurar por selos de compra verificada ou containers específicos (sem usar querySelectorAll('*'))
+    const badges = Array.from(document.querySelectorAll('span, div, p, b, strong')).filter(el => {
+      if (el.children.length > 1) return false;
+      const txt = (el.textContent || '').trim();
+      return txt === 'Compras verificadas' || txt === 'Verified purchase' || txt.includes('Compras verificadas') || txt.includes('Verified purchase');
     });
 
     let detectedCards = [];
-    if (verifiedBadges.length > 0) {
+    if (badges.length > 0) {
       const cardSet = new Set();
-      verifiedBadges.forEach(b => {
+      badges.forEach(b => {
         let cur = b.parentElement;
         for (let step = 0; step < 5; step++) {
           if (!cur || cur === document.body) break;
@@ -671,26 +628,9 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
           reviewsData.comments.push(parsed);
         }
       });
-    } else {
-      // Fallback para parágrafos dentro de containers de review
-      const revSec = document.querySelector('[class*="review"], [class*="comment"], [data-testid*="review"], #reviews, [class*="feedback"]');
-      if (revSec) {
-        const pEls = Array.from(revSec.querySelectorAll('p, div[class*="text"]'));
-        pEls.forEach((p, idx) => {
-          const t = p.innerText ? p.innerText.trim() : '';
-          if (t && t.length > 15 && t.length < 350 && !reviewsData.comments.some(c => c.text === t)) {
-            reviewsData.comments.push({
-              id: 'rev_sec_' + idx,
-              text: t,
-              rating: '5'
-            });
-          }
-        });
-      }
     }
   } catch (e) {}
 
-  // Permitir até 100 comentários coletados
   if (reviewsData.comments.length > 100) {
     reviewsData.comments = reviewsData.comments.slice(0, 100);
   }
@@ -804,9 +744,10 @@ export const TIKTOK_REVIEWS_EXTRACTOR_SCRIPT = `
       };
     };
 
-    const verifiedBadges = Array.from(document.querySelectorAll('*')).filter(el => {
-      const txt = (el.innerText || el.textContent || '').trim();
-      return (txt === 'Compras verificadas' || txt.includes('Compras verificadas') || txt.includes('Verified purchase')) && el.children.length <= 1;
+    const verifiedBadges = Array.from(document.querySelectorAll('span, div, p, b, strong')).filter(el => {
+      if (el.children.length > 1) return false;
+      const txt = (el.textContent || '').trim();
+      return txt === 'Compras verificadas' || txt === 'Verified purchase' || txt.includes('Compras verificadas') || txt.includes('Verified purchase');
     });
 
     let detectedCards = [];
@@ -1675,12 +1616,14 @@ function MainApp() {
             const reviewText = reviewCount > 0 ? ` e ${reviewCount} avaliações de clientes` : '';
             setTiktokExtractionStatus(`✅ Extração concluída! ${result.images.length} fotos${reviewText} encontradas.`);
             clearInterval(interval);
+          } else if (result.title) {
+            setTiktokExtractionStatus(`Identificando fotos para: ${result.title.slice(0, 45)}...`);
           }
         }
       } catch (err) {
         // Ignora erros temporários enquanto carrega
       }
-    }, 1500);
+    }, 800);
 
     return () => clearInterval(interval);
   }, [isTikTokModalOpen, activeTikTokUrl, extractedTikTokProduct, isExtractingTikTok]);
@@ -5043,8 +4986,8 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <div>
                     <h3 className="text-base font-bold font-display flex items-center gap-2">
                       Importador de Produtos TikTok Shop
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 font-mono font-bold border border-pink-500/20">
-                        v1.3.0
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-500 font-mono font-bold border border-pink-500/20">
+                        v{APP_VERSION}
                       </span>
                     </h3>
                     <p className="text-xs opacity-60 font-mono truncate max-w-md">
@@ -5057,7 +5000,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <button
                     type="button"
                     onClick={handleOpenTikTokLogin}
-                    className="px-3 py-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 hover:text-white transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="px-3 py-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 hover:bg-pink-500/20 text-pink-600 dark:text-pink-300 hover:text-pink-700 dark:hover:text-white transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
                     title="Abrir página oficial de login do TikTok em janela expandida"
                   >
                     <LogIn className="w-3.5 h-3.5" />
@@ -5069,8 +5012,8 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     title={isWebviewExpanded ? "Reduzir visualização da janela" : "Expandir para tela cheia (ideal para login e captchas)"}
                     className={`p-2 rounded-xl border transition-colors cursor-pointer ${
                       isWebviewExpanded 
-                        ? 'border-pink-500/60 bg-pink-500/20 text-pink-300' 
-                        : 'border-white/10 hover:bg-white/10 text-white/70 hover:text-white'
+                        ? 'border-pink-500/60 bg-pink-500/20 text-pink-500 dark:text-pink-300' 
+                        : 'border-white/10 hover:bg-white/10 text-zinc-700 dark:text-white/70 hover:text-black dark:hover:text-white'
                     }`}
                   >
                     {isWebviewExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -5081,7 +5024,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       if (webview) webview.reload();
                     }}
                     title="Recarregar página do TikTok"
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-zinc-700 dark:text-white/70 hover:text-black dark:hover:text-white cursor-pointer"
                   >
                     <RefreshCcw className="w-4 h-4" />
                   </button>
@@ -5090,7 +5033,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       if (activeTikTokUrl) window.open(activeTikTokUrl, '_blank');
                     }}
                     title="Abrir no navegador externo"
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-zinc-700 dark:text-white/70 hover:text-black dark:hover:text-white cursor-pointer"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </button>
@@ -5098,7 +5041,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     onClick={() => {
                       if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
                     }}
-                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white/70 hover:text-white cursor-pointer"
+                    className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-zinc-700 dark:text-white/70 hover:text-black dark:hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -5110,9 +5053,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 {isTikTokCaptchaDetected ? (
                   <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3.5 flex items-start justify-between gap-3 shadow-md shadow-amber-500/10">
                     <div className="flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5 animate-bounce" />
-                      <div className="text-xs text-amber-200 leading-relaxed">
-                        <strong className="font-semibold block text-amber-300 text-sm">Verificação de Segurança (Slide Captcha)</strong>
+                      <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5 animate-bounce" />
+                      <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                        <strong className="font-semibold block text-amber-700 dark:text-amber-300 text-sm">Verificação de Segurança (Slide Captcha)</strong>
                         O TikTok solicitou uma confirmação visual humana. Por favor, arraste a peça do quebra-cabeça na janela abaixo. Assim que você resolver, a extração das imagens continuará automaticamente!
                       </div>
                     </div>
@@ -5120,7 +5063,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <button
                         type="button"
                         onClick={() => setTiktokModalTab('browser')}
-                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer flex-shrink-0 flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-xs font-bold transition-all cursor-pointer flex-shrink-0 flex items-center gap-1.5"
                       >
                         <Globe className="w-3.5 h-3.5" />
                         <span>Abrir Navegador</span>
@@ -5128,16 +5071,17 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     )}
                   </div>
                 ) : isExtractingTikTok ? (
-                  <div className="bg-pink-500/10 border border-pink-500/25 rounded-2xl p-3 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-2.5 text-xs text-pink-300">
-                      <Loader2 className="w-4 h-4 animate-spin text-pink-400 flex-shrink-0" />
+                  <div className="bg-pink-500/15 border border-pink-500/30 rounded-2xl p-3 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-2.5 text-xs text-pink-700 dark:text-pink-300 font-semibold">
+                      <Loader2 className="w-4 h-4 animate-spin text-pink-500 flex-shrink-0" />
                       <span>{tiktokExtractionStatus || 'Carregando página e extraindo mídias em alta resolução...'}</span>
                     </div>
                     <button
+                      type="button"
                       onClick={async () => {
                         const webview = tiktokWebviewRef.current;
                         if (webview) {
-                          setTiktokExtractionStatus('Forçando leitura do DOM...');
+                          setTiktokExtractionStatus('Capturando fotos visíveis no navegador...');
                           try {
                             const res = await webview.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
                             if (res && res.status === 'success' && res.images && res.images.length > 0) {
@@ -5154,14 +5098,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             } else if (res && res.status === 'auth_page') {
                               setTiktokExtractionStatus('Página de login/autenticação detectada.');
                             } else {
-                              setTiktokExtractionStatus('Nenhuma foto de produto encontrada ainda.');
+                              setTiktokExtractionStatus('Tentando localizar fotos do produto no DOM...');
                             }
-                          } catch (e) {}
+                          } catch (e) {
+                            setTiktokExtractionStatus('Erro ao ler página.');
+                          }
                         }
                       }}
-                      className="px-3 py-1 rounded-xl text-[11px] font-bold bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-pink-600 hover:bg-pink-500 text-white shadow-sm transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
                     >
-                      <Sparkles className="w-3 h-3 text-pink-300" /> Forçar Leitura
+                      <Sparkles className="w-3.5 h-3.5" /> Capturar Fotos Agora
                     </button>
                   </div>
                 ) : (extractedTikTokProduct && extractedTikTokProduct.images && extractedTikTokProduct.images.length > 0) ? (
@@ -5340,6 +5286,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               e.preventDefault();
                             }
                           });
+                          const triggerInstantExtraction = async () => {
+                            try {
+                              const res = await el.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
+                              if (res && res.status === 'success' && res.images && res.images.length > 0) {
+                                setExtractedTikTokProduct(res);
+                                setSelectedTikTokImageIds(res.images.map((img: any) => img.id));
+                                if (res.reviews?.comments && res.reviews.comments.length > 0) {
+                                  setSelectedTikTokCommentIds(res.reviews.comments.map((c: any) => c.id));
+                                }
+                                setIsExtractingTikTok(false);
+                                setTiktokModalTab('photos');
+                                const revCount = res.reviews?.comments?.length || 0;
+                                const revTxt = revCount > 0 ? ` e ${revCount} avaliações` : '';
+                                setTiktokExtractionStatus(`✅ Extração concluída! ${res.images.length} fotos${revTxt} encontradas.`);
+                              }
+                            } catch (err) {}
+                          };
+                          el.addEventListener('dom-ready', triggerInstantExtraction);
+                          el.addEventListener('did-finish-load', triggerInstantExtraction);
                         }
                       }}
                       src={activeTikTokUrl}
