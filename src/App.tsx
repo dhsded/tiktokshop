@@ -1376,6 +1376,10 @@ function MainApp() {
     for (let token of tokens) {
       let t = token.trim();
       if (!t) continue;
+      // Suporte a ID numérico do produto colado diretamente (ex: 72127078848654 ou 72127078848654?source=anchor)
+      if (/^\d{10,25}(\?.*)?$/.test(t)) {
+        t = 'https://shop.tiktok.com/view/product/' + t;
+      }
       if (!t.startsWith('http://') && !t.startsWith('https://')) {
         if (t.includes('tiktok.com') || t.includes('shop.tiktok.com')) {
           t = 'https://' + t;
@@ -1428,6 +1432,19 @@ function MainApp() {
     setCurrentQueueIndex(-1);
   };
 
+  const handleCancelSingleImport = () => {
+    setIsExtractingTikTok(false);
+    setIsQueueRunning(false);
+    abortQueueRef.current = true;
+    setTiktokExtractionStatus('Extração cancelada pelo usuário.');
+    const webview = tiktokWebviewRef.current;
+    if (webview) {
+      try {
+        webview.stop();
+      } catch (e) {}
+    }
+  };
+
   const handleCancelQueue = () => {
     abortQueueRef.current = true;
     setIsQueueRunning(false);
@@ -1437,6 +1454,12 @@ function MainApp() {
     setTiktokQueue(prev => prev.map(item => 
       item.status === 'extracting' ? { ...item, status: 'cancelled', error: 'Cancelado pelo usuário' } : item
     ));
+    const webview = tiktokWebviewRef.current;
+    if (webview) {
+      try {
+        webview.stop();
+      } catch (e) {}
+    }
   };
 
   const handleStartQueueExtraction = async () => {
@@ -1629,6 +1652,11 @@ function MainApp() {
     let cleanUrl = tiktokInputUrl.trim();
     if (!cleanUrl) return;
 
+    // Se o usuário colou apenas o ID do produto (ex: 72127078848654 ou 72127078848654?source=anchor)
+    if (/^\d{10,25}(\?.*)?$/.test(cleanUrl)) {
+      cleanUrl = 'https://shop.tiktok.com/view/product/' + cleanUrl;
+    }
+
     // Se múltiplos links foram colados no campo
     const detectedUrls = extractUrls(cleanUrl);
     if (detectedUrls.length > 1) {
@@ -1640,7 +1668,15 @@ function MainApp() {
     }
 
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = 'https://' + cleanUrl;
+      if (cleanUrl.includes('tiktok.com') || cleanUrl.includes('shop.tiktok.com')) {
+        cleanUrl = 'https://' + cleanUrl;
+      } else {
+        setValidationAlert({
+          title: "Link Inválido",
+          message: "Por favor, cole um link válido do produto do TikTok Shop (ex: https://shop.tiktok.com/view/product/... ou https://www.tiktok.com/...)."
+        });
+        return;
+      }
     }
     setActiveTikTokUrl(cleanUrl);
     setExtractedTikTokProduct(null);
@@ -2019,7 +2055,18 @@ function MainApp() {
     if (isQueueRunning) return;
     if (activeTikTokUrl.includes('/login') || activeTikTokUrl.includes('/auth')) return;
 
+    const startTime = Date.now();
+    const timeoutMs = 25000;
+
     const interval = setInterval(async () => {
+      // Evitar loop infinito: timeout de 25s
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(interval);
+        setIsExtractingTikTok(false);
+        setTiktokExtractionStatus('⏱️ Tempo limite de extração esgotado (25s). Link sem fotos detectadas ou bloqueado.');
+        return;
+      }
+
       const webview = tiktokWebviewRef.current;
       if (!webview) return;
 
@@ -4035,18 +4082,48 @@ Angulos a variar (escolha os mais relevantes para o produto):
               </button>
 
               {tiktokQueue.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={handleStartTikTokImport}
-                  disabled={!tiktokInputUrl.trim() || isExtractingTikTok || isQueueRunning}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-600/20 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                >
-                  {isExtractingTikTok ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  Puxar Produto
-                </button>
+                isExtractingTikTok ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelSingleImport}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/30 hover:scale-[1.02] active:scale-[0.98] cursor-pointer animate-pulse"
+                    title="Cancelar extração em andamento"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Cancelar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartTikTokImport}
+                    disabled={!tiktokInputUrl.trim() || isQueueRunning}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-rose-600 to-orange-600 hover:from-pink-500 hover:to-orange-500 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-600/20 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    Puxar Produto
+                  </button>
+                )
               ) : null}
             </div>
           </div>
+
+          {/* Barra de Status e Cancelamento Rápido em Andamento */}
+          {isExtractingTikTok && (
+            <div className="flex items-center justify-between text-xs bg-pink-500/15 border border-pink-500/30 rounded-xl px-3.5 py-2">
+              <span className="text-pink-300 font-mono flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400" />
+                {tiktokExtractionStatus || 'Puxando fotos do produto...'}
+              </span>
+              <button
+                type="button"
+                onClick={handleCancelSingleImport}
+                className="text-xs text-rose-300 hover:text-white bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all"
+                title="Cancelar extração imediatamente"
+              >
+                <XCircle className="w-3.5 h-3.5" /> Cancelar
+              </button>
+            </div>
+          )}
         </div>
 
         {/* PAINEL DA FILA DE EXTRAÇÃO */}
@@ -5530,6 +5607,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
               exit={{ opacity: 0 }}
               onClick={() => {
                 if (isQueueRunning) handleCancelQueue();
+                if (isExtractingTikTok) handleCancelSingleImport();
                 if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
               }}
               className="absolute inset-0 bg-black/80 backdrop-blur-md"
@@ -5586,6 +5664,17 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <span>Cancelar Fila ({currentQueueIndex + 1}/{tiktokQueue.length})</span>
                     </button>
                   )}
+                  {isExtractingTikTok && !isQueueRunning && (
+                    <button
+                      type="button"
+                      onClick={handleCancelSingleImport}
+                      className="px-3 py-1.5 rounded-xl border border-rose-500/50 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm animate-pulse"
+                      title="Interromper extração do produto atual"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Cancelar Extração</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleOpenTikTokLogin}
@@ -5629,6 +5718,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <button
                     onClick={() => {
                       if (isQueueRunning) handleCancelQueue();
+                      if (isExtractingTikTok) handleCancelSingleImport();
                       if (!isImportingTikTokImages) setIsTikTokModalOpen(false);
                     }}
                     className="p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-zinc-700 dark:text-white/70 hover:text-black dark:hover:text-white cursor-pointer"
@@ -5895,6 +5985,12 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           };
                           el.addEventListener('dom-ready', triggerInstantExtraction);
                           el.addEventListener('did-finish-load', triggerInstantExtraction);
+                          el.addEventListener('did-fail-load', (e: any) => {
+                            if (e.errorCode !== -3) {
+                              setIsExtractingTikTok(false);
+                              setTiktokExtractionStatus(`⚠️ Falha ao carregar página: ${e.errorDescription || 'Erro de rede ou URL'}`);
+                            }
+                          });
                         }
                       }}
                       src={activeTikTokUrl}
@@ -6332,6 +6428,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                   <button
                     onClick={() => {
                       if (isQueueRunning) handleCancelQueue();
+                      if (isExtractingTikTok) handleCancelSingleImport();
                       if (!isImportingTikTokImages && !isDownloadingZip) setIsTikTokModalOpen(false);
                     }}
                     disabled={isImportingTikTokImages || isDownloadingZip}
