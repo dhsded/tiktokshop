@@ -284,55 +284,65 @@ function dataUrlToFile(dataUrl: string, filename: string): File {
 
 const TIKTOK_PDP_SCRAPER_SCRIPT = `
 (() => {
-  const currentUrl = window.location.href || '';
-  if (
-    currentUrl.includes('/login') ||
-    currentUrl.includes('/auth') ||
-    currentUrl.includes('/signup') ||
-    currentUrl.includes('/passport')
-  ) {
+  try {
+    const currentUrl = window.location.href || '';
+    if (
+      currentUrl.includes('/login') ||
+      currentUrl.includes('/auth') ||
+      currentUrl.includes('/signup') ||
+      currentUrl.includes('/passport')
+    ) {
+      try {
+        const u = new URL(currentUrl);
+        const redirectUrl = u.searchParams.get('redirect_url');
+        if (redirectUrl && (redirectUrl.includes('tiktok.com') || redirectUrl.includes('shop.tiktok.com'))) {
+          window.location.href = decodeURIComponent(redirectUrl);
+          return { status: 'redirecting_back', title: '' };
+        }
+      } catch (e) {}
+      return { status: 'auth_page', title: '' };
+    }
+
+    // 1. Se o produto já está carregado no DOM (título, preço, nome ou dados de compra), NÃO é captcha
+    const bodyText = (document.body ? (document.body.innerText || document.body.textContent || '') : '');
+    const hasProductContent = !!(
+      document.querySelector('h1') || 
+      document.querySelector('[data-testid*="title"]') || 
+      document.querySelector('[class*="product-title"]') || 
+      document.querySelector('[class*="product_name"]') || 
+      document.querySelector('[class*="sale-price"]') || 
+      document.querySelector('[class*="price-val"]') || 
+      document.querySelector('[class*="price"]') || 
+      bodyText.includes('R$') || 
+      bodyText.includes('Vendido por') || 
+      bodyText.includes('Frete grátis') || 
+      bodyText.includes('Comprar agora')
+    );
+
+    // 2. Só é captcha se o produto NÃO está presente E o quebra-cabeça visual estiver ativo
+    const isSecurityTitle = (document.title || '').toLowerCase().includes('security check');
+    let isCaptchaImgVisible = false;
     try {
-      const u = new URL(currentUrl);
-      const redirectUrl = u.searchParams.get('redirect_url');
-      if (redirectUrl && (redirectUrl.includes('tiktok.com') || redirectUrl.includes('shop.tiktok.com'))) {
-        window.location.href = decodeURIComponent(redirectUrl);
-        return { status: 'redirecting_back', title: '' };
-      }
+      const captchaImg = document.getElementById('captcha-verify-image');
+      isCaptchaImgVisible = !!(captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20));
     } catch (e) {}
-    return { status: 'auth_page', title: '' };
-  }
 
-  // 1. Se o produto já está carregado no DOM (título, preço, nome ou dados de compra), NÃO é captcha
-  const hasProductContent = !!(
-    document.querySelector('h1') || 
-    document.querySelector('[data-testid*="title"]') || 
-    document.querySelector('[class*="product-title"]') || 
-    document.querySelector('[class*="product_name"]') ||
-    document.querySelector('[class*="sale-price"]') ||
-    document.querySelector('[class*="price-val"]') ||
-    document.querySelector('[class*="price"]') ||
-    (document.body && (
-      document.body.innerText.includes('R$') || 
-      document.body.innerText.includes('Vendido por') || 
-      document.body.innerText.includes('Frete grátis') ||
-      document.body.innerText.includes('Comprar agora')
-    ))
-  );
+    let isContainerVisible = false;
+    try {
+      const captchaContainer = document.getElementById('captcha_container');
+      isContainerVisible = !!(
+        captchaContainer && 
+        captchaContainer.style && 
+        captchaContainer.style.display !== 'none' && 
+        captchaContainer.style.visibility !== 'hidden' && 
+        (captchaContainer.offsetWidth > 30 || captchaContainer.offsetHeight > 30)
+      );
+    } catch (e) {}
 
-  // 2. Só é captcha se o produto NÃO está presente E o quebra-cabeça visual estiver ativo
-  const isSecurityTitle = (document.title || '').toLowerCase().includes('security check');
-  const captchaImg = document.getElementById('captcha-verify-image');
-  const isCaptchaImgVisible = captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20);
-  const captchaContainer = document.getElementById('captcha_container');
-  const isContainerVisible = captchaContainer && 
-    captchaContainer.style.display !== 'none' && 
-    captchaContainer.style.visibility !== 'hidden' && 
-    (captchaContainer.offsetWidth > 30 || captchaContainer.offsetHeight > 30);
-
-  const isCaptcha = !hasProductContent && (isSecurityTitle || isCaptchaImgVisible || isContainerVisible);
-  if (isCaptcha) {
-    return { status: 'captcha', title: document.title };
-  }
+    const isCaptcha = !hasProductContent && (isSecurityTitle || isCaptchaImgVisible || isContainerVisible);
+    if (isCaptcha) {
+      return { status: 'captcha', title: document.title || '' };
+    }
 
   // 0. Auto-dispensar e fechar modais/popups de login intrusivos
   try {
@@ -817,18 +827,28 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     reviewsData.comments = reviewsData.comments.slice(0, 100);
   }
 
-  return {
-    status: 'success',
-    title,
-    price,
-    description: descParts.join('\n'),
-    images: uniqueImages.map((img, i) => ({
-      id: 'img_' + i,
-      url: img.highResUrl,
-      fallbackUrl: img.fallbackUrl
-    })),
-    reviews: reviewsData
-  };
+    return {
+      status: 'success',
+      title,
+      price,
+      description: descParts.join('\n'),
+      images: uniqueImages.map((img, i) => ({
+        id: 'img_' + i,
+        url: img.highResUrl,
+        fallbackUrl: img.fallbackUrl
+      })),
+      reviews: reviewsData
+    };
+  } catch (fatalError) {
+    return {
+      status: 'error',
+      message: String(fatalError && fatalError.message ? fatalError.message : fatalError),
+      title: (document.title || '').replace(/\\s*\\|\\s*TikTok\\s*Shop.*/i, '').trim(),
+      price: '',
+      description: '',
+      images: []
+    };
+  }
 })()
 `;
 
@@ -2107,25 +2127,28 @@ function MainApp() {
           try {
             // Verificar se o captcha foi resolvido e a página do produto abriu
             const checkRes = await webview.executeJavaScript(`(() => {
-              const hasProduct = !!(
-                document.querySelector('h1') || 
-                document.querySelector('[data-testid*="title"]') || 
-                document.querySelector('[class*="product-title"]') || 
-                document.querySelector('[class*="product_name"]') ||
-                document.querySelector('[class*="sale-price"]') ||
-                document.querySelector('[class*="price-val"]') ||
-                document.querySelector('[class*="price"]') ||
-                (document.body && (
-                  document.body.innerText.includes('R$') || 
-                  document.body.innerText.includes('Vendido por') || 
-                  document.body.innerText.includes('Frete grátis') ||
-                  document.body.innerText.includes('Comprar agora')
-                ))
-              );
-              const isSecTitle = (document.title || '').toLowerCase().includes('security check');
-              const captchaImg = document.getElementById('captcha-verify-image');
-              const isCaptchaVisible = captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20);
-              return hasProduct || (!isSecTitle && !isCaptchaVisible);
+              try {
+                const bodyText = (document.body ? (document.body.innerText || document.body.textContent || '') : '');
+                const hasProduct = !!(
+                  document.querySelector('h1') || 
+                  document.querySelector('[data-testid*="title"]') || 
+                  document.querySelector('[class*="product-title"]') || 
+                  document.querySelector('[class*="product_name"]') || 
+                  document.querySelector('[class*="sale-price"]') || 
+                  document.querySelector('[class*="price-val"]') || 
+                  document.querySelector('[class*="price"]') || 
+                  bodyText.includes('R$') || 
+                  bodyText.includes('Vendido por') || 
+                  bodyText.includes('Frete grátis') || 
+                  bodyText.includes('Comprar agora')
+                );
+                const isSecTitle = (document.title || '').toLowerCase().includes('security check');
+                const captchaImg = document.getElementById('captcha-verify-image');
+                const isCaptchaVisible = captchaImg && (captchaImg.offsetParent !== null || captchaImg.offsetWidth > 20);
+                return hasProduct || (!isSecTitle && !isCaptchaVisible);
+              } catch (e) {
+                return false;
+              }
             })()`);
             if (checkRes) {
               setIsTikTokCaptchaDetected(false);
@@ -5858,6 +5881,8 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               setTiktokExtractionStatus('Verificação de segurança (captcha) ainda ativa. Por favor, conclua o quebra-cabeça.');
                             } else if (res && res.status === 'auth_page') {
                               setTiktokExtractionStatus('Página de login/autenticação detectada.');
+                            } else if (res && res.status === 'error') {
+                              setTiktokExtractionStatus(`Aviso: ${res.message || 'Falha de leitura'}. Tentando novamente...`);
                             } else if (res && res.title) {
                               setTiktokExtractionStatus(`Identificando fotos para: ${res.title.slice(0, 45)}...`);
                             } else {
