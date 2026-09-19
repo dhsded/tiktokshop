@@ -83,7 +83,8 @@ import {
   AIContentPart, 
   UnifiedAIOptions,
   UnifiedAIResult,
-  formatAIError 
+  formatAIError,
+  normalizeScriptResponse 
 } from './services/ai-providers';
 
 // ============================================================
@@ -2960,13 +2961,14 @@ REGRAS OBRIGATÓRIAS:
    - (1) Descrição visual da cena e movimento de câmera (Camera Movement & Visual Action);
    - (2) Narração e falas dos personagens (Narration / Voiceover / Character Speech em PT-BR);
    - (3) Música de fundo e efeitos sonoros (Background Music & SFX).
-   Exemplo no veoPrompt: 'Cinematic slow-motion camera pan across product. Voiceover/Dialogue: "[Texto da narração/fala em PT-BR]". Background Music: Upbeat commercial soundtrack with crisp product handling SFX.'
+   Exemplo no veoPrompt: 'Cinematic slow-motion camera pan across product. Voiceover/Dialogue: \'[Texto da narração/fala em PT-BR]\'. Background Music: Upbeat commercial soundtrack with crisp product handling SFX.'
 4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
 5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
 6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
 7. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
-8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA) com as partes faladas em PT-BR indicadas claramente entre aspas.
+8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA) com as partes faladas em PT-BR indicadas claramente entre aspas simples (ex: 'fala').
 9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
+10. ⚠️ FORMATAÇÃO JSON ESTREITA: NUNCA use aspas duplas (") dentro dos textos de prompts, narrações ou descrições. Use SEMPRE aspas simples (') para falas e diálogos, evitando quebrar a sintaxe JSON.
 
 Retorne em estrutura JSON:
 {
@@ -3014,7 +3016,8 @@ Retorne em estrutura JSON:
 
       if (abortControllerRef.current?.signal.aborted) return;
 
-      const parsed = aiProvidersManager.safeJsonParse<ScriptResponse>(response.text || '{}', {} as ScriptResponse);
+      const parsedRaw = aiProvidersManager.safeJsonParse<any>(response.text || '{}', {});
+      const parsed = normalizeScriptResponse(parsedRaw, duration) as ScriptResponse | null;
       if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
         throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
       }
@@ -3122,9 +3125,10 @@ REGRAS OBRIGATÓRIAS:
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais, sempre incluindo a narração/falas e a trilha sonora.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
 5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
-6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS para as partes técnicas de câmera e áudio, mantendo as falas em PT-BR dentro de aspas.
+6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS para as partes técnicas de câmera e áudio, mantendo as falas em PT-BR dentro de aspas simples (ex: 'fala').
 7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
 8. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
+9. ⚠️ FORMATAÇÃO JSON ESTREITA: NUNCA use aspas duplas (") dentro dos textos de prompts, narrações ou descrições. Use SEMPRE aspas simples (') para falas e diálogos, evitando quebrar a sintaxe JSON.
 
 Retorne em estrutura JSON:
 {
@@ -3170,7 +3174,8 @@ Retorne em estrutura JSON:
 
       if (abortControllerRef.current?.signal.aborted) return;
 
-      const parsed = aiProvidersManager.safeJsonParse<ScriptResponse>(response.text || '{}', {} as ScriptResponse);
+      const parsedRaw = aiProvidersManager.safeJsonParse<any>(response.text || '{}', {});
+      const parsed = normalizeScriptResponse(parsedRaw, duration) as ScriptResponse | null;
       if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
         throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
       }

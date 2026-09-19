@@ -316,7 +316,7 @@ export class AIProvidersManager {
   /**
    * Converte a resposta em JSON limpo e parseável,
    * removendo tags de pensamento (<think>...</think>), fences de markdown,
-   * texto envolvente e vírgulas extras antes de fechar chaves/colchetes.
+   * texto envolvente, caracteres de controle e reparando vírgulas e aspas.
    */
   public cleanJsonResponse(rawText: string): string {
     if (!rawText) return '{}';
@@ -349,31 +349,152 @@ export class AIProvidersManager {
 
     if (start !== -1 && end !== -1 && end > start) {
       clean = clean.substring(start, end + 1);
+    } else if (start !== -1) {
+      clean = clean.substring(start);
     }
 
     // 4. Limpa vírgulas extras (trailing commas) antes de fechar objetos ou listas
     clean = clean.replace(/,\s*([\}\]])/g, '$1');
 
-    try {
-      JSON.parse(clean);
-      return clean;
-    } catch (e) {
-      return clean;
-    }
+    return clean;
   }
 
   /**
-   * Faz o parse seguro do JSON retornado pela IA
+   * Tenta reparar JSONs incompletos ou truncados adicionando aspas ou fechamentos ausentes
+   */
+  public repairTruncatedJson(jsonStr: string): string {
+    let str = jsonStr.trim();
+    if (!str) return '{}';
+
+    // Remove vírgula residual final
+    str = str.replace(/,\s*$/, '');
+    
+    // Rastrear aspas e chaves/colchetes abertos
+    let inString = false;
+    let escape = false;
+    const stack: string[] = [];
+
+    for (let i = 0; i < str.length; i++) {
+      const char = str[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (char === '\\') {
+        escape = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (char === '{' || char === '[') {
+          stack.push(char);
+        } else if (char === '}') {
+          if (stack.length > 0 && stack[stack.length - 1] === '{') stack.pop();
+        } else if (char === ']') {
+          if (stack.length > 0 && stack[stack.length - 1] === '[') stack.pop();
+        }
+      }
+    }
+
+    if (inString) {
+      str += '"';
+    }
+
+    str = str.replace(/,\s*$/, '');
+
+    // Fecha as chaves e colchetes abertos na ordem inversa
+    while (stack.length > 0) {
+      const open = stack.pop();
+      if (open === '{') str += '}';
+      else if (open === '[') str += ']';
+    }
+
+    return str;
+  }
+
+  /**
+   * Faz o parse seguro do JSON retornado pela IA com múltiplas camadas de recuperação
    */
   public safeJsonParse<T>(rawText: string, fallback: T): T {
+    if (!rawText) return fallback;
+
+    // Tentativa 1: Parse direto após limpeza padrão
     try {
       const cleaned = this.cleanJsonResponse(rawText);
       const parsed = JSON.parse(cleaned);
       return parsed as T;
-    } catch (err) {
-      console.warn('[AIProvidersManager] Falha ao fazer parse de JSON:', err, rawText?.slice(0, 200));
-      return fallback;
+    } catch (e1) {}
+
+    // Tentativa 2: Reparar JSON truncado ou com delimitadores ausentes
+    try {
+      const cleaned = this.cleanJsonResponse(rawText);
+      const repaired = this.repairTruncatedJson(cleaned);
+      const parsed = JSON.parse(repaired);
+      return parsed as T;
+    } catch (e2) {}
+
+    // Tentativa 3: Extração cirúrgica de cenas via regex se JSON global estiver quebrado
+    try {
+      const campaignTitleMatch = rawText.match(/["']?(?:campaignTitle|campaign_title|titulo|title)["']?\s*:\s*["']([^"'\n\r]+)["']/i);
+      const campaignTitle = campaignTitleMatch ? campaignTitleMatch[1].trim() : 'Campanha TikTok Shop';
+
+      const sceneBlockRegex = /\{[^{}]*(?:veoPrompt|imagePrompt|narration|digenPrompt|duracao|duration)[^{}]*\}/gi;
+      const sceneBlocks = rawText.match(sceneBlockRegex);
+
+      if (sceneBlocks && sceneBlocks.length > 0) {
+        const extractedScenes: any[] = [];
+        for (let idx = 0; idx < sceneBlocks.length; idx++) {
+          const block = sceneBlocks[idx];
+          try {
+            const sceneObj = JSON.parse(this.cleanJsonResponse(block));
+            if (sceneObj) extractedScenes.push(sceneObj);
+          } catch (bErr) {
+            const getField = (keys: string[]) => {
+              for (const k of keys) {
+                const m = block.match(new RegExp(`["']?${k}["']?\\s*:\\s*["']([\\s\\S]*?)["']\\s*(?:,|\\})`, 'i'));
+                if (m && m[1]) return m[1].trim();
+              }
+              return '';
+            };
+
+            const imageName = getField(['imageName', 'image_name', 'nomeImagem', 'image']) || `look_${idx + 1}`;
+            const duration = getField(['duration', 'duracao', 'tempo']) || '5s';
+            const imagePrompt = getField(['imagePrompt', 'image_prompt', 'prompt_imagem', 'nanoBananaPrompt', 'prompt']);
+            const veoPrompt = getField(['veoPrompt', 'veo_prompt', 'prompt_veo', 'videoPrompt']);
+            const digenPrompt = getField(['digenPrompt', 'digen_prompt', 'prompt_digen', 'avatarPrompt']);
+            const narration = getField(['narration', 'narracao', 'voiceover', 'speech', 'fala']);
+            const description = getField(['description', 'descricao', 'desc', 'cena']) || `Cena ${idx + 1}`;
+
+            if (veoPrompt || imagePrompt || narration || digenPrompt) {
+              extractedScenes.push({
+                imageName,
+                duration,
+                imagePrompt: imagePrompt || veoPrompt,
+                veoPrompt: veoPrompt || imagePrompt,
+                digenPrompt: digenPrompt || veoPrompt,
+                narration: narration || '',
+                description
+              });
+            }
+          }
+        }
+
+        if (extractedScenes.length > 0) {
+          return {
+            campaignTitle,
+            scenes: extractedScenes
+          } as unknown as T;
+        }
+      }
+    } catch (e3) {
+      console.warn('[AIProvidersManager] Falha na extração cirúrgica de cenas:', e3);
     }
+
+    console.warn('[AIProvidersManager] Todas as tentativas de parse de JSON falharam:', rawText?.slice(0, 300));
+    return fallback;
   }
 
   /**
@@ -593,7 +714,7 @@ export class AIProvidersManager {
               model,
               messages,
               temperature: 0.7,
-              max_tokens: 2048,
+              max_tokens: 4096,
               response_format: { type: "json_object" }
             })
           });
@@ -750,7 +871,7 @@ export class AIProvidersManager {
               model,
               messages: reqMessages,
               temperature: 0.7,
-              max_tokens: 2048
+              max_tokens: 4096
             })
           });
 
@@ -1000,3 +1121,117 @@ export function formatAIError(err: any, provider: AIProviderId): string {
 }
 
 export const aiProvidersManager = new AIProvidersManager();
+
+export interface NormalizedScene {
+  id: string;
+  imageName: string;
+  duration: string;
+  imagePrompt: string;
+  veoPrompt: string;
+  digenPrompt: string;
+  narration: string;
+  description: string;
+}
+
+export interface NormalizedScriptResponse {
+  campaignTitle: string;
+  scenes: NormalizedScene[];
+}
+
+/**
+ * Normaliza a resposta da IA para a estrutura esperada pelo aplicativo,
+ * lidando com variações de chaves em português/inglês, arrays diretos,
+ * objetos aninhados e campos ausentes.
+ */
+export function normalizeScriptResponse(raw: any, defaultDuration: string = '5s'): NormalizedScriptResponse | null {
+  if (!raw) return null;
+
+  let campaignTitle = 'Campanha TikTok Shop';
+  let rawScenes: any[] = [];
+
+  // Se o raw for um array direto [ { ... }, { ... } ]
+  if (Array.isArray(raw)) {
+    rawScenes = raw;
+  } else if (typeof raw === 'object') {
+    campaignTitle = raw.campaignTitle || raw.campaign_title || raw.titulo || raw.title || raw.nomeCampanha || campaignTitle;
+
+    // Possíveis chaves onde o array de cenas pode estar alocado
+    const possibleSceneArrays = [
+      raw.scenes,
+      raw.cenas,
+      raw.items,
+      raw.itens,
+      raw.roteiro,
+      raw.script,
+      raw.scenesList,
+      raw.video_scenes
+    ];
+
+    for (const arr of possibleSceneArrays) {
+      if (Array.isArray(arr) && arr.length > 0) {
+        rawScenes = arr;
+        break;
+      }
+    }
+
+    // Se ainda não encontrou array, pode ser um mapa de cenas indexadas {"scene1": {...}, "scene2": {...}}
+    if (rawScenes.length === 0) {
+      const sceneKeys = Object.keys(raw).filter(k =>
+        /^(?:scene|cena|item)?\d+$/i.test(k) || (!isNaN(Number(k)) && typeof raw[k] === 'object')
+      );
+      if (sceneKeys.length > 0) {
+        rawScenes = sceneKeys.map(k => raw[k]);
+      }
+    }
+  }
+
+  if (!Array.isArray(rawScenes) || rawScenes.length === 0) {
+    return null;
+  }
+
+  const normalizedScenes: NormalizedScene[] = rawScenes.map((item, index) => {
+    if (typeof item !== 'object' || !item) {
+      const textVal = String(item || '').trim();
+      return {
+        id: `scene_${index + 1}_${Date.now()}`,
+        imageName: `look_${index + 1}`,
+        duration: defaultDuration,
+        imagePrompt: textVal,
+        veoPrompt: textVal,
+        digenPrompt: textVal,
+        narration: '',
+        description: `Cena ${index + 1}`
+      };
+    }
+
+    const duration = item.duration || item.duracao || item.tempo || defaultDuration;
+    const imageName = item.imageName || item.image_name || item.nomeImagem || item.nome_imagem || item.image || item.foto || `look_${index + 1}`;
+
+    const veoPrompt = item.veoPrompt || item.veo_prompt || item.prompt_veo || item.videoPrompt || item.prompt_video || item.imagePrompt || item.image_prompt || '';
+    const imagePrompt = item.imagePrompt || item.image_prompt || item.prompt_imagem || item.nanoBananaPrompt || item.prompt || veoPrompt;
+    const digenPrompt = item.digenPrompt || item.digen_prompt || item.prompt_digen || item.avatarPrompt || item.prompt_avatar || veoPrompt;
+    const narration = item.narration || item.narracao || item.voiceover || item.speech || item.fala || item.texto || '';
+    const description = item.description || item.descricao || item.desc || item.cena || item.titulo || `Cena ${index + 1}`;
+
+    return {
+      id: item.id || `scene_${index + 1}_${Date.now()}`,
+      imageName: String(imageName).trim(),
+      duration: String(duration).trim(),
+      imagePrompt: String(imagePrompt).trim(),
+      veoPrompt: String(veoPrompt).trim(),
+      digenPrompt: String(digenPrompt).trim(),
+      narration: String(narration).trim(),
+      description: String(description).trim()
+    };
+  }).filter(sc => sc.veoPrompt.length > 0 || sc.imagePrompt.length > 0 || sc.narration.length > 0 || sc.description.length > 0);
+
+  if (normalizedScenes.length === 0) {
+    return null;
+  }
+
+  return {
+    campaignTitle: String(campaignTitle).trim(),
+    scenes: normalizedScenes
+  };
+}
+
