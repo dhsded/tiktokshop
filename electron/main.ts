@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, globalShortcut, session } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
@@ -545,8 +545,29 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.tiktokshop.gerador');
 
-    // Interceptar e neutralizar chamadas de deep-link (bytedance://, tiktok://, snssdk://, intent://)
+    const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+    // Interceptar e registrar protocolos proprietários do TikTok para NUNCA abrir o popup do Windows
+    const blockedSchemes = ['bytedance', 'tiktok', 'snssdk1128', 'snssdk1233', 'snssdk', 'intent'];
+    for (const scheme of blockedSchemes) {
+      try {
+        protocol.handle(scheme, () => new Response('', { status: 204 }));
+      } catch (err) {
+        console.log(`[Main] Protocolo ${scheme} ignorado ou já tratado:`, err);
+      }
+    }
+
+    // Configurar a sessão isolada do TikTok Shop com User-Agent genuíno e filtros
     const tiktokSession = session.fromPartition('persist:tiktok_shop');
+    tiktokSession.setUserAgent(CHROME_USER_AGENT);
+
+    tiktokSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const requestHeaders = { ...details.requestHeaders };
+      requestHeaders['User-Agent'] = CHROME_USER_AGENT;
+      delete requestHeaders['X-Electron'];
+      callback({ requestHeaders });
+    });
+
     tiktokSession.webRequest.onBeforeRequest((details, callback) => {
       const url = details.url.toLowerCase();
       if (

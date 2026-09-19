@@ -291,6 +291,14 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     currentUrl.includes('/signup') ||
     currentUrl.includes('/passport')
   ) {
+    try {
+      const u = new URL(currentUrl);
+      const redirectUrl = u.searchParams.get('redirect_url');
+      if (redirectUrl && (redirectUrl.includes('tiktok.com') || redirectUrl.includes('shop.tiktok.com'))) {
+        window.location.href = decodeURIComponent(redirectUrl);
+        return { status: 'redirecting_back', title: '' };
+      }
+    } catch (e) {}
     return { status: 'auth_page', title: '' };
   }
 
@@ -298,6 +306,39 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
   if (isCaptcha) {
     return { status: 'captcha', title: document.title };
   }
+
+  // 0. Auto-dispensar e fechar modais/popups de login intrusivos
+  try {
+    const closeSelectors = [
+      '[data-e2e="modal-close-icon"]',
+      'button[aria-label="Close"]',
+      'button[aria-label="Fechar"]',
+      '[class*="modal-close"]',
+      '[class*="close-icon"]',
+      '[class*="DivClose"]',
+      '[class*="login-modal"] button',
+      'div[role="dialog"] button'
+    ];
+    for (const sel of closeSelectors) {
+      const btn = document.querySelector(sel);
+      if (btn && typeof btn.click === 'function') {
+        btn.click();
+        break;
+      }
+    }
+
+    const overlays = document.querySelectorAll(
+      '[class*="DivLoginModal"], [class*="login-modal"], div[role="dialog"], [class*="Mask"]'
+    );
+    overlays.forEach(ov => {
+      const text = (ov.innerText || ov.textContent || '').toLowerCase();
+      if (text.includes('entrar') || text.includes('log in') || text.includes('login') || text.includes('criar conta') || text.includes('realmente você')) {
+        ov.remove();
+      }
+    });
+    document.body.style.overflow = 'auto';
+    if (document.documentElement) document.documentElement.style.overflow = 'auto';
+  } catch (e) {}
 
   // 1. Título do Produto
   let title = '';
@@ -5857,6 +5898,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         }
                       }}
                       src={activeTikTokUrl}
+                      useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
                       partition="persist:tiktok_shop"
                       className={`w-full transition-all duration-300 ${
                         isWebviewExpanded 
