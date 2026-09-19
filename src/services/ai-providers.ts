@@ -498,13 +498,36 @@ export class AIProvidersManager {
   }
 
   /**
-   * Sanitiza e limpa chaves de API
+   * Sanitiza e limpa chaves de API com extração cirúrgica de tokens
    */
   public sanitizeKey(key?: string): string {
     if (!key) return '';
-    let k = key.trim();
+    let k = String(key)
+      .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '')
+      .trim();
+
+    // 1. Extração cirúrgica de chave Google Gemini (AIzaSy...)
+    const geminiMatch = k.match(/AIzaSy[A-Za-z0-9_-]{30,42}/);
+    if (geminiMatch) {
+      return geminiMatch[0];
+    }
+
+    // 2. Extração cirúrgica de chave Groq (gsk_...)
+    const groqMatch = k.match(/gsk_[A-Za-z0-9]{40,75}/);
+    if (groqMatch) {
+      return groqMatch[0];
+    }
+
+    // 3. Extração cirúrgica de chave OpenRouter (sk-or-v1-...)
+    const openrouterMatch = k.match(/sk-or-v1-[A-Za-z0-9]{55,80}/);
+    if (openrouterMatch) {
+      return openrouterMatch[0];
+    }
+
+    // 4. Limpeza padrão para outros formatos
+    k = k.replace(/^[=\s:,"']+|[=\s:,"';]+$/g, '').trim();
+    k = k.replace(/^(?:GEMINI_API_KEY|GROQ_API_KEY|OPENROUTER_API_KEY|API_KEY|KEY)\s*[:=]\s*/i, '').trim();
     k = k.replace(/^["']|["']$/g, '').trim();
-    k = k.replace(/^(?:GEMINI_API_KEY|GROQ_API_KEY|OPENROUTER_API_KEY|API_KEY)\s*=\s*/i, '').trim();
     return k;
   }
 
@@ -532,6 +555,8 @@ export class AIProvidersManager {
     const modelsToTry = [
       preferredModel,
       'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
       'gemini-flash-latest'
     ].filter((m, i, a) => a.indexOf(m) === i);
 
@@ -1095,7 +1120,7 @@ export function formatAIError(err: any, provider: AIProviderId): string {
       const msg = innerErr?.message || innerErr?.details?.[0]?.message;
       
       if (msg && (msg.toLowerCase().includes('api key not valid') || msg.toLowerCase().includes('api_key_invalid'))) {
-        return `Chave de API do ${provider.toUpperCase()} inválida ou expirada (API_KEY_INVALID). Verifique se copiou a chave correta (AIzaSy... sem aspas ou espaços) ou gere uma nova chave gratuita em https://aistudio.google.com/apikey`;
+        return `Chave do ${provider.toUpperCase()} não autorizada pelo Google (API_KEY_INVALID). Motivos frequentes:\n1. A chave precisa ser criada diretamente em https://aistudio.google.com/apikey (Google AI Studio) e estar sem restrições de aplicativo/HTTP no Google Cloud.\n2. Se foi criada no Google Cloud Console geral, é obrigatório ativar a "Generative Language API" nas APIs do projeto.\n3. Em contas empresariais (Google Workspace), o Gemini pode estar bloqueado pelo administrador. Use uma conta @gmail.com pessoal.\n👉 Dica: Você pode usar o GROQ ou OPENROUTER no topo para gerar roteiros gratuitamente e sem restrições de conta!`;
       }
       if (code === 400 && msg) {
         return `Requisição inválida (${code}): ${msg}`;
@@ -1111,7 +1136,7 @@ export function formatAIError(err: any, provider: AIProviderId): string {
 
   const lower = rawMsg.toLowerCase();
   if (lower.includes('api key not valid') || lower.includes('api_key_invalid') || lower.includes('invalid api key')) {
-    return `Chave de API do ${provider.toUpperCase()} inválida ou expirada. Verifique se copiou a chave correta ou gere uma nova chave gratuita.`;
+    return `Chave do ${provider.toUpperCase()} inválida ou não autorizada pelo Google. Gere uma nova chave gratuita em https://aistudio.google.com/apikey ou alterne para Groq/OpenRouter no topo.`;
   }
   if (lower.includes('429') || lower.includes('quota') || lower.includes('resource_exhausted')) {
     return `Limite de cota gratuito atingido no ${provider.toUpperCase()} (429 - Cota esgotada). Experimente usar Groq ou OpenRouter no topo.`;
