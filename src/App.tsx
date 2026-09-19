@@ -302,7 +302,14 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     return { status: 'auth_page', title: '' };
   }
 
-  const isCaptcha = document.title.includes('Security Check') || !!document.getElementById('captcha_container');
+  const captchaContainer = document.getElementById('captcha_container') || document.getElementById('captcha-verify-container');
+  const hasCaptchaContent = captchaContainer && (
+    captchaContainer.children.length > 0 || 
+    captchaContainer.innerHTML.trim().length > 0 ||
+    captchaContainer.offsetHeight > 50
+  );
+  const captchaVerifyWrapper = document.querySelector('.secsdk-captcha-drag-icon, #captcha-verify-image, .captcha_verify_img--wrapper, [class*="captcha-verify-container"], [id*="secsdk-captcha"]');
+  const isCaptcha = document.title.includes('Security Check') || (hasCaptchaContent && !!captchaVerifyWrapper);
   if (isCaptcha) {
     return { status: 'captcha', title: document.title };
   }
@@ -493,6 +500,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
 
   const addImageCandidate = (originalSrc) => {
     if (!originalSrc || typeof originalSrc !== 'string') return;
+    if (!originalSrc.startsWith('http')) return;
     
     // Descartar SVGs e dados vazios
     if (originalSrc.startsWith('data:image/svg') || originalSrc.includes('.svg')) return;
@@ -506,28 +514,25 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       lower.includes('shop_logo') || 
       lower.includes('shop-logo') || 
       lower.includes('shop_icon') || 
-      lower.includes('c5_100x100') || 
-      lower.includes('c5_50x50') || 
-      lower.includes('c5_72x72') || 
-      lower.includes('c5_150x150') || 
       lower.includes('favicon');
 
     if (isNonProductMedia) return;
 
     // Descartar se já foi adicionado
-    const baseKey = originalSrc.split('?')[0].split('/').pop() || originalSrc;
+    const baseKey = originalSrc.split('?')[0].split('/').pop()?.split('~')[0] || originalSrc;
     if (seenUrls.has(baseKey)) return;
     seenUrls.add(baseKey);
 
-    // Gerar versão de alta resolução mantendo a integridade da chave do bucket
+    // Gerar versão de alta resolução pura mantendo a integridade do bucket do TikTok / ByteDance
     let highResUrl = originalSrc;
-    const tplvMatch = originalSrc.match(/~tplv-([a-z0-9_-]+)-/i);
-    if (tplvMatch) {
-      const bucketKey = tplvMatch[1];
-      if (originalSrc.includes('resize-')) {
-        highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-resize-[^:]+:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
-      } else if (originalSrc.includes('-shrink:')) {
-        highResUrl = originalSrc.replace(new RegExp('~tplv-' + bucketKey + '-shrink:[0-9]+:[0-9]+', 'i'), '~tplv-' + bucketKey + '-resize-jpeg:1080:1080');
+    if (highResUrl.includes('~tplv-')) {
+      const parts = highResUrl.split('~tplv-');
+      if (parts[0].includes('.jpeg') || parts[0].includes('.jpg') || parts[0].includes('.png') || parts[0].includes('.webp')) {
+        highResUrl = parts[0];
+      } else {
+        highResUrl = highResUrl.replace(/resize-[^:]+:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
+                               .replace(/shrink:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
+                               .replace(/c5_[0-9]+x[0-9]+/i, '1080x1080');
       }
     }
 
@@ -535,9 +540,6 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       highResUrl = highResUrl.split('?')[0];
     }
     let fallback = originalSrc;
-    if (fallback.includes('?') && !fallback.includes('x-tos-') && !fallback.includes('signature=')) {
-      fallback = fallback.split('?')[0];
-    }
 
     rawImages.push({
       highResUrl,
@@ -545,7 +547,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     });
   };
 
-  // 4.1 Prioridade 1: JSONs embutidos e estado de hidratação (Next.js / TikTok Universal Data)
+  // 4.1 Prioridade 1: JSONs embutidos e estado de hidratação (TikTok Shop Universal Data / Render Data / Page Data)
   try {
     const scanObjForImages = (obj, depth) => {
       if (!obj || depth > 8 || typeof obj !== 'object') return;
@@ -553,27 +555,33 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
         for (const k of Object.keys(obj)) {
           const lk = k.toLowerCase();
           const val = obj[k];
-          if ((lk.includes('image') || lk.includes('cover') || lk.includes('pic') || lk === 'photos' || lk === 'gallery') && Array.isArray(val)) {
+          if ((lk.includes('image') || lk.includes('cover') || lk.includes('pic') || lk === 'photos' || lk === 'gallery' || lk === 'images') && Array.isArray(val)) {
             val.forEach(item => {
               const u = typeof item === 'string' ? item : (item.url_list?.[0] || item.url || item.src || item.uri || item.origin_url || '');
-              if (u && typeof u === 'string') addImageCandidate(u);
+              if (u && typeof u === 'string' && u.startsWith('http')) addImageCandidate(u);
             });
           }
-          scanObjForImages(val, depth + 1);
+          if (typeof val === 'string' && val.startsWith('http') && (val.includes('.jpeg') || val.includes('.jpg') || val.includes('.png') || val.includes('.webp') || val.includes('ibyteimg') || val.includes('tos-'))) {
+            if (lk.includes('url') || lk.includes('image') || lk.includes('thumb') || lk.includes('pic') || lk.includes('src')) {
+              addImageCandidate(val);
+            }
+          }
+          if (typeof val === 'object') {
+            scanObjForImages(val, depth + 1);
+          }
         }
       } catch (e) {}
     };
 
-    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
-      scanObjForImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
-    }
-    if (window.SIGI_STATE) {
-      scanObjForImages(window.SIGI_STATE, 0);
-    }
-    if (window.__INIT_DATA__) {
-      scanObjForImages(window.__INIT_DATA__, 0);
-    }
-    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"], script[id*="DATA"], script[id*="STATE"]'));
+    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+    if (window.SIGI_STATE) scanObjForImages(window.SIGI_STATE, 0);
+    if (window.__INIT_DATA__) scanObjForImages(window.__INIT_DATA__, 0);
+    if (window.__RENDER_DATA__) scanObjForImages(window.__RENDER_DATA__, 0);
+    if (window.__PAGE_DATA__) scanObjForImages(window.__PAGE_DATA__, 0);
+    if (window.__APP_DATA__) scanObjForImages(window.__APP_DATA__, 0);
+    if (window.__STORE__) scanObjForImages(window.__STORE__, 0);
+
+    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"], script[id*="DATA"], script[id*="STATE"], script[id*="render"], script[id*="app"]'));
     jsonScripts.forEach(s => {
       try {
         const txt = s.textContent || '';
@@ -584,16 +592,16 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     });
   } catch (e) {}
 
-  // 4.2 Prioridade 2: Imagens do DOM (Galeria, Carrossel e Imagens Principais)
+  // 4.2 Prioridade 2: Imagens do DOM (Galeria, Carrossel, Miniaturas e Imagens Principais)
   try {
     const allImgs = Array.from(document.querySelectorAll('img'));
     allImgs.forEach(img => {
-      // Ignorar cabeçalho global, rodapé e perfis
       if (img.closest('header, nav, footer, [class*="avatar"], [class*="profile"]')) return;
 
       const w = img.naturalWidth || img.width || 0;
       const h = img.naturalHeight || img.height || 0;
-      if (w > 0 && w < 80 && h > 0 && h < 80) return;
+      // Aceita qualquer imagem útil da galeria
+      if (w > 0 && w < 30 && h > 0 && h < 30) return;
 
       let originalSrc = '';
       if (img.srcset) {
@@ -605,7 +613,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       if (!originalSrc) {
         originalSrc = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.src || '';
       }
-      if (originalSrc) {
+      if (originalSrc && originalSrc.startsWith('http')) {
         addImageCandidate(originalSrc);
       }
     });
@@ -625,16 +633,12 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     });
   } catch (e) {}
 
-  // 4.3 Fallback visual: se nenhuma imagem foi capturada, captura imagens visíveis na tela
+  // 4.3 Fallback visual: captura qualquer imagem visível no DOM
   if (rawImages.length === 0) {
     try {
-      const visibleImgs = Array.from(document.querySelectorAll('img')).filter(img => {
-        const r = img.getBoundingClientRect();
-        return r.width >= 100 && r.height >= 100 && (img.src || img.currentSrc);
-      });
-      visibleImgs.forEach(img => {
+      Array.from(document.querySelectorAll('img')).forEach(img => {
         const s = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-        if (s && !s.includes('.svg') && !s.includes('-avt-')) {
+        if (s && s.startsWith('http') && !s.includes('.svg') && !s.includes('-avt-') && !s.includes('avatar')) {
           addImageCandidate(s);
         }
       });
