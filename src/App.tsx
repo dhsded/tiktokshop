@@ -1398,6 +1398,7 @@ function MainApp() {
   const [isWebviewExpanded, setIsWebviewExpanded] = useState(false);
   const [tiktokModalTab, setTiktokModalTab] = useState<'photos' | 'reviews' | 'details' | 'browser'>('browser');
   const tiktokWebviewRef = useRef<any>(null);
+  const webviewDomReadyRef = useRef<boolean>(false);
 
   // TikTok Shop Fila de Links (Queue) State & Types
   interface TikTokQueueItem {
@@ -1563,6 +1564,7 @@ function MainApp() {
       const webview = tiktokWebviewRef.current;
       if (webview) {
         try {
+          webviewDomReadyRef.current = false;
           webview.loadURL(item.url);
         } catch (e) {}
       }
@@ -1576,6 +1578,9 @@ function MainApp() {
 
         await new Promise(r => setTimeout(r, 1000));
         if (abortQueueRef.current) break;
+
+        // Wait until webview DOM is ready before injecting script
+        if (!webviewDomReadyRef.current) continue;
 
         const el = tiktokWebviewRef.current;
         if (el) {
@@ -1739,6 +1744,7 @@ function MainApp() {
     setIsExtractingTikTok(true);
     setTiktokModalTab('browser');
     setTiktokExtractionStatus('Iniciando navegador seguro do TikTok Shop...');
+    webviewDomReadyRef.current = false;
     setIsTikTokModalOpen(true);
     setTimeout(() => {
       try {
@@ -2169,6 +2175,9 @@ function MainApp() {
 
       const webview = tiktokWebviewRef.current;
       if (!webview) return;
+      
+      // Only run script when webview DOM is ready — prevents GUEST_VIEW_MANAGER_CALL errors
+      if (!webviewDomReadyRef.current) return;
 
       try {
         let currentUrl = '';
@@ -6065,9 +6074,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         if (el && !el.dataset.listenerAttached) {
                           el.dataset.listenerAttached = 'true';
                           el.addEventListener('will-navigate', (e: any) => {
+                            // Reset DOM-ready flag when navigation starts
+                            webviewDomReadyRef.current = false;
                             if (e.url && !e.url.startsWith('http://') && !e.url.startsWith('https://')) {
                               e.preventDefault();
                             }
+                          });
+                          el.addEventListener('did-start-loading', () => {
+                            webviewDomReadyRef.current = false;
                           });
                           el.addEventListener('new-window', (e: any) => {
                             if (e.url && !e.url.startsWith('http://') && !e.url.startsWith('https://')) {
@@ -6075,6 +6089,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             }
                           });
                           const triggerInstantExtraction = async () => {
+                            webviewDomReadyRef.current = true;
                             try {
                               const res = await el.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
                               if (res && res.status === 'success' && res.images && res.images.length > 0) {
@@ -6092,8 +6107,12 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             } catch (err) {}
                           };
                           el.addEventListener('dom-ready', triggerInstantExtraction);
-                          el.addEventListener('did-finish-load', triggerInstantExtraction);
+                          el.addEventListener('did-finish-load', () => {
+                            webviewDomReadyRef.current = true;
+                            triggerInstantExtraction();
+                          });
                           el.addEventListener('did-fail-load', (e: any) => {
+                            webviewDomReadyRef.current = false;
                             if (e.errorCode !== -3) {
                               setIsExtractingTikTok(false);
                               setTiktokExtractionStatus(`⚠️ Falha ao carregar página: ${e.errorDescription || 'Erro de rede ou URL'}`);
