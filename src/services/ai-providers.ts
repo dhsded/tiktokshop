@@ -621,22 +621,35 @@ export class AIProvidersManager {
           };
         } catch (err: any) {
           lastError = err;
-          const errorStr = `${err?.message || ''} ${err?.status || ''}`.toLowerCase();
-          const isKeyError = errorStr.includes('429') || 
-                             errorStr.includes('quota') || 
-                             errorStr.includes('resource_exhausted') || 
-                             errorStr.includes('invalid') || 
-                             errorStr.includes('expired') ||
-                             (errorStr.includes('400') && errorStr.includes('key'));
+          const errorStr = `${err?.message || ''} ${err?.status || ''} ${err?.statusText || ''}`.toLowerCase();
+          const errMsg = err?.message || String(err);
 
-          if (isKeyError) {
-            console.warn(`[Gemini] Chave ${keyIdx + 1}/${keysToTry.length} sem cota ou inválida (${err?.message || ''}). Tentando próxima...`);
+          // Erros específicos de chave: cota esgotada ou chave genuinamente inválida/revogada
+          const isQuotaExhausted = errorStr.includes('429') || 
+                                   errorStr.includes('resource_exhausted') ||
+                                   errorStr.includes('quota_exceeded');
+          const isKeyInvalid = errorStr.includes('api_key_invalid') ||
+                               errorStr.includes('api key not valid') ||
+                               errorStr.includes('api key expired') ||
+                               (errorStr.includes('invalid') && errorStr.includes('api_key')) ||
+                               (errorStr.includes('401'));
+
+          if (isQuotaExhausted || isKeyInvalid) {
+            console.warn(`[Gemini] Chave ${keyIdx + 1}/${keysToTry.length} com cota esgotada ou inválida (${errMsg}). Tentando próxima chave...`);
             break; // Próxima chave
           }
 
-          if (errorStr.includes('503') || errorStr.includes('overloaded')) {
-            await new Promise(r => setTimeout(r, 1000));
-            continue; // Próximo modelo ou retry
+          // Erros de servidor ou sobrecarga — aguardar e tentar modelo alternativo
+          if (errorStr.includes('503') || errorStr.includes('overloaded') || errorStr.includes('500')) {
+            console.warn(`[Gemini] Servidor sobrecarregado para modelo ${model}. Aguardando 1.5s...`);
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
+
+          // Erros de argumento inválido (imagem, parâmetro, prompt) — tentar próximo modelo mas NÃO trocar chave
+          if (errorStr.includes('400') || errorStr.includes('invalid_argument') || errorStr.includes('invalid')) {
+            console.warn(`[Gemini] Argumento inválido no modelo ${model} (${errMsg}). Tentando próximo modelo com mesma chave...`);
+            continue;
           }
         }
       }
@@ -768,18 +781,25 @@ export class AIProvidersManager {
           };
         } catch (err: any) {
           lastError = err;
-          const errMsg = (err?.message || String(err)).toLowerCase();
-          console.warn(`[Groq] Falha na chave ${keyIdx + 1}/${keysToTry.length}, modelo ${model}:`, err.message);
+          const errMsg = err?.message || String(err);
+          const errLower = errMsg.toLowerCase();
+          console.warn(`[Groq] Falha na chave ${keyIdx + 1}/${keysToTry.length}, modelo ${model}:`, errMsg);
 
-          const isKeyError = errMsg.includes('401') || 
-                             errMsg.includes('invalid_api_key') || 
-                             errMsg.includes('429') || 
-                             errMsg.includes('rate_limit') || 
-                             errMsg.includes('quota');
+          const isKeyError = errLower.includes('401') ||
+                             errLower.includes('invalid_api_key') ||
+                             errLower.includes('429') ||
+                             errLower.includes('rate_limit') ||
+                             errLower.includes('quota');
 
           if (isKeyError) {
-            console.warn(`[Groq] Chave ${keyIdx + 1} sem cota ou inválida. Tentando próxima chave...`);
+            console.warn(`[Groq] Chave ${keyIdx + 1} com cota esgotada ou inválida. Tentando próxima chave...`);
             break; // Próxima chave
+          }
+
+          // Servidor sobrecarregado — aguardar e tentar próximo modelo
+          if (errLower.includes('503') || errLower.includes('overloaded') || errLower.includes('500')) {
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
           }
         }
       }
