@@ -303,23 +303,21 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       return { status: 'auth_page', title: '' };
     }
 
-    // 1. Se o produto já está carregado no DOM (título, preço, nome ou dados de compra), NÃO é captcha
     const bodyText = (document.body ? (document.body.innerText || document.body.textContent || '') : '');
     const hasProductContent = !!(
-      document.querySelector('h1') || 
-      document.querySelector('[data-testid*="title"]') || 
-      document.querySelector('[class*="product-title"]') || 
-      document.querySelector('[class*="product_name"]') || 
-      document.querySelector('[class*="sale-price"]') || 
-      document.querySelector('[class*="price-val"]') || 
-      document.querySelector('[class*="price"]') || 
-      bodyText.includes('R$') || 
-      bodyText.includes('Vendido por') || 
-      bodyText.includes('Frete grátis') || 
+      document.querySelector('h1') ||
+      document.querySelector('[data-testid*="title"]') ||
+      document.querySelector('[class*="product-title"]') ||
+      document.querySelector('[class*="product_name"]') ||
+      document.querySelector('[class*="sale-price"]') ||
+      document.querySelector('[class*="price-val"]') ||
+      document.querySelector('[class*="price"]') ||
+      bodyText.includes('R$') ||
+      bodyText.includes('Vendido por') ||
+      bodyText.includes('Frete grátis') ||
       bodyText.includes('Comprar agora')
     );
 
-    // 2. Só é captcha se o produto NÃO está presente E o quebra-cabeça visual estiver ativo
     const isSecurityTitle = (document.title || '').toLowerCase().includes('security check');
     let isCaptchaImgVisible = false;
     try {
@@ -331,10 +329,10 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     try {
       const captchaContainer = document.getElementById('captcha_container');
       isContainerVisible = !!(
-        captchaContainer && 
-        captchaContainer.style && 
-        captchaContainer.style.display !== 'none' && 
-        captchaContainer.style.visibility !== 'hidden' && 
+        captchaContainer &&
+        captchaContainer.style &&
+        captchaContainer.style.display !== 'none' &&
+        captchaContainer.style.visibility !== 'hidden' &&
         (captchaContainer.offsetWidth > 30 || captchaContainer.offsetHeight > 30)
       );
     } catch (e) {}
@@ -344,499 +342,218 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       return { status: 'captcha', title: document.title || '' };
     }
 
-  // 0. Auto-dispensar e fechar modais/popups de login intrusivos
-  try {
-    const closeSelectors = [
-      '[data-e2e="modal-close-icon"]',
-      'button[aria-label="Close"]',
-      'button[aria-label="Fechar"]',
-      '[class*="modal-close"]',
-      '[class*="close-icon"]',
-      '[class*="DivClose"]',
-      '[class*="login-modal"] button',
-      'div[role="dialog"] button'
-    ];
-    for (const sel of closeSelectors) {
-      const btn = document.querySelector(sel);
-      if (btn && typeof btn.click === 'function') {
-        btn.click();
-        break;
+    try {
+      const closeSelectors = ['[data-e2e="modal-close-icon"]','button[aria-label="Close"]','button[aria-label="Fechar"]','[class*="modal-close"]','[class*="close-icon"]','[class*="DivClose"]','[class*="login-modal"] button','div[role="dialog"] button'];
+      for (const sel of closeSelectors) {
+        const btn = document.querySelector(sel);
+        if (btn && typeof btn.click === 'function') { btn.click(); break; }
       }
+      const overlays = document.querySelectorAll('[class*="DivLoginModal"],[class*="login-modal"],div[role="dialog"],[class*="Mask"]');
+      overlays.forEach(ov => {
+        const text = (ov.innerText || ov.textContent || '').toLowerCase();
+        if (text.includes('entrar') || text.includes('log in') || text.includes('login') || text.includes('criar conta') || text.includes('realmente você')) ov.remove();
+      });
+      document.body.style.overflow = 'auto';
+      if (document.documentElement) document.documentElement.style.overflow = 'auto';
+    } catch (e) {}
+
+    let title = '';
+    const titleEl = document.querySelector('h1') || document.querySelector('[data-testid*="title"]') || document.querySelector('[class*="title"]') || document.querySelector('[class*="product_name"]');
+    if (titleEl) {
+      title = (titleEl.textContent || titleEl.innerText || '').trim();
+    } else {
+      title = (document.title || '').replace(/\\s*\\|\\s*TikTok\\s*Shop.*/i, '').replace(/\\s*\\|\\s*TikTok.*/i, '').trim();
     }
 
-    const overlays = document.querySelectorAll(
-      '[class*="DivLoginModal"], [class*="login-modal"], div[role="dialog"], [class*="Mask"]'
-    );
-    overlays.forEach(ov => {
-      const text = (ov.innerText || ov.textContent || '').toLowerCase();
-      if (text.includes('entrar') || text.includes('log in') || text.includes('login') || text.includes('criar conta') || text.includes('realmente você')) {
-        ov.remove();
-      }
-    });
-    document.body.style.overflow = 'auto';
-    if (document.documentElement) document.documentElement.style.overflow = 'auto';
-  } catch (e) {}
+    let price = '';
+    const priceEl = document.querySelector('[class*="price-val"],[class*="price_val"],[class*="sale-price"],[class*="product-price"],[data-testid*="price"]');
+    if (priceEl) price = (priceEl.textContent || priceEl.innerText || '').trim();
 
-  // 1. Título do Produto
-  let title = '';
-  const titleEl = document.querySelector('h1') || 
-                  document.querySelector('[data-testid*="title"]') || 
-                  document.querySelector('[class*="title"]') || 
-                  document.querySelector('[class*="product_name"]');
-  if (titleEl) {
-    title = (titleEl.textContent || titleEl.innerText || '').trim();
-  } else {
-    title = (document.title || '').replace(/\\s*\\|\\s*TikTok\\s*Shop.*/i, '').replace(/\\s*\\|\\s*TikTok.*/i, '').trim();
-  }
-
-  // 2. Preço
-  let price = '';
-  const priceEl = document.querySelector('[class*="price-val"], [class*="price_val"], [class*="sale-price"], [class*="product-price"], [data-testid*="price"]');
-  if (priceEl) {
-    price = (priceEl.textContent || priceEl.innerText || '').trim();
-  }
-
-  // 3. Descrição e Especificações Completas do Produto
-  const descParts = [];
-  const seenDescTexts = new Set();
-
-  const addDescText = (txt) => {
-    if (!txt || typeof txt !== 'string') return;
-    const clean = txt.replace(/\s+/g, ' ').trim();
-    if (clean.length < 5) return;
-    
-    // Filtros de ruído de interface
-    const lower = clean.toLowerCase();
-    if (
-      lower === 'descrição do produto' ||
-      lower === 'sobre este produto' ||
-      lower === 'product description' ||
-      lower === 'about this item' ||
-      lower === 'medidas corporais' ||
-      lower === 'tabela de tamanhos' ||
-      lower.includes('comprar agora') ||
-      lower.includes('adicionar ao carrinho') ||
-      lower.includes('frete grátis') ||
-      lower.includes('cupom de desconto') ||
-      lower.includes('avaliações de clientes') ||
-      lower.includes('política de devolução') ||
-      lower.includes('todos os direitos reservados')
-    ) {
-      return;
-    }
-
-    if (!seenDescTexts.has(clean)) {
-      seenDescTexts.add(clean);
-      descParts.push(clean);
-    }
-  };
-
-  // 3.1 Busca estruturada por seções com cabeçalho "Sobre este produto" ou "Descrição do produto"
-  try {
-    const allHeaders = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, div, span, p, strong, b')).filter(el => {
-      if (el.children.length > 2) return false;
-      const t = (el.textContent || el.innerText || '').trim().toLowerCase();
-      return t === 'descrição do produto' || 
-             t === 'sobre este produto' || 
-             t === 'detalhes do produto' ||
-             t === 'especificações' ||
-             t === 'product description' || 
-             t === 'about this item';
-    });
-
-    for (const h of allHeaders) {
-      let container = h.closest('section, article, [class*="detail"], [class*="desc"], [class*="about"], [class*="collapse"], [class*="module"]');
-      if (!container) {
-        container = h.parentElement?.parentElement || h.parentElement;
-      }
-      if (container) {
-        // Capturar tabelas (ex: tabela de medidas corporais)
-        const tables = Array.from(container.querySelectorAll('table, [class*="table"], [class*="size-chart"]'));
-        tables.forEach(tb => {
-          const rows = Array.from(tb.querySelectorAll('tr'));
-          const tableLines = [];
-          rows.forEach(r => {
-            const cells = Array.from(r.querySelectorAll('th, td')).map(c => (c.textContent || '').trim()).filter(Boolean);
-            if (cells.length > 0) {
-              tableLines.push(cells.join(' | '));
-            }
-          });
-          if (tableLines.length > 0) {
-            addDescText('Tabela de Medidas:\n' + tableLines.slice(0, 12).join('\n'));
-          }
-        });
-
-        // Capturar parágrafos, spans, itens de lista e blocos de texto
-        const textElements = Array.from(container.querySelectorAll('p, li, [class*="desc"], [class*="text"], [class*="spec"], [class*="item"]'));
-        textElements.forEach(el => {
-          if (el.querySelector('p, li, table')) return;
-          const text = (el.textContent || el.innerText || '').trim();
-          addDescText(text);
-        });
-      }
-    }
-  } catch (e) {}
-
-  // 3.2 Busca estruturada no estado de hidratação JSON (Universal Data / SIGI / Scripts)
-  try {
-    const scanObjForDesc = (obj, depth) => {
-      if (!obj || depth > 8 || typeof obj !== 'object') return;
-      try {
-        for (const k of Object.keys(obj)) {
-          const lk = k.toLowerCase();
-          const val = obj[k];
-          if ((lk === 'description' || lk === 'product_description' || lk === 'product_desc' || lk === 'detail_desc' || lk === 'specifications' || lk === 'desc' || lk === 'introduction') && typeof val === 'string' && val.trim().length > 10) {
-            const cleanText = val.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-            addDescText(cleanText);
-          }
-          if (Array.isArray(val)) {
-            val.forEach(item => {
-              if (typeof item === 'string' && item.length > 15 && depth < 5) {
-                if (lk.includes('desc') || lk.includes('highlight') || lk.includes('feature') || lk.includes('prop')) {
-                  addDescText(item);
-                }
-              } else if (typeof item === 'object') {
-                scanObjForDesc(item, depth + 1);
-              }
-            });
-          } else if (typeof val === 'object') {
-            scanObjForDesc(val, depth + 1);
-          }
-        }
-      } catch (e) {}
+    const descParts = [];
+    const seenDescTexts = new Set();
+    const addDescText = (txt) => {
+      if (!txt || typeof txt !== 'string') return;
+      const clean = txt.replace(/\\s+/g, ' ').trim();
+      if (clean.length < 5) return;
+      const lower = clean.toLowerCase();
+      if (lower === 'descrição do produto' || lower === 'sobre este produto' || lower === 'product description' || lower === 'about this item' || lower === 'medidas corporais' || lower === 'tabela de tamanhos' || lower.includes('comprar agora') || lower.includes('adicionar ao carrinho') || lower.includes('frete grátis') || lower.includes('cupom de desconto') || lower.includes('avaliações de clientes') || lower.includes('política de devolução') || lower.includes('todos os direitos reservados')) return;
+      if (!seenDescTexts.has(clean)) { seenDescTexts.add(clean); descParts.push(clean); }
     };
 
-    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForDesc(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
-    if (window.SIGI_STATE) scanObjForDesc(window.SIGI_STATE, 0);
-    if (window.__INIT_DATA__) scanObjForDesc(window.__INIT_DATA__, 0);
-  } catch (e) {}
-
-  // 3.3 Seletores genéricos de especificação e descrição caso ainda tenha poucos itens
-  if (descParts.length < 2) {
     try {
-      const genericElements = Array.from(document.querySelectorAll(
-        '[class*="spec-item"], [class*="property-item"], [class*="desc-content"], [class*="detail-desc"], [class*="rich-text"], [data-testid*="desc"], [data-testid*="detail"], div[class*="desc"] p, div[class*="detail"] p'
-      ));
-      genericElements.forEach(el => {
-        const text = (el.textContent || el.innerText || '').trim();
-        addDescText(text);
+      const allHeaders = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span,p,strong,b')).filter(el => {
+        if (el.children.length > 2) return false;
+        const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+        return t === 'descrição do produto' || t === 'sobre este produto' || t === 'detalhes do produto' || t === 'especificações' || t === 'product description' || t === 'about this item';
+      });
+      for (const h of allHeaders) {
+        let container = h.closest('section,article,[class*="detail"],[class*="desc"],[class*="about"],[class*="collapse"],[class*="module"]');
+        if (!container) container = (h.parentElement && h.parentElement.parentElement) || h.parentElement;
+        if (container) {
+          Array.from(container.querySelectorAll('table,[class*="table"],[class*="size-chart"]')).forEach(tb => {
+            const lines = [];
+            Array.from(tb.querySelectorAll('tr')).forEach(r => {
+              const cells = Array.from(r.querySelectorAll('th,td')).map(c => (c.textContent || '').trim()).filter(Boolean);
+              if (cells.length > 0) lines.push(cells.join(' | '));
+            });
+            if (lines.length > 0) addDescText('Tabela de Medidas:\\n' + lines.slice(0, 12).join('\\n'));
+          });
+          Array.from(container.querySelectorAll('p,li,[class*="desc"],[class*="text"],[class*="spec"],[class*="item"]')).forEach(el => {
+            if (!el.querySelector('p,li,table')) addDescText((el.textContent || el.innerText || '').trim());
+          });
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const scanObjForDesc = (obj, depth) => {
+        if (!obj || depth > 8 || typeof obj !== 'object') return;
+        try {
+          for (const k of Object.keys(obj)) {
+            const lk = k.toLowerCase();
+            const val = obj[k];
+            if ((lk === 'description' || lk === 'product_description' || lk === 'product_desc' || lk === 'detail_desc' || lk === 'specifications' || lk === 'desc' || lk === 'introduction') && typeof val === 'string' && val.trim().length > 10) addDescText(val.replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim());
+            if (Array.isArray(val)) val.forEach(item => { if (typeof item === 'string' && item.length > 15 && depth < 5 && (lk.includes('desc') || lk.includes('highlight') || lk.includes('feature') || lk.includes('prop'))) addDescText(item); else if (typeof item === 'object') scanObjForDesc(item, depth + 1); });
+            else if (typeof val === 'object') scanObjForDesc(val, depth + 1);
+          }
+        } catch (e) {}
+      };
+      if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForDesc(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+      if (window.SIGI_STATE) scanObjForDesc(window.SIGI_STATE, 0);
+      if (window.__INIT_DATA__) scanObjForDesc(window.__INIT_DATA__, 0);
+    } catch (e) {}
+
+    if (descParts.length < 2) {
+      try {
+        Array.from(document.querySelectorAll('[class*="spec-item"],[class*="property-item"],[class*="desc-content"],[class*="detail-desc"],[class*="rich-text"],[data-testid*="desc"],[data-testid*="detail"],div[class*="desc"] p,div[class*="detail"] p')).forEach(el => addDescText((el.textContent || el.innerText || '').trim()));
+      } catch (e) {}
+    }
+
+    const rawImages = [];
+    const seenUrls = new Set();
+    const addImageCandidate = (originalSrc) => {
+      if (!originalSrc || typeof originalSrc !== 'string' || !originalSrc.startsWith('http')) return;
+      if (originalSrc.startsWith('data:image/svg') || originalSrc.includes('.svg')) return;
+      const lower = originalSrc.toLowerCase();
+      if (lower.includes('-avt-') || lower.includes('/avatar/') || lower.includes('user_avatar') || lower.includes('shop_logo') || lower.includes('shop-logo') || lower.includes('shop_icon') || lower.includes('favicon') || lower.includes('captcha') || lower.includes('secsdk')) return;
+      const rawPart = originalSrc.split('?')[0].split('/').pop() || '';
+      const baseKey = rawPart.length > 4 ? rawPart.split('~')[0] : originalSrc;
+      if (seenUrls.has(baseKey)) return;
+      seenUrls.add(baseKey);
+      let highResUrl = originalSrc;
+      if (highResUrl.includes('~tplv-')) {
+        const parts = highResUrl.split('~tplv-');
+        const bucketMatch = highResUrl.match(/~tplv-([a-z0-9_-]+)-/i);
+        const bucketKey = bucketMatch ? bucketMatch[1] : '';
+        if (parts[0].includes('.jpeg') || parts[0].includes('.jpg') || parts[0].includes('.png') || parts[0].includes('.webp')) highResUrl = parts[0];
+        else if (bucketKey) highResUrl = parts[0] + '~tplv-' + bucketKey + '-origin-jpeg.jpeg';
+        else highResUrl = highResUrl.replace(/resize-[^:]+:[0-9]+:[0-9]+/i,'resize-jpeg:1080:1080').replace(/shrink:[0-9]+:[0-9]+/i,'resize-jpeg:1080:1080').replace(/c5_[0-9]+x[0-9]+/i,'1080x1080');
+      }
+      if (highResUrl.includes('?') && !highResUrl.includes('x-tos-') && !highResUrl.includes('signature=')) highResUrl = highResUrl.split('?')[0];
+      rawImages.push({ highResUrl, fallbackUrl: originalSrc });
+    };
+
+    try {
+      const scanObjForImages = (obj, depth) => {
+        if (!obj || depth > 8 || typeof obj !== 'object') return;
+        try {
+          for (const k of Object.keys(obj)) {
+            const lk = k.toLowerCase();
+            const val = obj[k];
+            if ((lk.includes('image') || lk.includes('cover') || lk.includes('pic') || lk === 'photos' || lk === 'gallery' || lk === 'images') && Array.isArray(val)) {
+              val.forEach(item => { const u = typeof item === 'string' ? item : ((item.url_list && item.url_list[0]) || item.url || item.src || item.uri || item.origin_url || ''); if (u && typeof u === 'string' && u.startsWith('http')) addImageCandidate(u); });
+            }
+            if (typeof val === 'string' && val.startsWith('http') && (val.includes('.jpeg') || val.includes('.jpg') || val.includes('.png') || val.includes('.webp') || val.includes('ibyteimg') || val.includes('tos-')) && (lk.includes('url') || lk.includes('image') || lk.includes('thumb') || lk.includes('pic') || lk.includes('src'))) addImageCandidate(val);
+            if (typeof val === 'object') scanObjForImages(val, depth + 1);
+          }
+        } catch (e) {}
+      };
+      if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
+      if (window.SIGI_STATE) scanObjForImages(window.SIGI_STATE, 0);
+      if (window.__INIT_DATA__) scanObjForImages(window.__INIT_DATA__, 0);
+      if (window.__RENDER_DATA__) scanObjForImages(window.__RENDER_DATA__, 0);
+      if (window.__PAGE_DATA__) scanObjForImages(window.__PAGE_DATA__, 0);
+      if (window.__APP_DATA__) scanObjForImages(window.__APP_DATA__, 0);
+      if (window.__STORE__) scanObjForImages(window.__STORE__, 0);
+      Array.from(document.querySelectorAll('script[type="application/json"],script[id*="DATA"],script[id*="STATE"],script[id*="render"],script[id*="app"]')).forEach(s => {
+        try { const txt = s.textContent || ''; if (txt.includes('http') && (txt.includes('image') || txt.includes('tos-') || txt.includes('ibyteimg') || txt.includes('tiktokcdn'))) scanObjForImages(JSON.parse(txt), 0); } catch (e) {}
       });
     } catch (e) {}
-  }
 
-  // 4. Imagens do Produto em Alta Resolução
-  const rawImages = [];
-  const seenUrls = new Set();
-
-  const addImageCandidate = (originalSrc) => {
-    if (!originalSrc || typeof originalSrc !== 'string') return;
-    if (!originalSrc.startsWith('http')) return;
-    
-    // Descartar SVGs e dados vazios
-    if (originalSrc.startsWith('data:image/svg') || originalSrc.includes('.svg')) return;
-
-    // Descartar estritamente fotos de perfil, avatares, logotipos e badges pequenos, e peças de captcha
-    const lower = originalSrc.toLowerCase();
-    const isNonProductMedia = 
-      lower.includes('-avt-') || 
-      lower.includes('/avatar/') || 
-      lower.includes('user_avatar') || 
-      lower.includes('shop_logo') || 
-      lower.includes('shop-logo') || 
-      lower.includes('shop_icon') || 
-      lower.includes('favicon') ||
-      lower.includes('captcha') ||
-      lower.includes('secsdk');
-
-    if (isNonProductMedia) return;
-
-    // Descartar se já foi adicionado
-    const rawKey = originalSrc.split('?')[0].split('/').pop()?.split('~')[0] || '';
-    const baseKey = (rawKey && rawKey.length > 4) ? rawKey : originalSrc;
-    if (seenUrls.has(baseKey)) return;
-    seenUrls.add(baseKey);
-
-    // Gerar versão de alta resolução pura mantendo a integridade do bucket do TikTok / ByteDance
-    let highResUrl = originalSrc;
-    if (highResUrl.includes('~tplv-')) {
-      const parts = highResUrl.split('~tplv-');
-      const bucketMatch = highResUrl.match(/~tplv-([a-z0-9_-]+)-/i);
-      const bucketKey = bucketMatch ? bucketMatch[1] : '';
-      if (parts[0].includes('.jpeg') || parts[0].includes('.jpg') || parts[0].includes('.png') || parts[0].includes('.webp')) {
-        highResUrl = parts[0];
-      } else if (bucketKey) {
-        highResUrl = parts[0] + '~tplv-' + bucketKey + '-origin-jpeg.jpeg';
-      } else {
-        highResUrl = highResUrl.replace(/resize-[^:]+:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
-                               .replace(/shrink:[0-9]+:[0-9]+/i, 'resize-jpeg:1080:1080')
-                               .replace(/c5_[0-9]+x[0-9]+/i, '1080x1080');
-      }
-    }
-
-    if (highResUrl.includes('?') && !highResUrl.includes('x-tos-') && !highResUrl.includes('signature=')) {
-      highResUrl = highResUrl.split('?')[0];
-    }
-    let fallback = originalSrc;
-
-    rawImages.push({
-      highResUrl,
-      fallbackUrl: fallback
-    });
-  };
-
-  // 4.1 Prioridade 1: JSONs embutidos e estado de hidratação (TikTok Shop Universal Data / Render Data / Page Data)
-  try {
-    const scanObjForImages = (obj, depth) => {
-      if (!obj || depth > 8 || typeof obj !== 'object') return;
-      try {
-        for (const k of Object.keys(obj)) {
-          const lk = k.toLowerCase();
-          const val = obj[k];
-          if ((lk.includes('image') || lk.includes('cover') || lk.includes('pic') || lk === 'photos' || lk === 'gallery' || lk === 'images') && Array.isArray(val)) {
-            val.forEach(item => {
-              const u = typeof item === 'string' ? item : (item.url_list?.[0] || item.url || item.src || item.uri || item.origin_url || '');
-              if (u && typeof u === 'string' && u.startsWith('http')) addImageCandidate(u);
-            });
-          }
-          if (typeof val === 'string' && val.startsWith('http') && (val.includes('.jpeg') || val.includes('.jpg') || val.includes('.png') || val.includes('.webp') || val.includes('ibyteimg') || val.includes('tos-'))) {
-            if (lk.includes('url') || lk.includes('image') || lk.includes('thumb') || lk.includes('pic') || lk.includes('src')) {
-              addImageCandidate(val);
-            }
-          }
-          if (typeof val === 'object') {
-            scanObjForImages(val, depth + 1);
-          }
-        }
-      } catch (e) {}
-    };
-
-    if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForImages(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
-    if (window.SIGI_STATE) scanObjForImages(window.SIGI_STATE, 0);
-    if (window.__INIT_DATA__) scanObjForImages(window.__INIT_DATA__, 0);
-    if (window.__RENDER_DATA__) scanObjForImages(window.__RENDER_DATA__, 0);
-    if (window.__PAGE_DATA__) scanObjForImages(window.__PAGE_DATA__, 0);
-    if (window.__APP_DATA__) scanObjForImages(window.__APP_DATA__, 0);
-    if (window.__STORE__) scanObjForImages(window.__STORE__, 0);
-
-    const jsonScripts = Array.from(document.querySelectorAll('script[type="application/json"], script[id*="DATA"], script[id*="STATE"], script[id*="render"], script[id*="app"]'));
-    jsonScripts.forEach(s => {
-      try {
-        const txt = s.textContent || '';
-        if (txt.includes('http') && (txt.includes('image') || txt.includes('tos-') || txt.includes('ibyteimg') || txt.includes('tiktokcdn'))) {
-          scanObjForImages(JSON.parse(txt), 0);
-        }
-      } catch (e) {}
-    });
-  } catch (e) {}
-
-  // 4.2 Prioridade 2: Imagens do DOM (Galeria, Carrossel, Miniaturas e Imagens Principais)
-  try {
-    const allImgs = Array.from(document.querySelectorAll('img'));
-    allImgs.forEach(img => {
-      if (img.closest('header, nav, footer, [class*="avatar"], [class*="profile"], #captcha_container, [class*="captcha"]')) return;
-
-      const w = img.naturalWidth || img.width || 0;
-      const h = img.naturalHeight || img.height || 0;
-      // Aceita qualquer imagem útil da galeria
-      if (w > 0 && w < 30 && h > 0 && h < 30) return;
-
-      let originalSrc = '';
-      if (img.srcset) {
-        const candidates = img.srcset.split(',').map(s => s.trim().split(/\\s+/)[0]).filter(Boolean);
-        if (candidates.length > 0) {
-          originalSrc = candidates[candidates.length - 1];
-        }
-      }
-      if (!originalSrc) {
-        originalSrc = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-origin-src') || img.getAttribute('data-highres') || img.src || img.getAttribute('src') || '';
-      }
-      if (originalSrc && originalSrc.startsWith('http')) {
-        addImageCandidate(originalSrc);
-      }
-    });
-
-    // Fontes em <picture><source srcset>
-    Array.from(document.querySelectorAll('picture source[srcset]')).forEach(s => {
-      const srcset = s.getAttribute('srcset') || '';
-      const candidates = srcset.split(',').map(str => str.trim().split(/\\s+/)[0]).filter(Boolean);
-      if (candidates.length > 0) addImageCandidate(candidates[candidates.length - 1]);
-    });
-
-    // Elementos com background-image
-    Array.from(document.querySelectorAll('[style*="background-image"]')).forEach(el => {
-      const bg = el.style.backgroundImage || '';
-      const m = bg.match(/url\\(['"]?(https?:[^'"\\)]+)['"]?\\)/i);
-      if (m && m[1]) addImageCandidate(m[1]);
-    });
-  } catch (e) {}
-
-  // 4.3 Fallback visual: captura qualquer imagem visível no DOM
-  if (rawImages.length === 0) {
     try {
       Array.from(document.querySelectorAll('img')).forEach(img => {
-        const s = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-        if (s && s.startsWith('http') && !s.includes('.svg') && !s.includes('-avt-') && !s.includes('avatar')) {
-          addImageCandidate(s);
-        }
+        if (img.closest('header,nav,footer,[class*="avatar"],[class*="profile"],#captcha_container,[class*="captcha"]')) return;
+        const w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
+        if (w > 0 && w < 30 && h > 0 && h < 30) return;
+        let src = '';
+        if (img.srcset) { const cands = img.srcset.split(',').map(s => s.trim().split(/\\s+/)[0]).filter(Boolean); if (cands.length > 0) src = cands[cands.length - 1]; }
+        if (!src) src = img.currentSrc || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-origin-src') || img.getAttribute('data-highres') || img.src || img.getAttribute('src') || '';
+        if (src && src.startsWith('http')) addImageCandidate(src);
       });
+      Array.from(document.querySelectorAll('picture source[srcset]')).forEach(s => { const cands = (s.getAttribute('srcset') || '').split(',').map(str => str.trim().split(/\\s+/)[0]).filter(Boolean); if (cands.length > 0) addImageCandidate(cands[cands.length - 1]); });
+      Array.from(document.querySelectorAll('[style*="background-image"]')).forEach(el => { const m = (el.style.backgroundImage || '').match(/url\\(['"]?(https?:[^'"\\)]+)['"]?\\)/i); if (m && m[1]) addImageCandidate(m[1]); });
     } catch (e) {}
-  }
 
-  // Deduplicar URLs
-  const uniqueImages = [];
-  const finalHashes = new Set();
-  rawImages.forEach(item => {
-    const key = item.fallbackUrl.split('/').pop()?.split('~')[0] || item.fallbackUrl;
-    if (!finalHashes.has(key)) {
-      finalHashes.add(key);
-      uniqueImages.push(item);
-    }
-  });
-
-  if (uniqueImages.length === 0) {
-    return {
-      status: 'no_product_images',
-      title,
-      price,
-      images: []
-    };
-  }
-
-  // 5. Avaliações e Comentários (Otimizado sem travar a thread da página)
-  const reviewsData = {
-    rating: '',
-    totalReviews: '',
-    tags: [],
-    comments: []
-  };
-
-  try {
-    // 5.1 Nota e contagem rápida
-    const ratingEl = document.querySelector('[class*="rating-score"], [class*="rating_score"], [class*="rate-num"], [class*="rating-val"], [data-testid*="rating"]');
-    if (ratingEl) {
-      const m = (ratingEl.textContent || '').match(/([1-5]\\.[0-9])/);
-      if (m) reviewsData.rating = m[1];
-    }
-    const countEl = document.querySelector('[class*="review-count"], [class*="rate-count"], [class*="evaluation-count"], [data-testid*="review-count"]');
-    if (countEl) {
-      const m = (countEl.textContent || '').match(/(\\d+[\\d.,]*[kK]?)/);
-      if (m) reviewsData.totalReviews = m[1];
+    if (rawImages.length === 0) {
+      try { Array.from(document.querySelectorAll('img')).forEach(img => { const s = img.currentSrc || img.src || img.getAttribute('data-src') || ''; if (s && s.startsWith('http') && !s.includes('.svg') && !s.includes('-avt-') && !s.includes('avatar')) addImageCandidate(s); }); } catch (e) {}
     }
 
-    // 5.2 Tags de review
-    const tagEls = Array.from(document.querySelectorAll('[class*="tag-item"], [class*="review-tag"], [class*="tag_item"], [class*="filter-item"], [class*="chip-item"], [data-testid*="review-tag"]'));
-    tagEls.forEach(el => {
-      const t = (el.textContent || '').trim();
-      if (t && t.length > 2 && t.length < 40 && !reviewsData.tags.includes(t)) {
-        reviewsData.tags.push(t);
-      }
+    const uniqueImages = [];
+    const finalHashes = new Set();
+    rawImages.forEach(item => {
+      const raw = item.fallbackUrl.split('/').pop() || item.fallbackUrl;
+      const key = raw.split('~')[0];
+      if (!finalHashes.has(key)) { finalHashes.add(key); uniqueImages.push(item); }
     });
 
-    // 5.3 Comentários dos clientes
-    const parseCard = (card, idx) => {
-      const rawText = (card.textContent || '').trim();
-      if (!rawText || rawText.length < 6) return null;
+    if (uniqueImages.length === 0) return { status: 'no_product_images', title, price, images: [] };
 
-      let author = '';
-      const authorMatch = rawText.match(/^([^\\n·]+?)\\s*·\\s*(?:Compras verificadas|Verified purchase)/im);
-      if (authorMatch) {
-        author = authorMatch[1].trim();
-      } else {
-        const authorEl = card.querySelector('[class*="user"], [class*="name"], [class*="nick"], [class*="author"]');
-        if (authorEl) author = (authorEl.textContent || '').trim();
-      }
-
-      let variant = '';
-      const varMatch = rawText.match(/Item:\\s*([^\\n]+)/i);
-      if (varMatch) {
-        variant = varMatch[1].trim();
-      }
-
-      let date = '';
-      const dateMatch = rawText.match(/(\\d{4}[-/.]\\d{2}[-/.]\\d{2}|\\d{2}[-/.]\\d{2}[-/.]\\d{4})/);
-      if (dateMatch) {
-        date = dateMatch[1].trim();
-      }
-
-      const lines = rawText.split('\\n')
-        .map(l => l.trim())
-        .filter(l => {
+    const reviewsData = { rating: '', totalReviews: '', tags: [], comments: [] };
+    try {
+      const ratingEl = document.querySelector('[class*="rating-score"],[class*="rating_score"],[class*="rate-num"],[class*="rating-val"],[data-testid*="rating"]');
+      if (ratingEl) { const m = (ratingEl.textContent || '').match(/([1-5]\\.[0-9])/); if (m) reviewsData.rating = m[1]; }
+      const countEl = document.querySelector('[class*="review-count"],[class*="rate-count"],[class*="evaluation-count"],[data-testid*="review-count"]');
+      if (countEl) { const m = (countEl.textContent || '').match(/(\\d+[\\d.,]*[kK]?)/); if (m) reviewsData.totalReviews = m[1]; }
+      Array.from(document.querySelectorAll('[class*="tag-item"],[class*="review-tag"],[class*="tag_item"],[class*="filter-item"],[class*="chip-item"],[data-testid*="review-tag"]')).forEach(el => { const t = (el.textContent || '').trim(); if (t && t.length > 2 && t.length < 40 && !reviewsData.tags.includes(t)) reviewsData.tags.push(t); });
+      const parseCard = (card, idx) => {
+        const rawText = (card.textContent || '').trim();
+        if (!rawText || rawText.length < 6) return null;
+        let author = '';
+        const am = rawText.match(/^([^\\n·]+?)\\s*·\\s*(?:Compras verificadas|Verified purchase)/im);
+        if (am) { author = am[1].trim(); } else { const ae = card.querySelector('[class*="user"],[class*="name"],[class*="nick"],[class*="author"]'); if (ae) author = (ae.textContent || '').trim(); }
+        let variant = ''; const vm = rawText.match(/Item:\\s*([^\\n]+)/i); if (vm) variant = vm[1].trim();
+        let date = ''; const dm = rawText.match(/(\\d{4}[-/.]\\d{2}[-/.]\\d{2}|\\d{2}[-/.]\\d{2}[-/.]\\d{4})/); if (dm) date = dm[1].trim();
+        const lines = rawText.split('\\n').map(l => l.trim()).filter(l => {
           if (!l || l.length < 2) return false;
           if (author && (l === author || l.startsWith(author + ' ·'))) return false;
           if (l === 'BR' || l.includes('Compras verificadas') || l.includes('Verified purchase')) return false;
-          if (/^item:\\s*/i.test(l)) return false;
-          if (date && l === date) return false;
-          if (/^\\d{4}[-/.]\\d{2}[-/.]\\d{2}/.test(l)) return false;
-          if (l.includes('Exibindo') || l.includes('Limpar filtros') || l.includes('Tudo') || l.includes('Inclui imagens')) return false;
-          if (l.includes('Anterior') || l.includes('Próximo') || l.includes('Next')) return false;
+          if (/^item:\\s*/i.test(l) || (date && l === date) || /^\\d{4}[-/.]\\d{2}[-/.]\\d{2}/.test(l)) return false;
+          if (l.includes('Exibindo') || l.includes('Limpar filtros') || l.includes('Tudo') || l.includes('Inclui imagens') || l.includes('Anterior') || l.includes('Próximo') || l.includes('Next')) return false;
           return true;
         });
-
-      let commentText = lines.join(' ').trim();
-      if (!commentText || commentText.length < 5) return null;
-
-      return {
-        id: 'rev_dom_' + idx + '_' + Math.random().toString(36).substring(2, 6),
-        text: commentText,
-        author: author || undefined,
-        variant: variant ? ('Item: ' + variant) : undefined,
-        date: date || undefined,
-        rating: '5'
+        const commentText = lines.join(' ').trim();
+        if (!commentText || commentText.length < 5) return null;
+        return { id: 'rev_dom_' + idx + '_' + Math.random().toString(36).substring(2, 6), text: commentText, author: author || undefined, variant: variant ? ('Item: ' + variant) : undefined, date: date || undefined, rating: '5' };
       };
-    };
+      const badges = Array.from(document.querySelectorAll('span,div,p,b,strong')).filter(el => { if (el.children.length > 1) return false; const txt = (el.textContent || '').trim(); return txt.includes('Compras verificadas') || txt.includes('Verified purchase'); });
+      let detectedCards = [];
+      if (badges.length > 0) {
+        const cardSet = new Set();
+        badges.forEach(b => { let cur = b.parentElement; for (let s = 0; s < 5; s++) { if (!cur || cur === document.body) break; if (cur.parentElement && (cur.parentElement.children.length >= 2 || cur.tagName === 'LI')) { cardSet.add(cur); break; } cur = cur.parentElement; } });
+        detectedCards = Array.from(cardSet);
+      }
+      if (detectedCards.length === 0) detectedCards = Array.from(document.querySelectorAll('[class*="review-item"],[class*="review_item"],[class*="ReviewItem"],[class*="comment-item"],[class*="feedback-item"],[data-testid*="review-item"]'));
+      detectedCards.forEach((card, idx) => { const parsed = parseCard(card, idx); if (parsed && !reviewsData.comments.some(c => c.text === parsed.text)) reviewsData.comments.push(parsed); });
+    } catch (e) {}
 
-    // Procurar por selos de compra verificada ou containers específicos (sem usar querySelectorAll('*'))
-    const badges = Array.from(document.querySelectorAll('span, div, p, b, strong')).filter(el => {
-      if (el.children.length > 1) return false;
-      const txt = (el.textContent || '').trim();
-      return txt === 'Compras verificadas' || txt === 'Verified purchase' || txt.includes('Compras verificadas') || txt.includes('Verified purchase');
-    });
-
-    let detectedCards = [];
-    if (badges.length > 0) {
-      const cardSet = new Set();
-      badges.forEach(b => {
-        let cur = b.parentElement;
-        for (let step = 0; step < 5; step++) {
-          if (!cur || cur === document.body) break;
-          if (cur.parentElement && (cur.parentElement.children.length >= 2 || cur.tagName === 'LI')) {
-            cardSet.add(cur);
-            break;
-          }
-          cur = cur.parentElement;
-        }
-      });
-      detectedCards = Array.from(cardSet);
-    }
-
-    if (detectedCards.length === 0) {
-      detectedCards = Array.from(document.querySelectorAll('[class*="review-item"], [class*="review_item"], [class*="ReviewItem"], [class*="comment-item"], [class*="feedback-item"], [data-testid*="review-item"]'));
-    }
-
-    if (detectedCards.length > 0) {
-      detectedCards.forEach((card, idx) => {
-        const parsed = parseCard(card, idx);
-        if (parsed && !reviewsData.comments.some(c => c.text === parsed.text)) {
-          reviewsData.comments.push(parsed);
-        }
-      });
-    }
-  } catch (e) {}
-
-  if (reviewsData.comments.length > 100) {
-    reviewsData.comments = reviewsData.comments.slice(0, 100);
-  }
+    if (reviewsData.comments.length > 100) reviewsData.comments = reviewsData.comments.slice(0, 100);
 
     return {
       status: 'success',
       title,
       price,
-      description: descParts.join('\n'),
-      images: uniqueImages.map((img, i) => ({
-        id: 'img_' + i,
-        url: img.highResUrl,
-        fallbackUrl: img.fallbackUrl
-      })),
+      description: descParts.join('\\n'),
+      images: uniqueImages.map((img, i) => ({ id: 'img_' + i, url: img.highResUrl, fallbackUrl: img.fallbackUrl })),
       reviews: reviewsData
     };
   } catch (fatalError) {
