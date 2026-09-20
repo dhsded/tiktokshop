@@ -2128,6 +2128,8 @@ function MainApp() {
       // Se captcha estiver ativo aguardando resolução humana, não consome tempo de timeout
       if (isTikTokCaptchaDetected) {
         startTime = Date.now();
+        // Only check if webview DOM is stable
+        if (!webviewDomReadyRef.current) return;
         const webview = tiktokWebviewRef.current;
         if (webview) {
           try {
@@ -6090,7 +6092,21 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           });
                           const triggerInstantExtraction = async () => {
                             webviewDomReadyRef.current = true;
+                            // Small delay to let the page fully settle before injecting script
+                            await new Promise(r => setTimeout(r, 600));
+                            // Bail out if page navigated away after the delay
+                            if (!webviewDomReadyRef.current) return;
                             try {
+                              // Don't run on captcha/security check pages
+                              let currentUrl = '';
+                              try { currentUrl = el.getURL ? el.getURL() : ''; } catch (e) {}
+                              if (
+                                currentUrl.includes('security') || 
+                                currentUrl.includes('captcha') ||
+                                currentUrl.includes('/login') ||
+                                currentUrl.includes('/auth') ||
+                                currentUrl.includes('/passport')
+                              ) return;
                               const res = await el.executeJavaScript(TIKTOK_PDP_SCRAPER_SCRIPT);
                               if (res && res.status === 'success' && res.images && res.images.length > 0) {
                                 setExtractedTikTokProduct(res);
@@ -6103,6 +6119,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 const revCount = res.reviews?.comments?.length || 0;
                                 const revTxt = revCount > 0 ? ` e ${revCount} avaliações` : '';
                                 setTiktokExtractionStatus(`✅ Extração concluída! ${res.images.length} fotos${revTxt} encontradas.`);
+                              } else if (res && res.status === 'captcha') {
+                                setIsTikTokCaptchaDetected(true);
+                                setTiktokModalTab('browser');
+                                setTiktokExtractionStatus('Verificação visual do TikTok detectada. Por favor, deslize o quebra-cabeça abaixo para continuar.');
                               }
                             } catch (err) {}
                           };
