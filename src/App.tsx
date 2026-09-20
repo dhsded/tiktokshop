@@ -4306,6 +4306,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         </button>
                       )}
                       <span className="text-xs text-white/40">{images.length} fotos</span>
+                      {images.length > 0 && (
+                        <button
+                          onClick={() => { if (confirm('Remover todas as imagens?')) setImages([]); }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[10px] font-bold uppercase tracking-wider text-red-400"
+                          title="Limpar todas as imagens"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Limpar
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -4586,10 +4596,22 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       {/* Product Images List */}
                       <AnimatePresence>
                         {productImages.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between mt-2 mb-1">
+                              <span className="text-[10px] text-white/30">{productImages.length} foto(s) de produto</span>
+                              <button
+                                onClick={() => { if (confirm('Remover todas as imagens de produto?')) setProductImages([]); }}
+                                className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[9px] font-bold uppercase tracking-wider text-red-400"
+                                title="Limpar todas as imagens de produto"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                                Limpar tudo
+                              </button>
+                            </div>
                           <motion.div 
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: 'auto' }}
-                            className="grid grid-cols-3 gap-2 mt-2"
+                            className="grid grid-cols-3 gap-2"
                           >
                             {productImages.map((img) => (
                               <div key={img.id} className="relative aspect-square rounded-xl overflow-hidden border border-white/5 group">
@@ -4627,6 +4649,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               </div>
                             ))}
                           </motion.div>
+                          </>
                         )}
                       </AnimatePresence>
                     </div>
@@ -4996,10 +5019,22 @@ Angulos a variar (escolha os mais relevantes para o produto):
               )}
 
               <div className="space-y-3 pb-8">
-                <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
-                  <GripVertical className="w-3 h-3" />
-                  Observações Importantes
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                    <GripVertical className="w-3 h-3" />
+                    Observações Importantes
+                  </label>
+                  {observations.trim().length > 0 && (
+                    <button
+                      onClick={() => { if (confirm('Limpar todo o texto de observações?')) setObservations(''); }}
+                      className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[9px] font-bold uppercase tracking-wider text-red-400"
+                      title="Limpar texto"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      Limpar texto
+                    </button>
+                  )}
+                </div>
                 <textarea 
                   placeholder="Ex: Foco no público jovem, tom de voz entusiasmado, use gírias atuais, destaque a leveza do tecido..."
                   value={observations}
