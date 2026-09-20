@@ -1364,22 +1364,42 @@ function MainApp() {
         }
 
         if (newSceneImages.length > 0) {
-          if (activeTab === 'collection') {
-            setImages(prev => [...prev, ...newSceneImages]);
-          } else {
-            setProductImages(prev => [...prev, ...newSceneImages]);
-          }
-        }
-
-        // 3. Inserir Descrição e Especificações no campo Observações Importantes
-        setObservations(prev => {
-          let block = `📌 [PRODUTO ${idx + 1}]: ${productResult.title || 'TikTok Shop'}\n`;
-          if (productResult.price) block += `Preço: ${productResult.price}\n`;
+          // Criar um projeto separado para cada produto da fila
+          const productTitle = (productResult.title || `Produto ${idx + 1}`).substring(0, 60);
+          let productObs = `📌 PRODUTO IMPORTADO DO TIKTOK SHOP:\n`;
+          if (productResult.title) productObs += `Nome: ${productResult.title}\n`;
+          if (productResult.price) productObs += `Preço: ${productResult.price}\n`;
           if (productResult.description) {
-            block += `Descrição / Especificações:\n${productResult.description}\n`;
+            productObs += `\nEspecificações / Detalhes:\n${productResult.description}\n`;
           }
-          return prev ? `${prev}\n\n${block}` : block;
-        });
+
+          const newProj: ProjectItem = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: productTitle,
+            type: 'collection',
+            images: newSceneImages,
+            modelImage: null,
+            productImages: [],
+            theme: theme,
+            customTheme: customTheme,
+            numScenes: numScenes,
+            videoStyle: videoStyle,
+            voiceGender: voiceGender,
+            observations: productObs,
+            duration: duration,
+            generatedScript: null,
+            generatedAngles: null,
+            status: 'pending',
+            projectIndex: 0,
+            injectionTarget: injectionTarget,
+            targetConfigs: targetConfigs,
+            productReviews: null
+          };
+
+          setProjects(prev => [...prev, newProj]);
+          setProjectCounter(prev => prev + 1);
+          setShowQueue(true);
+        }
 
         setTiktokQueue(prev => prev.map((it, i) => i === idx ? {
           ...it,
