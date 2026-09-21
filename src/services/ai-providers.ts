@@ -225,21 +225,26 @@ DIRETRIZ #1: HUMANIZAÇÃO PROFUNDA DAS FALAS EM PORTUGUÊS BRASILEIRO (PT-BR)
    - RESPEITO AO TEMPO DA CENA: Máximo de 2 a 2.5 palavras por segundo (ex: cena de 5s = entre 10 e 12 palavras; 8s = entre 16 e 20 palavras). Se passar disso, o narrador ficará afobado e artificial.
 
 ================================================================================
-DIRETRIZ #2: CONSTRUÇÃO DE PROMPTS DE VÍDEO E IMAGEM (CINEMATOGRÁFICOS)
+DIRETRIZ #2: CONSTRUÇÃO DE PROMPTS DE VÍDEO E IMAGEM COM VOZ E TOM PADRONIZADOS
 ================================================================================
+⚠️ PADRÃO MANDATÓRIO DE ESPECIFICAÇÃO DE VOZ E TOM NOS PROMPTS DE VÍDEO:
+Em TODO prompt de vídeo gerado ('veoPrompt' e 'digenPrompt'), você DEVE obrigatoriamente especificar se a voz é feminina ou masculina e o tipo de tom de locução (ex: entusiasta/espontâneo, confiante/persuasivo, suave/estético, achadinho/urgente) antes ou junto à fala falada em português. Isso é indispensável para manter o padrão e automação das ferramentas de geração de vídeo.
+
 1. GOOGLE VEO ('veoPrompt'):
    - Sempre em INGLÊS com terminologia cinematográfica profissional.
    - Descreva iluminação de estúdio comercial (soft key light, warm rim lighting, clean subtle reflections), lentes e enquadramentos (85mm portrait lens, 100mm macro close-up for fabric/product details, f/1.8 shallow depth of field bokeh), movimentos de câmera suaves (slow cinematic dolly push-in, subtle 45-degree orbital pan, smooth tracking).
-   - ESTRUTURA UNIFICADA OBRIGATÓRIA:
-     Visual/Camera: [Ação visual e movimento de câmera cinematográfico] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Audio/SFX: [Música de fundo comercial e efeitos sonoros táteis como unboxing, click, tecido].
+   - ESTRUTURA UNIFICADA OBRIGATÓRIA (COM GÊNERO E TOM DA VOZ):
+     Visual & Camera: [Ação visual e movimento de câmera cinematográfico] | Voiceover/Dialogue: ([Female/Male voice], [tone: warm enthusiastic creator tone / confident persuasive tone / calm aesthetic tone / energetic promo tone]) '[Fala exata em PT-BR]' | Background Music & SFX: [Música de fundo comercial e efeitos sonoros táteis como unboxing, click, tecido].
+     *(Se o modo for Sem Narração/no-speech): Voiceover/Dialogue: (No voiceover / Instrumental only) | Background Music & SFX: [Música instrumental dinâmica e SFX]
 
-2. DIGEN ('digenPrompt') - AVATAR & FALA:
-   - Sempre em INGLÊS.
+2. DIGEN ('digenPrompt') - AVATAR, VOZ E DIÁLOGO:
+   - Sempre em INGLÊS para descrições técnicas e estéticas.
    - Descreva microexpressões humanas autênticas (natural warm smile, subtle eyebrow reactions, relaxed posture, direct friendly eye contact with lens).
    - Gesticulação de criador (naturally gesturing with hands, holding or pointing to the product, showing texture, fluid body language).
    - Sincronia labial fluida para o áudio falado em português.
-   - ESTRUTURA UNIFICADA OBRIGATÓRIA:
-     Model/Action: [Comportamento do avatar, expressões faciais e gestos com produto] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+   - ESTRUTURA UNIFICADA OBRIGATÓRIA (COM GÊNERO E TOM DA VOZ):
+     Model/Action: [Comportamento do avatar, expressões faciais e gestos com produto] | Voice & Tone: [Female/Male voice], [tone: warm and enthusiastic creator tone / confident and persuasive tone / calm and aesthetic tone / fast dynamic promo tone] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+     *(Se o modo for Sem Narração/no-speech): Model/Action: [Gestos naturais demonstrando o produto sem movimentos labiais] | Voice & Tone: No voiceover (Instrumental only) | Dialogue: None | Background Music: [Trilha instrumental comercial moderna].
 
 3. NANO BANANA 2 / IMAGEN 3 ('imagePrompt'):
    - Sempre em INGLÊS.

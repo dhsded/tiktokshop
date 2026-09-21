@@ -37,6 +37,7 @@ import {
   Key,
   Crop,
   Volume2,
+  Mic,
   FileText,
   Download,
   Layers,
@@ -95,7 +96,7 @@ import {
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 
 interface VersionEntry {
   version: string;
@@ -105,6 +106,17 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.7.1',
+    date: '21/09/2026',
+    title: 'Padronização Obrigatória de Gênero da Voz e Tipo de Tom nos Prompts de Vídeo',
+    changes: [
+      'Novo: Especificação obrigatória e padronizada de gênero da voz (Feminina / Masculina) e tipo de tom nos prompts de vídeo VEO e DIGEN',
+      'Novo: Seletor visual de Tom da Voz / Estilo de Locução no Passo 2 (Entusiasta, Confiante, Suave, Achadinho)',
+      'Novo: Diretriz #2 atualizada no sistema mestre da IA para garantir unificação estrutural com voz e tom',
+      'Novo: Suporte a modo Sem Narração (No voiceover / Instrumental only) mantendo consistência total nos prompts'
+    ],
+  },
   {
     version: '1.7.0',
     date: '21/09/2026',
@@ -1259,6 +1271,7 @@ function MainApp() {
   const [activeSequenceIndex, setActiveSequenceIndex] = useState(0);
   const [videoStyle, setVideoStyle] = useState<'standard' | 'pov'>('standard');
   const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'none'>('female');
+  const [voiceTone, setVoiceTone] = useState<'enthusiastic' | 'persuasive' | 'calm' | 'promo'>('enthusiastic');
   const [imageWorkflowMode, setImageWorkflowMode] = useState<'direct_collected' | 'nano_banana_first'>('direct_collected');
   const modelInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
@@ -2313,6 +2326,7 @@ function MainApp() {
     numScenes: number;
     videoStyle: 'standard' | 'pov';
     voiceGender: 'female' | 'male' | 'none';
+    voiceTone?: 'enthusiastic' | 'persuasive' | 'calm' | 'promo';
     observations: string;
     duration: string;
     generatedScript: ScriptResponse | null;
@@ -2807,6 +2821,7 @@ function MainApp() {
           numScenes,
           videoStyle,
           voiceGender,
+          voiceTone,
           observations,
           duration,
           generatedScript,
@@ -2830,6 +2845,7 @@ function MainApp() {
     numScenes,
     videoStyle,
     voiceGender,
+    voiceTone,
     observations,
     duration,
     generatedScript,
@@ -2851,6 +2867,7 @@ function MainApp() {
     setNumScenes(proj.numScenes);
     setVideoStyle(proj.videoStyle);
     setVoiceGender(proj.voiceGender);
+    setVoiceTone(proj.voiceTone || 'enthusiastic');
     setImageWorkflowMode(proj.imageWorkflowMode || 'direct_collected');
     setObservations(proj.observations);
     setDuration(proj.duration);
@@ -2881,6 +2898,7 @@ function MainApp() {
       numScenes: 3,
       videoStyle: 'standard',
       voiceGender: 'female',
+      voiceTone: 'enthusiastic',
       imageWorkflowMode: 'direct_collected',
       observations: '',
       duration: DURATIONS[0],
@@ -3522,16 +3540,53 @@ Retorne APENAS o array JSON.`,
 - O campo 'imageName' deve indicar qual referência usar principalmente na cena (use "${modelImage?.name || ''}" se o foco principal for a modelo ou o nome de um dos arquivos de foto do produto se for um detalhe).
 - No campo 'imagePrompt' (Nano Banana 2 / Imagen 3), descreva a modelo apresentando e interagindo com o produto de forma fotorrealista e natural.`;
 
+      const toneMap: Record<string, { pt: string; en: string }> = {
+        enthusiastic: {
+          pt: 'Entusiasta & Espontâneo (Voz animada, alegre, calorosa e estilo criador autêntico do TikTok)',
+          en: 'warm, enthusiastic and authentic TikTok creator tone'
+        },
+        persuasive: {
+          pt: 'Confiante & Persuasivo (Voz firme, segura, elegante com postura de autoridade)',
+          en: 'confident, authoritative, persuasive and elegant commercial tone'
+        },
+        calm: {
+          pt: 'Suave & Estético (Voz suave, calma, intimista e elegante para moda/lifestyle)',
+          en: 'calm, soft, intimate, gentle and aesthetic storytelling tone'
+        },
+        promo: {
+          pt: 'Achadinho & Urgente (Voz dinâmica, empolgada, ritmo acelerado de oportunidade imperdível)',
+          en: 'fast-paced, excited, promotional and dynamic deal hunter tone'
+        }
+      };
+
+      const currentTone = toneMap[voiceTone] || toneMap.enthusiastic;
+      const genderLabel = voiceGender === 'female' ? 'FEMININA' : (voiceGender === 'male' ? 'MASCULINA' : 'SEM VOZ');
+      const genderEn = voiceGender === 'female' ? 'Female voice' : (voiceGender === 'male' ? 'Male voice' : 'No voice');
+
       const voiceInstruction = voiceGender === 'none'
-        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
+        ? `GÊNERO DA VOZ & TOM / NARRADOR: SEM NARRAÇÃO (SEM FALA).
 - O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
 - O foco é 100% visual: mostrar o produto de vários ângulos, destacando detalhes, qualidade e texturas com uma música de fundo instrumental.
 - No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Conheça a qualidade do...]').
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting product details').`
-        : `GÊNERO DA VOZ / NARRADOR:
-A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
-- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+- OBRIGATÓRIO EM 'veoPrompt' (GOOGLE VEO):
+  No segmento de áudio, especifique explicitamente:
+  "Voiceover/Dialogue: (No voiceover / Instrumental only)"
+- OBRIGATÓRIO EM 'digenPrompt' (DIGEN):
+  No segmento de voz e diálogo, especifique explicitamente:
+  "Voice & Tone: No voiceover (Instrumental only) | Dialogue: None"`
+        : `GÊNERO DA VOZ & TOM DE LOCUÇÃO PADRONIZADO (OBRIGATÓRIO NOS PROMPTS DE VÍDEO):
+- GÊNERO DA VOZ SELECIONADO: OBRIGATORIAMENTE ${genderLabel} (${genderEn}).
+- TIPO DE TOM SELECIONADO: OBRIGATORIAMENTE ${currentTone.pt.toUpperCase()} (${currentTone.en}).
+
+🎯 PADRÃO ESTRUTURAL OBRIGATÓRIO NOS PROMPTS DE VÍDEO (NUNCA OMITA GÊNERO OU TOM):
+1. ⚠️ NO CAMPO 'veoPrompt' (GOOGLE VEO):
+   O segmento de voz e diálogo DEVE conter obrigatoriamente a especificação (${genderEn}, ${currentTone.en}):
+   Visual & Camera: [Ação visual e movimento de câmera cinematográfico] | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Texto exato da fala em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis].
+2. ⚠️ NO CAMPO 'digenPrompt' (DIGEN.ai):
+   O prompt DEVE conter explicitamente o segmento padronizado 'Voice & Tone':
+   Model/Action: [Microexpressões faciais e gestos com produto] | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Texto exato da fala em PT-BR]' | Background Music: [Trilha comercial moderna].
+3. ⚠️ NO CAMPO 'narration' (PORTUGUÊS BRASILEIRO PT-BR):
+   A narração em PT-BR DEVE ser redigida respeitando a concordância, adjetivos e o estilo para voz ${genderLabel} no tom ${currentTone.pt}.`;
 
       const configList = Object.entries(targetConfigs)
         .filter(([key]) => key.startsWith(`${injectionTarget}-`))
@@ -3589,10 +3644,12 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
 
       const superiorPromptGuidelines = `
 🎬 DIRETRIZES CINEMATOGRÁFICAS PARA PROMPTS (VEO, DIGEN e IMAGEM):
-- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória:
-  Visual & Camera: [Ação e movimento de câmera cinematográfico] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
-- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural com o produto nas mãos e sincronia labial fluida para o áudio em português:
-  Model/Action: [Comportamento do avatar e gestos com produto] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória contendo GÊNERO e TOM DA VOZ:
+  Visual & Camera: [Ação e movimento de câmera] | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
+  *(Se no-voiceover): Visual & Camera: [Ação e câmera] | Voiceover/Dialogue: (No voiceover / Instrumental only) | Background Music & SFX: [Trilha comercial instrumental]
+- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural com o produto nas mãos, sincronia labial e o segmento padronizado de voz e tom:
+  Model/Action: [Comportamento do avatar e gestos] | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+  *(Se no-voiceover): Model/Action: [Gestos naturais demonstrando o produto sem movimentos labiais] | Voice & Tone: No voiceover (Instrumental only) | Dialogue: None | Background Music: [Trilha instrumental comercial moderna].
 - NANO BANANA 2 ('imagePrompt'): Em inglês. Fotografia estática hiper-realista 8K, padrão catálogo de luxo ou TikTok Shop oficial, iluminação tridimensional suave.`;
 
       const multiSequencesInstruction = numSequences > 1
@@ -3641,7 +3698,7 @@ REGRAS OBRIGATÓRIAS:
 2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena (apenas referência interna, NÃO inclua esse nome nos prompts).
 3. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string do prompt em inglês:
    - (1) Descrição visual da cena e movimento de câmera (Camera Movement & Visual Action);
-   - (2) Narração e falas dos personagens (Narration / Voiceover / Character Speech em PT-BR);
+   - (2) Especificação de Gênero e Tom da Voz junto à fala em PT-BR ('Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) [Fala em PT-BR]' para VEO e 'Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: [Fala em PT-BR]' para DIGEN);
    - (3) Música de fundo e efeitos sonoros (Background Music & SFX).
 4. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
 5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok com oralidade 100% natural e zero clichês.'}
@@ -3662,8 +3719,8 @@ Retorne em estrutura JSON:
           "imageName": "Nome exato do arquivo de referência (uso interno)", 
           "duration": "${duration}", 
           "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-          "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
-          "digenPrompt": "Model/Action: Natural talking head model presenting product. | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
+          "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
+          "digenPrompt": "Model/Action: Natural talking head model presenting product. | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
           "narration": "Fala em PT-BR 100% humana...", 
           "description": "Explicação da cena" 
         }
@@ -3675,8 +3732,8 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo de referência (uso interno)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
-      "digenPrompt": "Model/Action: Natural talking head model presenting product. | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
+      "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
+      "digenPrompt": "Model/Action: Natural talking head model presenting product. | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
       "narration": "Fala em PT-BR 100% humana...", 
       "description": "Explicação da cena" 
     }
@@ -3787,16 +3844,53 @@ Retorne em estrutura JSON:
     try {
       const finalTheme = customTheme || theme;
 
+      const toneMap: Record<string, { pt: string; en: string }> = {
+        enthusiastic: {
+          pt: 'Entusiasta & Espontâneo (Voz animada, alegre, calorosa e estilo criador autêntico do TikTok)',
+          en: 'warm, enthusiastic and authentic TikTok creator tone'
+        },
+        persuasive: {
+          pt: 'Confiante & Persuasivo (Voz firme, segura, elegante com postura de autoridade)',
+          en: 'confident, authoritative, persuasive and elegant commercial tone'
+        },
+        calm: {
+          pt: 'Suave & Estético (Voz suave, calma, intimista e elegante para moda/lifestyle)',
+          en: 'calm, soft, intimate, gentle and aesthetic storytelling tone'
+        },
+        promo: {
+          pt: 'Achadinho & Urgente (Voz dinâmica, empolgada, ritmo acelerado de oportunidade imperdível)',
+          en: 'fast-paced, excited, promotional and dynamic deal hunter tone'
+        }
+      };
+
+      const currentTone = toneMap[voiceTone] || toneMap.enthusiastic;
+      const genderLabel = voiceGender === 'female' ? 'FEMININA' : (voiceGender === 'male' ? 'MASCULINA' : 'SEM VOZ');
+      const genderEn = voiceGender === 'female' ? 'Female voice' : (voiceGender === 'male' ? 'Male voice' : 'No voice');
+
       const voiceInstruction = voiceGender === 'none'
-        ? `GÊNERO DA VOZ / NARRADOR: SEM NARRAÇÃO (SEM FALA).
+        ? `GÊNERO DA VOZ & TOM / NARRADOR: SEM NARRAÇÃO (SEM FALA).
 - O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
 - O foco é 100% visual: mostrar a coleção sob vários ângulos, destacando detalhes e tecidos com música de fundo instrumental.
 - No campo 'narration' (em PT-BR), em vez de fala falada, você DEVE escrever descrições detalhadas da trilha sonora (SFX / Música de fundo) e legendas de texto para aparecer na tela (ex: '[Música instrumental animada de fundo] [Legenda de tela: Coleção de verão exclusiva...]').
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que NÃO há voz ou narração, focando apenas na trilha sonora instrumental e efeitos de áudio (ex: 'No speech. Professional energetic instrumental background music and sound effects, highlighting clothing details').`
-        : `GÊNERO DA VOZ / NARRADOR:
-A voz da narração deve ser obrigatoriamente ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'}.
-- Toda a narração em PT-BR ('narration') deve ser escrita adaptando a concordância verbal, adjetivos e o tom estilístico para uma voz ${voiceGender === 'female' ? 'FEMININA' : 'MASCULINA'} (por exemplo: referências no feminino/masculino dependendo do contexto).
-- No campo 'digenPrompt' (DIGEN), especifique explicitamente que o estilo de voz é uma voz ${voiceGender === 'female' ? 'feminina' : 'masculina'} clara e persuasiva (ex: 'clear and natural ${voiceGender === 'female' ? 'female' : 'male'} voice narrative style').`;
+- OBRIGATÓRIO EM 'veoPrompt' (GOOGLE VEO):
+  No segmento de áudio, especifique explicitamente:
+  "Voiceover/Dialogue: (No voiceover / Instrumental only)"
+- OBRIGATÓRIO EM 'digenPrompt' (DIGEN):
+  No segmento de voz e diálogo, especifique explicitamente:
+  "Voice & Tone: No voiceover (Instrumental only) | Dialogue: None"`
+        : `GÊNERO DA VOZ & TOM DE LOCUÇÃO PADRONIZADO (OBRIGATÓRIO NOS PROMPTS DE VÍDEO):
+- GÊNERO DA VOZ SELECIONADO: OBRIGATORIAMENTE ${genderLabel} (${genderEn}).
+- TIPO DE TOM SELECIONADO: OBRIGATORIAMENTE ${currentTone.pt.toUpperCase()} (${currentTone.en}).
+
+🎯 PADRÃO ESTRUTURAL OBRIGATÓRIO NOS PROMPTS DE VÍDEO (NUNCA OMITA GÊNERO OU TOM):
+1. ⚠️ NO CAMPO 'veoPrompt' (GOOGLE VEO):
+   O segmento de voz e diálogo DEVE conter obrigatoriamente a especificação (${genderEn}, ${currentTone.en}):
+   Visual & Camera: [Ação visual e movimento de câmera cinematográfico] | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Texto exato da fala em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis].
+2. ⚠️ NO CAMPO 'digenPrompt' (DIGEN.ai):
+   O prompt DEVE conter explicitamente o segmento padronizado 'Voice & Tone':
+   Model/Action: [Comportamento da modelo digital e gestos] | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Texto exato da fala em PT-BR]' | Background Music: [Trilha comercial moderna].
+3. ⚠️ NO CAMPO 'narration' (PORTUGUÊS BRASILEIRO PT-BR):
+   A narração em PT-BR DEVE ser redigida respeitando a concordância, adjetivos e o estilo para voz ${genderLabel} no tom ${currentTone.pt}.`;
 
       const configList = Object.entries(targetConfigs)
         .filter(([key]) => key.startsWith(`${injectionTarget}-`))
@@ -3840,10 +3934,12 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
 
       const superiorPromptGuidelines = `
 🎬 DIRETRIZES CINEMATOGRÁFICAS PARA PROMPTS (VEO, DIGEN e IMAGEM):
-- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória:
-  Visual & Camera: [Ação visual e movimento de câmera] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
-- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural e sincronia labial fluida para o áudio em português:
-  Model/Action: [Comportamento do avatar e gestos] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória contendo GÊNERO e TOM DA VOZ:
+  Visual & Camera: [Ação visual e movimento de câmera] | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
+  *(Se no-voiceover): Visual & Camera: [Ação e câmera] | Voiceover/Dialogue: (No voiceover / Instrumental only) | Background Music & SFX: [Trilha comercial instrumental]
+- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural, sincronia labial fluida e o segmento padronizado de voz e tom:
+  Model/Action: [Comportamento do avatar e gestos] | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+  *(Se no-voiceover): Model/Action: [Gestos naturais demonstrando a peça sem movimentos labiais] | Voice & Tone: No voiceover (Instrumental only) | Dialogue: None | Background Music: [Trilha instrumental comercial moderna].
 - NANO BANANA 2 ('imagePrompt'): Em inglês. Fotografia estática hiper-realista 8K, padrão editorial de moda / catálogo de luxo, iluminação tridimensional suave.`;
 
       const workflowInstruction = imageWorkflowMode === 'nano_banana_first'
@@ -3878,7 +3974,10 @@ ${humanVoiceGuidelines}
 ${superiorPromptGuidelines}
 
 REGRAS OBRIGATÓRIAS:
-1. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string em inglês: (1) Animação/movimento de câmera; (2) Narração/falas dos personagens ('Voiceover/Dialogue: [Texto da narração em PT-BR]'); (3) Música de fundo e SFX ('Background Music: [Música de fundo]').
+1. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string em inglês:
+   - (1) Animação/movimento de câmera;
+   - (2) Especificação de Gênero e Tom da Voz junto à fala em PT-BR ('Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) [Fala em PT-BR]' para VEO e 'Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: [Fala em PT-BR]' para DIGEN);
+   - (3) Música de fundo e SFX ('Background Music: [Música de fundo]').
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais, sempre incluindo a narração/falas e a trilha sonora.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
@@ -3896,8 +3995,8 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo (referência interna)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Visual & Camera: Cinematic camera pan across model. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Soft acoustic fashion soundtrack with ambient room reverb.", 
-      "digenPrompt": "Model/Action: Natural talking head model presenting clothing. | Dialogue: '[Narração em PT-BR]' | Background Music: Modern fashion beat.", 
+      "veoPrompt": "Visual & Camera: Cinematic camera pan across model. | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Narração em PT-BR]' | Background Music & SFX: Soft acoustic fashion soundtrack with ambient room reverb.", 
+      "digenPrompt": "Model/Action: Natural talking head model presenting clothing. | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Narração em PT-BR]' | Background Music: Modern fashion beat.", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -4037,6 +4136,52 @@ ${configList}
 - Certifique-se de que os prompts gerados em 'veoPrompt' e 'digenPrompt' reflitam e respeitem essas escolhas (por exemplo, se o formato é vertical 9:16, descreva enquadramentos verticais móveis; se o narrador selecionado é Jenny, monte o tom de voz e estilo adequados).`
         : '';
 
+      const toneMap: Record<string, { pt: string; en: string }> = {
+        enthusiastic: {
+          pt: 'Entusiasta & Espontâneo (Voz animada, alegre, calorosa e estilo criador autêntico do TikTok)',
+          en: 'warm, enthusiastic and authentic TikTok creator tone'
+        },
+        persuasive: {
+          pt: 'Confiante & Persuasivo (Voz firme, segura, elegante com postura de autoridade)',
+          en: 'confident, authoritative, persuasive and elegant commercial tone'
+        },
+        calm: {
+          pt: 'Suave & Estético (Voz suave, calma, intimista e elegante para moda/lifestyle)',
+          en: 'calm, soft, intimate, gentle and aesthetic storytelling tone'
+        },
+        promo: {
+          pt: 'Achadinho & Urgente (Voz dinâmica, empolgada, ritmo acelerado de oportunidade imperdível)',
+          en: 'fast-paced, excited, promotional and dynamic deal hunter tone'
+        }
+      };
+
+      const currentTone = toneMap[voiceTone] || toneMap.enthusiastic;
+      const genderLabel = voiceGender === 'female' ? 'FEMININA' : (voiceGender === 'male' ? 'MASCULINA' : 'SEM VOZ');
+      const genderEn = voiceGender === 'female' ? 'Female voice' : (voiceGender === 'male' ? 'Male voice' : 'No voice');
+
+      const voiceInstruction = voiceGender === 'none'
+        ? `GÊNERO DA VOZ & TOM / NARRADOR: SEM NARRAÇÃO (SEM FALA).
+- O vídeo NÃO terá nenhuma narração falada, voz humana ou diálogo (no-voiceover / no-speech).
+- O foco é 100% visual: mostrar o produto no ângulo especificado com música instrumental.
+- No campo 'narration' (em PT-BR), escreva descrições de trilha e efeitos sonoros ou legendas de tela.
+- OBRIGATÓRIO EM 'veoPrompt' (GOOGLE VEO):
+  No segmento de áudio, especifique explicitamente:
+  "Voiceover/Dialogue: (No voiceover / Instrumental only)"
+- OBRIGATÓRIO EM 'digenPrompt' (DIGEN):
+  No segmento de voz e diálogo, especifique explicitamente:
+  "Voice & Tone: No voiceover (Instrumental only) | Dialogue: None"`
+        : `GÊNERO DA VOZ & TOM DE LOCUÇÃO PADRONIZADO (OBRIGATÓRIO NOS PROMPTS DE VÍDEO):
+- GÊNERO DA VOZ SELECIONADO: OBRIGATORIAMENTE ${genderLabel} (${genderEn}).
+- TIPO DE TOM SELECIONADO: OBRIGATORIAMENTE ${currentTone.pt.toUpperCase()} (${currentTone.en}).
+
+🎯 PADRÃO ESTRUTURAL OBRIGATÓRIO NOS PROMPTS DE VÍDEO (NUNCA OMITA GÊNERO OU TOM):
+1. No campo 'veoPrompt' (Google VEO):
+   O segmento de áudio DEVE conter explicitamente o gênero e o tom no formato:
+   "Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[Narração em PT-BR curta sobre o ângulo/detalhe]'"
+2. No campo 'digenPrompt' (DIGEN.ai):
+   DEVE conter a seção padronizada:
+   "Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[Narração em PT-BR curta sobre o ângulo/detalhe]' | Background Music: [Trilha e SFX]"`;
+
       const textPart = {
         text: `Você é um especialista em fotografia de produto e marketing digital para TikTok Shop.
 
@@ -4044,7 +4189,7 @@ Com base nas imagens do produto fornecidas, gere exatamente ${numAngles} variaç
 
 PRODUTO(S): ${productImages.map(p => p.name).join(', ')}
 DURAÇÃO: ${duration}
-GÊNERO DA VOZ: ${voiceGender === 'none' ? 'SEM NARRAÇÃO (SEM FALA)' : (voiceGender === 'female' ? 'FEMININO' : 'MASCULINO')}
+${voiceInstruction}
 
 ${platformInstruction}
 
@@ -4052,10 +4197,12 @@ REGRAS ABSOLUTAS — NUNCA VIOLE:
 1. O PRODUTO DEVE SER MANTIDO 100% IDÊNTICO — mesmas cores, formato, textura, tamanho, marca, logotipo e TODAS as características visuais originais. NUNCA altere o produto.
 2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
-4. Os campos veoPrompt e digenPrompt DEVEM vir COMPLETOS e UNIFICADOS, incluindo em um único prompt: (1) Animação visual e movimento de câmera; (2) Narração e falas dos personagens em PT-BR ("Voiceover/Dialogue: [Texto da narração]"); (3) Música de fundo e SFX ("Background Music: [Trilha comercial]").
+4. Os campos veoPrompt e digenPrompt DEVEM vir COMPLETOS e UNIFICADOS, respeitando OBRIGATORIAMENTE a especificação de GÊNERO (${genderEn}) e TOM (${currentTone.en}):
+   - VEO: "Visual & Camera: [câmera e cena do produto neste ângulo] | Voiceover/Dialogue: (${genderEn}, ${currentTone.en}) '[narração curta em PT-BR]' | Background Music & SFX: [trilha]"
+   - DIGEN: "Model/Action: [ação/apresentação neste ângulo] | Voice & Tone: ${genderEn}, ${currentTone.en} | Dialogue: '[narração curta em PT-BR]' | Background Music: [trilha]"
+   ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), siga as diretrizes acima de "(No voiceover / Instrumental only)".' : ''}
 5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. Linguagem 100% humana, espontânea, como criador do TikTok mostrando o detalhe do produto para um amigo ("olha esse acabamento...", "sente a textura...", "dá uma olhada nesse fecho..."). ZERO clichês de IA.
 6. Os campos veoPrompt e digenPrompt devem ser prompts PUROS e AUTO-CONTIDOS — NUNCA inclua nomes de arquivo, colchetes com nomes ou referências a imagens originais. As imagens servem apenas como referência visual para a IA.
-7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
 
 Angulos a variar (escolha os mais relevantes para o produto):
 - Vista frontal (Front view straight on)
@@ -4994,6 +5141,75 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </div>
                   </div>
 
+                  {/* Tom da Voz / Estilo de Locução */}
+                  <div className="space-y-2.5 pt-4 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                        <Mic className="w-3.5 h-3.5 text-pink-400" />
+                        Tom da Voz / Estilo de Locução
+                      </label>
+                      {voiceGender !== 'none' ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-pink-500/10 text-pink-400 font-semibold border border-pink-500/20">
+                          {voiceTone === 'enthusiastic' ? '🌟 Entusiasta' : voiceTone === 'persuasive' ? '💎 Confiante' : voiceTone === 'calm' ? '🍃 Suave' : '⚡ Achadinho'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-white/30 italic">
+                          Desativado (Sem Narração)
+                        </span>
+                      )}
+                    </div>
+                    <div className={`grid grid-cols-2 sm:grid-cols-4 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1 ${voiceGender === 'none' ? 'opacity-40 pointer-events-none' : ''}`}>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceTone('enthusiastic')}
+                        className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          voiceTone === 'enthusiastic' && voiceGender !== 'none'
+                            ? 'bg-pink-600 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">🌟 Entusiasta</span>
+                        <span className="text-[9px] opacity-75 leading-tight">TikTok Creator</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceTone('persuasive')}
+                        className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          voiceTone === 'persuasive' && voiceGender !== 'none'
+                            ? 'bg-pink-600 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">💎 Confiante</span>
+                        <span className="text-[9px] opacity-75 leading-tight">Persuasivo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceTone('calm')}
+                        className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          voiceTone === 'calm' && voiceGender !== 'none'
+                            ? 'bg-pink-600 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">🍃 Suave</span>
+                        <span className="text-[9px] opacity-75 leading-tight">Aesthetic</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceTone('promo')}
+                        className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          voiceTone === 'promo' && voiceGender !== 'none'
+                            ? 'bg-pink-600 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">⚡ Achadinho</span>
+                        <span className="text-[9px] opacity-75 leading-tight">Promoção</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Sequência do Fluxo de Imagens e Vídeos */}
                   <div className="space-y-2.5 pt-4 border-t border-white/5">
                     <div className="flex items-center justify-between">
@@ -5275,6 +5491,75 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           }`}
                         >
                           <span>Sem Narração</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tom da Voz / Estilo de Locução */}
+                    <div className="space-y-2.5 pt-2 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Mic className="w-3.5 h-3.5 text-pink-400" />
+                          Tom da Voz / Estilo de Locução
+                        </label>
+                        {voiceGender !== 'none' ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-pink-500/10 text-pink-400 font-semibold border border-pink-500/20">
+                            {voiceTone === 'enthusiastic' ? '🌟 Entusiasta' : voiceTone === 'persuasive' ? '💎 Confiante' : voiceTone === 'calm' ? '🍃 Suave' : '⚡ Achadinho'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-white/30 italic">
+                            Desativado (Sem Narração)
+                          </span>
+                        )}
+                      </div>
+                      <div className={`grid grid-cols-2 sm:grid-cols-4 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1 ${voiceGender === 'none' ? 'opacity-40 pointer-events-none' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceTone('enthusiastic')}
+                          className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                            voiceTone === 'enthusiastic' && voiceGender !== 'none'
+                              ? 'bg-pink-600 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold">🌟 Entusiasta</span>
+                          <span className="text-[9px] opacity-75 leading-tight">TikTok Creator</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceTone('persuasive')}
+                          className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                            voiceTone === 'persuasive' && voiceGender !== 'none'
+                              ? 'bg-pink-600 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold">💎 Confiante</span>
+                          <span className="text-[9px] opacity-75 leading-tight">Persuasivo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceTone('calm')}
+                          className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                            voiceTone === 'calm' && voiceGender !== 'none'
+                              ? 'bg-pink-600 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold">🍃 Suave</span>
+                          <span className="text-[9px] opacity-75 leading-tight">Aesthetic</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVoiceTone('promo')}
+                          className={`p-2 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                            voiceTone === 'promo' && voiceGender !== 'none'
+                              ? 'bg-pink-600 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold">⚡ Achadinho</span>
+                          <span className="text-[9px] opacity-75 leading-tight">Promoção</span>
                         </button>
                       </div>
                     </div>
