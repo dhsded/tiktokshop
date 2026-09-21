@@ -96,7 +96,7 @@ import {
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.2';
 
 interface VersionEntry {
   version: string;
@@ -106,6 +106,20 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.7.2',
+    date: '21/09/2026',
+    title: 'Prompt Studio Moderno, Matriz de Prompts em 3 Colunas e Suporte Completo Claro/Escuro',
+    changes: [
+      'Novo: Redistribuição da interface sem esticamento com contêiner expandido adaptativo (max-w-7xl / 2xl)',
+      'Novo: Matriz de Prompts em 3 Colunas por cena (Nano Banana 2, Google VEO, DIGEN.ai lado a lado)',
+      'Novo: Seletor de Modo de Exibição no Roteiro (Foco 100% vs Lado a Lado Split View)',
+      'Novo: Banner inteligente de parâmetros recolhível no modo foco com edição rápida',
+      'Novo: Design moderno e de alto contraste calibrado especificamente para os modos Claro e Escuro',
+      'Novo: Miniaturas de cena com zoom no hover e modal de visualização ampliada em alta resolução',
+      'Novo: Grid de 2 colunas para exibição dos Ângulos Adicionais do Produto',
+    ],
+  },
   {
     version: '1.7.1',
     date: '21/09/2026',
@@ -1245,6 +1259,11 @@ function MainApp() {
     }
   }, []);
 
+  useEffect(() => {
+    document.documentElement.className = themeMode;
+    document.documentElement.style.colorScheme = themeMode;
+  }, [themeMode]);
+
   const toggleTheme = () => {
     const nextTheme = themeMode === 'dark' ? 'light' : 'dark';
     setThemeMode(nextTheme);
@@ -1253,6 +1272,9 @@ function MainApp() {
 
   const [activeTab, setActiveTab] = useState<TabMode>('collection');
   const [showChangelog, setShowChangelog] = useState(false);
+  const [promptViewMode, setPromptViewMode] = useState<'split' | 'focus'>('focus');
+  const [isConfigExpanded, setIsConfigExpanded] = useState(false);
+  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
   
   // Tab 1: Collection
   const [images, setImages] = useState<SceneImage[]>([]);
@@ -4717,14 +4739,14 @@ Angulos a variar (escolha os mais relevantes para o produto):
   };
 
   return (
-    <div className={`min-h-screen ${themeMode} bg-zinc-950 text-zinc-100 font-sans selection:bg-orange-500/30`}>
+    <div className={`min-h-screen ${themeMode} ${themeMode === 'dark' ? 'bg-[#0a0a0c] text-zinc-100' : 'bg-[#f8fafc] text-slate-900'} font-sans selection:bg-orange-500/30 transition-colors duration-200`}>
       {/* Decorative background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-orange-500/5 blur-[120px] rounded-full" />
-        <div className="absolute -bottom-[20%] -right-[10%] w-[50%] h-[50%] bg-blue-500/5 blur-[120px] rounded-full" />
+        <div className={`absolute -top-[20%] -left-[10%] w-[60%] h-[60%] ${themeMode === 'dark' ? 'bg-orange-500/5' : 'bg-orange-500/3'} blur-[120px] rounded-full`} />
+        <div className={`absolute -bottom-[20%] -right-[10%] w-[50%] h-[50%] ${themeMode === 'dark' ? 'bg-blue-500/5' : 'bg-blue-500/3'} blur-[120px] rounded-full`} />
       </div>
 
-      <main className="relative max-w-6xl mx-auto px-6 py-12">
+      <main className="relative max-w-7xl 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         {/* Header */}
         <header className="mb-16">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
@@ -4901,9 +4923,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
             }}
           />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
           {/* Left Column: UI Controls */}
-          <div className="lg:col-span-12 xl:col-span-5 space-y-10">
+          <div className={
+            !generatedScript 
+              ? "lg:col-span-12 xl:col-span-5 space-y-10" 
+              : promptViewMode === 'split'
+              ? "lg:col-span-12 xl:col-span-4 2xl:col-span-4 space-y-8"
+              : (isConfigExpanded ? "col-span-12 space-y-8 mb-4" : "hidden")
+          }>
             
             {activeTab === 'collection' ? (
               <>
@@ -6081,44 +6109,198 @@ Angulos a variar (escolha os mais relevantes para o produto):
           </div>
 
           {/* Right Column: Results */}
-          <div className="lg:col-span-12 xl:col-span-7">
+          <div className={
+            !generatedScript 
+              ? "lg:col-span-12 xl:col-span-7"
+              : promptViewMode === 'split'
+              ? "lg:col-span-12 xl:col-span-8 2xl:col-span-8 min-w-0"
+              : "col-span-12 min-w-0"
+          }>
             <AnimatePresence mode="wait">
               {generatedScript ? (
                 <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  className="space-y-6"
                 >
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="text-xs uppercase tracking-[0.3em] text-orange-500 font-bold mb-2">Roteiro Gerado</h3>
-                        <h2 className="text-3xl font-bold font-display">{generatedScript.campaignTitle}</h2>
+                  {/* Banner de Resumo da Configuração no Modo Foco */}
+                  {promptViewMode === 'focus' && (
+                    <div 
+                      className="rounded-2xl p-4 sm:p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all shadow-sm"
+                      style={{
+                        backgroundColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#ffffff',
+                        borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="px-3 py-1 rounded-xl text-xs font-bold uppercase tracking-wider bg-orange-500/15 text-orange-500 border border-orange-500/25">
+                          {activeTab === 'collection' ? '📁 Fotos / Coleção' : '👤 Apresentador & Produto'}
+                        </span>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg border"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                            borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                            color: themeMode === 'dark' ? 'rgba(255,255,255,0.8)' : '#334155'
+                          }}
+                        >
+                          📸 {activeTab === 'collection' ? images.length : (productImages.length + (modelImage ? 1 : 0))} Fotos
+                        </span>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg border"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                            borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                            color: themeMode === 'dark' ? 'rgba(255,255,255,0.8)' : '#334155'
+                          }}
+                        >
+                          ⏱️ {duration}
+                        </span>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg border"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(168,85,247,0.1)' : '#faf5ff',
+                            borderColor: themeMode === 'dark' ? 'rgba(168,85,247,0.25)' : '#f3e8ff',
+                            color: themeMode === 'dark' ? '#c084fc' : '#9333ea'
+                          }}
+                        >
+                          🎙️ {voiceGender === 'none' ? 'Sem Narração' : `${voiceGender === 'female' ? 'Feminina' : 'Masculina'} (${voiceTone})`}
+                        </span>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg border"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(245,158,11,0.1)' : '#fffdfa',
+                            borderColor: themeMode === 'dark' ? 'rgba(245,158,11,0.25)' : '#fef3c7',
+                            color: themeMode === 'dark' ? '#fbbf24' : '#d97706'
+                          }}
+                        >
+                          {imageWorkflowMode === 'nano_banana_first' ? '🍌 Nano Banana 1º' : '📸 Fotos Diretas'}
+                        </span>
                       </div>
-                      <button 
-                        onClick={copyToClipboard}
-                        className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 rounded-2xl hover:bg-white hover:text-black transition-all"
-                      >
-                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        <span className="text-xs font-bold uppercase tracking-widest">{copied ? 'Copiado' : 'JSON'}</span>
-                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-sm"
+                          style={{
+                            backgroundColor: isConfigExpanded 
+                              ? (themeMode === 'dark' ? 'rgba(249,115,22,0.2)' : '#ffedd5')
+                              : (themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc'),
+                            borderColor: isConfigExpanded ? '#f97316' : (themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#cbd5e1'),
+                            color: isConfigExpanded ? '#f97316' : (themeMode === 'dark' ? '#ffffff' : '#0f172a')
+                          }}
+                        >
+                          <Settings2 className="w-3.5 h-3.5" />
+                          <span>{isConfigExpanded ? 'Ocultar Parâmetros' : 'Editar Parâmetros'}</span>
+                        </button>
+                      </div>
                     </div>
-                    {/* Export buttons */}
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={exportAsTxt} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
-                        <FileText className="w-3.5 h-3.5" />.TXT
+                  )}
+
+                  {/* Header do Roteiro Gerado com Toolbar de Ações e Switcher de Visualização */}
+                  <div 
+                    className="rounded-3xl p-5 sm:p-6 border transition-all space-y-4 shadow-sm"
+                    style={{
+                      backgroundColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#ffffff',
+                      borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'
+                    }}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                          <h3 className="text-xs uppercase tracking-[0.25em] text-orange-500 font-bold font-display">
+                            Roteiro Criativo Gerado
+                          </h3>
+                        </div>
+                        <h2 
+                          className="text-2xl sm:text-3xl font-bold font-display tracking-tight"
+                          style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                        >
+                          {generatedScript.campaignTitle}
+                        </h2>
+                      </div>
+
+                      {/* Seletor de Modo de Exibição (Foco vs Lado a Lado) & JSON */}
+                      <div className="flex items-center gap-2 flex-wrap self-start lg:self-auto">
+                        <div 
+                          className="p-1 rounded-2xl border flex items-center gap-1 text-xs font-bold"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f1f5f9',
+                            borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#cbd5e1'
+                          }}
+                        >
+                          <button
+                            onClick={() => setPromptViewMode('focus')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                              promptViewMode === 'focus'
+                                ? 'bg-orange-500 text-white shadow-md'
+                                : 'text-zinc-400 hover:text-zinc-200'
+                            }`}
+                            title="Visualização ampla de estúdio (100% da tela)"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            <span>Foco</span>
+                          </button>
+                          <button
+                            onClick={() => setPromptViewMode('split')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                              promptViewMode === 'split'
+                                ? 'bg-orange-500 text-white shadow-md'
+                                : 'text-zinc-400 hover:text-zinc-200'
+                            }`}
+                            title="Visualização lado a lado (painel de opções à esquerda)"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>Lado a Lado</span>
+                          </button>
+                        </div>
+
+                        <button 
+                          onClick={copyToClipboard}
+                          className="flex items-center gap-2 px-3.5 py-2 border rounded-xl transition-all cursor-pointer text-xs font-bold uppercase tracking-wider shadow-sm"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                            borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#cbd5e1',
+                            color: themeMode === 'dark' ? '#ffffff' : '#0f172a'
+                          }}
+                        >
+                          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                          <span>{copied ? 'Copiado' : 'JSON'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Botões de Exportação e Injeção */}
+                    <div className="flex gap-2 flex-wrap pt-2 border-t" style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}>
+                      <button onClick={exportAsTxt} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer"
+                        style={{
+                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#334155'
+                        }}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> .TXT
                       </button>
-                      <button onClick={exportAsDoc} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
-                        <FileText className="w-3.5 h-3.5" />.DOC
+                      <button onClick={exportAsDoc} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer"
+                        style={{
+                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#334155'
+                        }}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> .DOC
                       </button>
-                      <button onClick={exportAsPdf} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-xs font-bold text-white/60 hover:text-white">
-                        <Download className="w-3.5 h-3.5" />.PDF
+                      <button onClick={exportAsPdf} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold cursor-pointer"
+                        style={{
+                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#334155'
+                        }}
+                      >
+                        <Download className="w-3.5 h-3.5" /> .PDF
                       </button>
                       {window.electronAPI && (
                         <button 
                           onClick={() => saveProjectToFolder()}
-                          className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-emerald-500/10"
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all text-xs font-bold shadow-md cursor-pointer"
                           title="Salvar tudo estruturado em subpasta dentro do Downloads"
                         >
                           <Save className="w-3.5 h-3.5" /> Salvar Pasta do Projeto
@@ -6151,10 +6333,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 projectIndex: pIndex
                               });
                             }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-blue-500/10"
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all text-xs font-bold shadow-md cursor-pointer"
                             title="Abrir o injetor de prompts configurado para o Google Labs Flow"
                           >
-                            <Sparkles className="w-3.5 h-3.5" /> Injetar no Google Flow
+                            <Sparkles className="w-3.5 h-3.5" /> Injetar Google Flow
                           </button>
                           <button 
                             onClick={async () => {
@@ -6181,10 +6363,10 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 projectIndex: pIndex
                               });
                             }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl transition-all text-xs font-bold shadow-md hover:shadow-purple-500/10"
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl transition-all text-xs font-bold shadow-md cursor-pointer"
                             title="Abrir o injetor de prompts configurado para o DIGEN.ai"
                           >
-                            <Sparkles className="w-3.5 h-3.5" /> Injetar no DIGEN.ai
+                            <Sparkles className="w-3.5 h-3.5" /> Injetar DIGEN.ai
                           </button>
                         </>
                       ) : (
@@ -6195,7 +6377,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               message: "Esta funcionalidade de injeção automática está disponível apenas rodando no aplicativo Electron."
                             });
                           }}
-                          className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-orange-500/20 to-teal-500/20 border border-orange-500/30 rounded-xl hover:from-orange-500/30 hover:to-teal-500/30 transition-all text-xs font-bold text-orange-400 hover:text-white"
                         >
                           <Sparkles className="w-3.5 h-3.5" /> Injetar Prompts (Digen/Flow)
                         </button>
@@ -6215,17 +6397,32 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       <>
                         {/* Barra de Paginação de Sequências (Sequência 1, 2, 3, 4, 5...) */}
                         {sequencesList.length > 1 && (
-                          <div className="bg-white/5 border border-white/10 rounded-3xl p-5 mb-6 space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-white/5">
+                          <div 
+                            className="rounded-3xl p-5 border space-y-4 shadow-sm"
+                            style={{
+                              backgroundColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#ffffff',
+                              borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'
+                            }}
+                          >
+                            <div 
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b"
+                              style={{ borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : '#f1f5f9' }}
+                            >
                               <div className="flex items-center gap-2.5">
                                 <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20">
                                   <Layers className="w-4 h-4" />
                                 </div>
                                 <div>
-                                  <h3 className="text-xs uppercase tracking-wider text-white font-bold font-display">
+                                  <h3 
+                                    className="text-xs uppercase tracking-wider font-bold font-display"
+                                    style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                                  >
                                     Variações de Roteiro do Produto
                                   </h3>
-                                  <p className="text-[10px] text-white/40">
+                                  <p 
+                                    className="text-[10px]"
+                                    style={{ color: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.4)' : '#64748b' }}
+                                  >
                                     Dividido em páginas &bull; {sequencesList.length} vídeos com falas e abordagens diferentes
                                   </p>
                                 </div>
@@ -6235,17 +6432,33 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                 <button
                                   onClick={() => setActiveSequenceIndex(prev => Math.max(0, prev - 1))}
                                   disabled={safeSeqIndex === 0}
-                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                    color: themeMode === 'dark' ? '#ffffff' : '#0f172a'
+                                  }}
                                 >
                                   <ChevronLeft className="w-3.5 h-3.5" /> Anterior
                                 </button>
-                                <span className="px-2.5 py-1 rounded-xl bg-black/30 border border-white/5 text-[11px] font-bold text-orange-400">
+                                <span 
+                                  className="px-2.5 py-1 rounded-xl border text-[11px] font-bold text-orange-400"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0'
+                                  }}
+                                >
                                   Página {safeSeqIndex + 1} de {sequencesList.length}
                                 </span>
                                 <button
                                   onClick={() => setActiveSequenceIndex(prev => Math.min(sequencesList.length - 1, prev + 1))}
                                   disabled={safeSeqIndex === sequencesList.length - 1}
-                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                    color: themeMode === 'dark' ? '#ffffff' : '#0f172a'
+                                  }}
                                 >
                                   Próxima <ChevronRight className="w-3.5 h-3.5" />
                                 </button>
@@ -6262,13 +6475,18 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                     onClick={() => setActiveSequenceIndex(idx)}
                                     className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                                       isActive
-                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25 scale-[1.02]'
-                                        : 'bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5'
+                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25 scale-[1.02]'
+                                        : 'border hover:opacity-90'
                                     }`}
+                                    style={!isActive ? {
+                                      backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                      borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                      color: themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : '#475569'
+                                    } : undefined}
                                   >
                                     <span>Sequência {idx + 1}</span>
                                     {seq.approach && (
-                                      <span className={`text-[10px] font-normal px-2 py-0.5 rounded-full ${isActive ? 'bg-black/25 text-white' : 'bg-white/10 text-white/50'}`}>
+                                      <span className={`text-[10px] font-normal px-2 py-0.5 rounded-full ${isActive ? 'bg-black/25 text-white' : 'bg-black/10 dark:bg-white/10'}`}>
                                         {seq.approach}
                                       </span>
                                     )}
@@ -6278,13 +6496,19 @@ Angulos a variar (escolha os mais relevantes para o produto):
                             </div>
 
                             {/* Descrição e Gancho da Sequência Ativa */}
-                            <div className="bg-black/30 rounded-2xl p-3.5 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="text-white/40">Abordagem Desta Sequência:</span>
-                                <span className="font-semibold text-orange-300">{currentSequence.title || `Sequência ${safeSeqIndex + 1}`}</span>
+                            <div 
+                              className="rounded-2xl p-3.5 border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                              style={{
+                                backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f8fafc',
+                                borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#e2e8f0'
+                              }}
+                            >
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b' }}>Abordagem Desta Sequência:</span>
+                                <span className="font-semibold text-orange-500">{currentSequence.title || `Sequência ${safeSeqIndex + 1}`}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                <span className="text-[10px] text-white/40">{currentScenes.length} cena(s)</span>
+                                <span className="text-[10px]" style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.4)' : '#64748b' }}>{currentScenes.length} cena(s)</span>
                                 <button
                                   onClick={() => {
                                     const allSeqText = sequencesList.map((s, si) => 
@@ -6293,7 +6517,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
                                     ).join('\n\n=========================================\n\n');
                                     copyText(allSeqText);
                                   }}
-                                  className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 cursor-pointer font-bold"
+                                  className="text-[10px] text-orange-500 hover:text-orange-600 flex items-center gap-1 cursor-pointer font-bold"
                                   title="Copiar todas as sequências juntas"
                                 >
                                   <Copy className="w-3 h-3" /> Copiar Todas as Sequências
@@ -6303,184 +6527,384 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           </div>
                         )}
 
+                        {/* Lista de Cenas — Cards Modernos de Estúdio */}
                         <div className="space-y-6">
                           {currentScenes.map((scene, i) => (
-                      <motion.div 
-                        key={i}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="group bg-white/5 rounded-[2.5rem] p-8 border border-white/10 hover:bg-white/[0.07] transition-colors"
-                      >
-                        <div className="flex flex-col md:flex-row items-start gap-8">
-                          {/* Image preview in Scene */}
-                          <div className="w-full md:w-48 aspect-square rounded-3xl overflow-hidden shadow-2xl bg-black border border-white/5 flex-shrink-0 relative">
-                            {(images.find(img => img.name === scene.imageName) || 
-                              (modelImage?.name === scene.imageName ? modelImage : null) || 
-                              (productImages.find(img => img.name === scene.imageName))) && (
-                              <img 
-                                src={(images.find(img => img.name === scene.imageName) || 
-                                     (modelImage?.name === scene.imageName ? modelImage : (productImages.find(img => img.name === scene.imageName) || productImages[0])))?.preview} 
-                                alt={scene.imageName}
-                                className={`w-full h-full ${imageFit === 'contain' ? 'object-contain p-2' : 'object-cover'}`}
-                              />
-                            )}
-                            {!(images.find(img => img.name === scene.imageName) || 
-                               (modelImage?.name === scene.imageName) || 
-                               (productImages.some(img => img.name === scene.imageName))) && (
-                              <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center">
-                                <ImageIcon className="w-8 h-8 text-white/20 mb-2" />
-                                <span className="text-[10px] text-white/30 truncate w-full">{scene.imageName}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex-1 space-y-6">
-                            <div className="flex items-center justify-between">
-                              <div className="flex flex-col">
-                                <span className="text-xs font-mono font-bold text-white/30 uppercase tracking-widest font-display">Cena {i + 1} &bull; {scene.duration}</span>
-                                <span className="text-[10px] text-orange-400/60 font-mono mt-1">{scene.imageName}</span>
-                              </div>
-                              <button 
-                                onClick={() => copyScene(scene)}
-                                className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
-                                title="Copiar bloco desta cena"
+                            <motion.div 
+                              key={i}
+                              initial={{ opacity: 0, y: 15 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: i * 0.06 }}
+                              className="rounded-3xl p-5 sm:p-7 transition-all border shadow-sm"
+                              style={{
+                                backgroundColor: themeMode === 'dark' ? 'rgba(24, 24, 28, 0.7)' : '#ffffff',
+                                borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'
+                              }}
+                            >
+                              {/* Top Header da Cena */}
+                              <div 
+                                className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b"
+                                style={{ borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : '#f1f5f9' }}
                               >
-                                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
-                            </div>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {/* Miniatura Inteligente com Hover Zoom e Clique para Ampliar */}
+                                  {(() => {
+                                    const foundImg = (images.find(img => img.name === scene.imageName) || 
+                                                      (modelImage?.name === scene.imageName ? modelImage : null) || 
+                                                      (productImages.find(img => img.name === scene.imageName)) ||
+                                                      (productImages[0] || images[0]));
+                                    const imgSrc = foundImg?.preview;
+                                    return (
+                                      <div 
+                                        onClick={() => { if (imgSrc) setPreviewModalImage(imgSrc); }}
+                                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden bg-black/40 border border-white/10 flex-shrink-0 relative group/thumb cursor-pointer shadow-md"
+                                        title="Clique para ampliar a imagem de referência"
+                                      >
+                                        {imgSrc ? (
+                                          <>
+                                            <img 
+                                              src={imgSrc} 
+                                              alt={scene.imageName}
+                                              className={`w-full h-full ${imageFit === 'contain' ? 'object-contain p-1' : 'object-cover'} transition-transform duration-300 group-hover/thumb:scale-110`}
+                                            />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                                              <Maximize2 className="w-4 h-4 text-white" />
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center text-white/30">
+                                            <ImageIcon className="w-5 h-5" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
 
-                            <div className="grid grid-cols-1 gap-4">
-                              {/* 1. Still Image (Nano Banana 2 / Imagen) */}
-                              <div className="space-y-2 group/card bg-black/10 hover:bg-amber-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-amber-500/20 transition-all">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-amber-400 font-display">1. Imagem (Nano Banana 2)</h4>
-                                  <button 
-                                    onClick={() => copyText(scene.imagePrompt)} 
-                                    className="text-white/20 hover:text-amber-400 transition-colors flex items-center gap-1"
-                                    title="Copiar Prompt de Imagem"
-                                  >
-                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                  </button>
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="px-3 py-1 rounded-xl font-display text-xs font-bold uppercase tracking-wider bg-orange-500/15 text-orange-500 border border-orange-500/25">
+                                        Cena {i + 1}
+                                      </span>
+                                      <span className="px-2.5 py-1 rounded-xl text-xs font-mono font-semibold"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#f1f5f9',
+                                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#475569'
+                                        }}
+                                      >
+                                        ⏱️ {scene.duration}
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] font-mono truncate mt-1 max-w-[200px] sm:max-w-[320px]"
+                                      style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.45)' : '#64748b' }}
+                                      title={scene.imageName}
+                                    >
+                                      {scene.imageName}
+                                    </span>
+                                  </div>
                                 </div>
-                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
-                                  "{scene.imagePrompt}"
-                                </p>
-                              </div>
 
-                              {/* 2. Video Animation (VEO) */}
-                              <div className="space-y-2 group/card bg-black/10 hover:bg-blue-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-blue-500/20 transition-all">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400 font-display">2. Animação (VEO)</h4>
-                                  <div className="flex gap-2">
-                                    <button 
-                                      onClick={() => {
-                                        const imgData = (images.find(img => img.name === scene.imageName) || 
-                                                       (modelImage?.name === scene.imageName ? modelImage : (productImages.find(img => img.name === scene.imageName) || productImages[0])))?.preview;
-                                        if (imgData) {
+                                {/* Ações da Cena */}
+                                <div className="flex items-center gap-2">
+                                  {(() => {
+                                    const imgData = (images.find(img => img.name === scene.imageName) || 
+                                                   (modelImage?.name === scene.imageName ? modelImage : (productImages.find(img => img.name === scene.imageName) || productImages[0])))?.preview;
+                                    return imgData ? (
+                                      <button 
+                                        onClick={() => {
                                           const link = document.createElement('a');
                                           link.href = imgData;
                                           link.download = `scene_${i+1}_${scene.imageName}`;
                                           link.click();
-                                        }
-                                      }} 
-                                      className="text-white/20 hover:text-orange-400 transition-colors flex items-center gap-1"
-                                      title="Baixar Imagem de Referência"
-                                    >
-                                      <Upload className="w-3 h-3 rotate-180" />
-                                    </button>
-                                    <button 
-                                      onClick={() => copyText(`${scene.veoPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
-                                      className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1.5"
-                                      title="Copiar Prompt VEO + Narração"
-                                    >
-                                      <span className="text-[9px] font-bold text-blue-400/80 tracking-wider font-mono">+ Narração</span>
-                                      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                    </button>
-                                  </div>
-                                </div>
-                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
-                                  "{scene.veoPrompt}"
-                                </p>
-                                </div>
+                                        }} 
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e2e8f0',
+                                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.8)' : '#334155'
+                                        }}
+                                        title="Baixar Foto de Referência"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Foto</span>
+                                      </button>
+                                    ) : null;
+                                  })()}
 
-                              {/* 3. Digital Avatar (DIGEN) */}
-                              <div className="space-y-2 group/card bg-black/10 hover:bg-purple-500/[0.02] p-5 rounded-3xl border border-white/5 hover:border-purple-500/20 transition-all">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400 font-display">3. Fala (DIGEN)</h4>
                                   <button 
-                                    onClick={() => copyText(`${scene.digenPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)} 
-                                    className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1.5"
-                                    title="Copiar Prompt DIGEN + Narração"
+                                    onClick={() => copyScene(scene)}
+                                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer"
+                                    style={{
+                                      backgroundColor: themeMode === 'dark' ? 'rgba(249,115,22,0.1)' : '#fff7ed',
+                                      borderColor: themeMode === 'dark' ? 'rgba(249,115,22,0.25)' : '#fed7aa',
+                                      color: themeMode === 'dark' ? '#fb923c' : '#ea580c'
+                                    }}
+                                    title="Copiar tudo desta cena (Texto unificado com narração e prompts)"
                                   >
-                                    <span className="text-[9px] font-bold text-purple-400/80 tracking-wider font-mono">+ Narração</span>
-                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>Copiar Cena</span>
                                   </button>
                                 </div>
-                                <p className="text-xs text-white/80 leading-relaxed italic bg-black/20 p-4 rounded-2xl border border-white/5 break-words overflow-hidden min-h-[80px]">
-                                  "{scene.digenPrompt}"
-                                </p>
                               </div>
-                            </div>
 
-                            <div className="space-y-2 bg-orange-500/5 p-6 rounded-3xl border border-orange-500/10">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-orange-500 font-display">Narração / Diálogo (PT-BR)</h4>
-                                <button onClick={() => copyText(scene.narration)} className="text-white/20 hover:text-orange-500 transition-colors">
-                                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                </button>
+                              {/* Hero Highlight: Narração & Diálogo (PT-BR) */}
+                              <div 
+                                className="my-5 p-4 sm:p-5 rounded-2xl border transition-all"
+                                style={{
+                                  backgroundColor: themeMode === 'dark' ? 'rgba(249, 115, 22, 0.06)' : '#fffaf5',
+                                  borderColor: themeMode === 'dark' ? 'rgba(249, 115, 22, 0.2)' : '#fed7aa'
+                                }}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <Volume2 className="w-4 h-4 text-orange-500" />
+                                    <h4 className="text-[11px] uppercase font-bold tracking-wider text-orange-500 font-display">
+                                      Narração / Diálogo (PT-BR)
+                                    </h4>
+                                  </div>
+                                  <button 
+                                    onClick={() => copyText(scene.narration)} 
+                                    className="text-orange-500 hover:text-orange-600 transition-colors flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                                    title="Copiar apenas a narração"
+                                  >
+                                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span className="hidden sm:inline">Copiar Fala</span>
+                                  </button>
+                                </div>
+                                <p 
+                                  className="text-base sm:text-lg font-medium leading-relaxed"
+                                  style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                                >
+                                  "{scene.narration}"
+                                </p>
+                                {scene.description && (
+                                  <p 
+                                    className="text-xs mt-3 pt-2.5 border-t"
+                                    style={{ 
+                                      borderColor: themeMode === 'dark' ? 'rgba(249, 115, 22, 0.15)' : 'rgba(249, 115, 22, 0.15)',
+                                      color: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.5)' : '#64748b'
+                                    }}
+                                  >
+                                    <strong className="font-semibold text-orange-400">Contexto Visual:</strong> {scene.description}
+                                  </p>
+                                )}
                               </div>
-                              <p className="text-lg font-medium text-white/90">
-                                {scene.narration}
-                              </p>
-                              <p className="text-xs text-white/40 mt-3 pt-3 border-t border-white/5">
-                                <strong>Contexto:</strong> {scene.description}
-                              </p>
-                            </div>
-                          </div>
+
+                              {/* Grid em 3 Colunas dos Prompts de I.A (Nano Banana 2 | VEO | DIGEN) */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                                {/* 1. Imagem: Nano Banana 2 */}
+                                <div 
+                                  className="flex flex-col rounded-2xl p-4 border transition-all"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(245, 158, 11, 0.04)' : '#fffdfa',
+                                    borderColor: themeMode === 'dark' ? 'rgba(245, 158, 11, 0.18)' : '#fef3c7'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm">🍌</span>
+                                      <h5 className="text-[11px] font-bold uppercase tracking-wider text-amber-500 font-display">
+                                        1. Nano Banana 2
+                                      </h5>
+                                    </div>
+                                    <button 
+                                      onClick={() => copyText(scene.imagePrompt)}
+                                      className="p-1.5 rounded-lg transition-colors cursor-pointer border"
+                                      style={{
+                                        backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                        borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                        color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#64748b'
+                                      }}
+                                      title="Copiar Prompt de Imagem"
+                                    >
+                                      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                  </div>
+                                  <div 
+                                    className="flex-1 p-3.5 rounded-xl border text-xs leading-relaxed font-mono overflow-y-auto max-h-[160px] custom-scrollbar"
+                                    style={{
+                                      backgroundColor: themeMode === 'dark' ? 'rgba(0, 0, 0, 0.35)' : '#ffffff',
+                                      borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : '#e2e8f0',
+                                      color: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#1e293b'
+                                    }}
+                                  >
+                                    {scene.imagePrompt}
+                                  </div>
+                                </div>
+
+                                {/* 2. Animação: Google VEO */}
+                                <div 
+                                  className="flex flex-col rounded-2xl p-4 border transition-all"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(59, 130, 246, 0.04)' : '#f8faff',
+                                    borderColor: themeMode === 'dark' ? 'rgba(59, 130, 246, 0.18)' : '#dbeafe'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm">🎥</span>
+                                      <h5 className="text-[11px] font-bold uppercase tracking-wider text-blue-500 font-display">
+                                        2. Google VEO
+                                      </h5>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        onClick={() => copyText(`${scene.veoPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)}
+                                        className="px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer border"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(59, 130, 246, 0.15)' : '#eff6ff',
+                                          borderColor: themeMode === 'dark' ? 'rgba(59, 130, 246, 0.25)' : '#bfdbfe',
+                                          color: themeMode === 'dark' ? '#93c5fd' : '#2563eb'
+                                        }}
+                                        title="Copiar Prompt VEO + Narração"
+                                      >
+                                        + Narr.
+                                      </button>
+                                      <button 
+                                        onClick={() => copyText(scene.veoPrompt)}
+                                        className="p-1.5 rounded-lg transition-colors cursor-pointer border"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#64748b'
+                                        }}
+                                        title="Copiar Prompt VEO"
+                                      >
+                                        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div 
+                                    className="flex-1 p-3.5 rounded-xl border text-xs leading-relaxed font-mono overflow-y-auto max-h-[160px] custom-scrollbar"
+                                    style={{
+                                      backgroundColor: themeMode === 'dark' ? 'rgba(0, 0, 0, 0.35)' : '#ffffff',
+                                      borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : '#e2e8f0',
+                                      color: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#1e293b'
+                                    }}
+                                  >
+                                    {scene.veoPrompt}
+                                  </div>
+                                </div>
+
+                                {/* 3. Avatar / Fala: DIGEN.ai */}
+                                <div 
+                                  className="flex flex-col rounded-2xl p-4 border transition-all"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.04)' : '#faf5ff',
+                                    borderColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.18)' : '#f3e8ff'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm">🗣️</span>
+                                      <h5 className="text-[11px] font-bold uppercase tracking-wider text-purple-500 font-display">
+                                        3. DIGEN.ai
+                                      </h5>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        onClick={() => copyText(`${scene.digenPrompt}\n\nNarração (PT-BR):\n${scene.narration}`)}
+                                        className="px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer border"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.15)' : '#f3e8ff',
+                                          borderColor: themeMode === 'dark' ? 'rgba(168, 85, 247, 0.25)' : '#e9d5ff',
+                                          color: themeMode === 'dark' ? '#d8b4fe' : '#9333ea'
+                                        }}
+                                        title="Copiar Prompt DIGEN + Narração"
+                                      >
+                                        + Narr.
+                                      </button>
+                                      <button 
+                                        onClick={() => copyText(scene.digenPrompt)}
+                                        className="p-1.5 rounded-lg transition-colors cursor-pointer border"
+                                        style={{
+                                          backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                          borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                                          color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#64748b'
+                                        }}
+                                        title="Copiar Prompt DIGEN"
+                                      >
+                                        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div 
+                                    className="flex-1 p-3.5 rounded-xl border text-xs leading-relaxed font-mono overflow-y-auto max-h-[160px] custom-scrollbar"
+                                    style={{
+                                      backgroundColor: themeMode === 'dark' ? 'rgba(0, 0, 0, 0.35)' : '#ffffff',
+                                      borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : '#e2e8f0',
+                                      color: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#1e293b'
+                                    }}
+                                  >
+                                    {scene.digenPrompt}
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          ))}
                         </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
+                      </>
+                    );
+                  })()}
 
                   {/* Product Angles Generator (Only shown in final generation) */}
                   {activeTab === 'product' && (
                     <motion.div
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="bg-teal-500/[0.03] border border-teal-500/10 rounded-[2.5rem] p-8 space-y-6 mt-8"
+                      className="rounded-3xl p-6 sm:p-8 border space-y-5 mt-8 shadow-sm transition-all"
+                      style={{
+                        backgroundColor: themeMode === 'dark' ? 'rgba(13, 148, 136, 0.04)' : '#f0fdfa',
+                        borderColor: themeMode === 'dark' ? 'rgba(13, 148, 136, 0.18)' : '#ccfbf1'
+                      }}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
-                          <Camera className="w-5 h-5 text-teal-400" />
-                          <h3 className="text-xl font-bold font-display text-white">Ângulos Adicionais do Produto</h3>
+                          <Camera className="w-5 h-5 text-teal-500" />
+                          <h3 
+                            className="text-xl font-bold font-display"
+                            style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                          >
+                            Ângulos Adicionais do Produto
+                          </h3>
                         </div>
-                        <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 self-start sm:self-auto">
-                          <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Quantidade:</span>
+                        <div 
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border self-start sm:self-auto"
+                          style={{
+                            backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#ffffff',
+                            borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#cbd5e1'
+                          }}
+                        >
+                          <span 
+                            className="text-[10px] font-bold uppercase tracking-wider"
+                            style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b' }}
+                          >
+                            Quantidade:
+                          </span>
                           <select
                             value={numAngles}
                             onChange={(e) => setNumAngles(Number(e.target.value))}
-                            className="bg-transparent text-xs text-white focus:outline-none cursor-pointer font-bold font-mono"
+                            className="bg-transparent text-xs focus:outline-none cursor-pointer font-bold font-mono"
+                            style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
                           >
-                            {[2,3,4,5,6,7,8].map(n => <option key={n} value={n} className="bg-[#1a1a1c]">{n}</option>)}
+                            {[2,3,4,5,6,7,8].map(n => <option key={n} value={n} className="bg-[#1a1a1c] text-white">{n}</option>)}
                           </select>
                         </div>
                       </div>
-                      <p className="text-xs text-white/50 leading-relaxed">
+                      <p 
+                        className="text-xs leading-relaxed"
+                        style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : '#475569' }}
+                      >
                         Gere variações de prompts em ângulos alternativos (close-ups, perfil, flat lay, etc.) para o seu produto, garantindo consistência total de cor e design.
                       </p>
                       
                       {isGeneratingAngles ? (
-                        <div className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/5 border border-teal-500/10 text-teal-400/60 font-bold text-sm">
+                        <div className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-500 font-bold text-sm">
                           <Loader2 className="w-5 h-5 animate-spin" /> Gerando {numAngles} Ângulos...
                         </div>
                       ) : (
                         <button
                           onClick={generateProductAngles}
-                          className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 hover:text-white transition-all active:scale-[0.98] font-bold text-sm tracking-wide uppercase"
+                          className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white transition-all active:scale-[0.98] font-bold text-xs uppercase tracking-wider shadow-md cursor-pointer"
                         >
                           <Layers className="w-4 h-4" /> Gerar {numAngles} Ângulos do Produto
                         </button>
@@ -6488,115 +6912,222 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </motion.div>
                   )}
 
-                  {/* Ângulos do Produto */}
+                  {/* Ângulos do Produto em Grid de 2 Colunas */}
                   {generatedAngles && generatedAngles.length > 0 && (
                     <motion.div
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="space-y-6"
+                      className="space-y-5 pt-4"
                     >
-                      <div className="flex items-center gap-3 pt-4">
-                        <Layers className="w-5 h-5 text-teal-400" />
-                        <h3 className="text-xl font-bold font-display">Ângulos do Produto</h3>
-                        <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full">{generatedAngles.length} variações</span>
-                      </div>
-                      <p className="text-xs text-white/30">Produto mantido 100% original — apenas o ângulo da câmera varia</p>
-                      {generatedAngles.map((angle, i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.08 }}
-                          className="bg-teal-500/[0.03] rounded-[2rem] p-6 border border-teal-500/10 hover:border-teal-500/20 transition-colors"
+                      <div className="flex items-center gap-3">
+                        <Layers className="w-5 h-5 text-teal-500" />
+                        <h3 
+                          className="text-xl font-bold font-display"
+                          style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
                         >
-                          <div className="flex items-center justify-between mb-5">
-                            <div className="flex items-center gap-3">
-                              <span className="w-8 h-8 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-xs font-bold text-teal-400">{i + 1}</span>
-                              <span className="font-bold text-white">{angle.angleName}</span>
-                            </div>
-                            <button
-                              onClick={() => copyText(`${angle.imagePrompt}\n\nVEO:\n${angle.veoPrompt}\n\nDIGEN:\n${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)}
-                              className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
-                              title="Copiar tudo deste ângulo"
-                            >
-                              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 gap-4">
-                            <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-amber-400">Imagem (Nano Banana 2)</h4>
-                                <button onClick={() => copyText(angle.imagePrompt)} className="text-white/20 hover:text-amber-400 transition-colors">
-                                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          Ângulos do Produto
+                        </h3>
+                        <span className="text-xs bg-teal-500/15 text-teal-500 border border-teal-500/25 px-2.5 py-0.5 rounded-full font-semibold">
+                          {generatedAngles.length} variações
+                        </span>
+                      </div>
+                      <p 
+                        className="text-xs"
+                        style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.4)' : '#64748b' }}
+                      >
+                        Produto mantido 100% original — apenas o ângulo da câmera varia
+                      </p>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {generatedAngles.map((angle, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.05 }}
+                            className="rounded-3xl p-5 border transition-all shadow-sm flex flex-col justify-between"
+                            style={{
+                              backgroundColor: themeMode === 'dark' ? 'rgba(24, 24, 28, 0.7)' : '#ffffff',
+                              borderColor: themeMode === 'dark' ? 'rgba(13, 148, 136, 0.2)' : '#ccfbf1'
+                            }}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-4 pb-3 border-b"
+                                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <span className="w-7 h-7 rounded-xl bg-teal-500/15 border border-teal-500/25 flex items-center justify-center text-xs font-bold text-teal-500">
+                                    {i + 1}
+                                  </span>
+                                  <span 
+                                    className="font-bold text-sm"
+                                    style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                                  >
+                                    {angle.angleName}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => copyText(`${angle.imagePrompt}\n\nVEO:\n${angle.veoPrompt}\n\nDIGEN:\n${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)}
+                                  className="p-1.5 rounded-xl border transition-colors cursor-pointer"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e2e8f0',
+                                    color: themeMode === 'dark' ? 'rgba(255,255,255,0.7)' : '#64748b'
+                                  }}
+                                  title="Copiar tudo deste ângulo"
+                                >
+                                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                                 </button>
                               </div>
-                              <p className="text-xs text-white/70 leading-relaxed italic">&quot;{angle.imagePrompt}&quot;</p>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-blue-400">VEO</h4>
-                                  <button onClick={() => copyText(`${angle.veoPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-blue-400 transition-colors flex items-center gap-1">
-                                    <span className="text-[9px] font-bold text-blue-400/70">+ Narr.</span>
+
+                              {/* Narração do Ângulo */}
+                              <div 
+                                className="p-3.5 rounded-xl border mb-3 text-xs leading-relaxed"
+                                style={{
+                                  backgroundColor: themeMode === 'dark' ? 'rgba(13, 148, 136, 0.08)' : '#f0fdfa',
+                                  borderColor: themeMode === 'dark' ? 'rgba(13, 148, 136, 0.2)' : '#ccfbf1',
+                                  color: themeMode === 'dark' ? '#e2e8f0' : '#0f172a'
+                                }}
+                              >
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal-500">
+                                    Narração (PT-BR)
+                                  </span>
+                                  <button onClick={() => copyText(angle.narration)} className="text-teal-500 hover:text-teal-600 cursor-pointer">
                                     {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                   </button>
                                 </div>
-                                <p className="text-xs text-white/60 leading-relaxed italic">&quot;{angle.veoPrompt}&quot;</p>
+                                <p className="font-medium">{angle.narration}</p>
                               </div>
-                              <div className="space-y-2 bg-black/10 p-4 rounded-2xl border border-white/5">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] uppercase font-bold tracking-widest text-purple-400">DIGEN</h4>
-                                  <button onClick={() => copyText(`${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-white/20 hover:text-purple-400 transition-colors flex items-center gap-1">
-                                    <span className="text-[9px] font-bold text-purple-400/70">+ Narr.</span>
-                                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                  </button>
+
+                              {/* 3 Prompts Compactos */}
+                              <div className="space-y-2.5">
+                                <div 
+                                  className="p-3 rounded-xl border text-xs"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#e2e8f0'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase font-bold text-amber-500">🍌 Imagem (Nano Banana)</span>
+                                    <button onClick={() => copyText(angle.imagePrompt)} className="text-amber-500 hover:text-amber-600 cursor-pointer">
+                                      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                    </button>
+                                  </div>
+                                  <p 
+                                    className="font-mono text-[11px] max-h-[80px] overflow-y-auto custom-scrollbar leading-relaxed"
+                                    style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.75)' : '#334155' }}
+                                  >
+                                    {angle.imagePrompt}
+                                  </p>
                                 </div>
-                                <p className="text-xs text-white/60 leading-relaxed italic">&quot;{angle.digenPrompt}&quot;</p>
+
+                                <div 
+                                  className="p-3 rounded-xl border text-xs"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#e2e8f0'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase font-bold text-blue-500">🎥 VEO</span>
+                                    <button onClick={() => copyText(`${angle.veoPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-blue-500 hover:text-blue-600 cursor-pointer text-[10px] font-bold">
+                                      + Narr.
+                                    </button>
+                                  </div>
+                                  <p 
+                                    className="font-mono text-[11px] max-h-[80px] overflow-y-auto custom-scrollbar leading-relaxed"
+                                    style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.75)' : '#334155' }}
+                                  >
+                                    {angle.veoPrompt}
+                                  </p>
+                                </div>
+
+                                <div 
+                                  className="p-3 rounded-xl border text-xs"
+                                  style={{
+                                    backgroundColor: themeMode === 'dark' ? 'rgba(0,0,0,0.3)' : '#f8fafc',
+                                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#e2e8f0'
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] uppercase font-bold text-purple-500">🗣️ DIGEN</span>
+                                    <button onClick={() => copyText(`${angle.digenPrompt}\n\nNarração (PT-BR):\n${angle.narration}`)} className="text-purple-500 hover:text-purple-600 cursor-pointer text-[10px] font-bold">
+                                      + Narr.
+                                    </button>
+                                  </div>
+                                  <p 
+                                    className="font-mono text-[11px] max-h-[80px] overflow-y-auto custom-scrollbar leading-relaxed"
+                                    style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.75)' : '#334155' }}
+                                  >
+                                    {angle.digenPrompt}
+                                  </p>
+                                </div>
                               </div>
                             </div>
-                            <div className="bg-teal-500/5 p-4 rounded-2xl border border-teal-500/10">
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-teal-400">Narração (PT-BR)</h4>
-                                <button onClick={() => copyText(angle.narration)} className="text-white/20 hover:text-teal-400 transition-colors">
-                                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                </button>
-                              </div>
-                              <p className="text-sm font-medium text-white/90">{angle.narration}</p>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
+                          </motion.div>
+                        ))}
+                      </div>
                     </motion.div>
                   )}
 
-                  <button 
-                    onClick={() => {
-                      if(confirm("Deseja iniciar um novo projeto? Todas as configurações e roteiros atuais serão perdidos.")) {
-                        setGeneratedScript(null);
-                        setGeneratedAngles(null);
-                        setImages([]);
-                        setModelImage(null);
-                        setProductImages([]);
-                        setObservations('');
-                      }
-                    }}
-                    className="w-full py-6 text-white/40 hover:text-white transition-colors flex items-center justify-center gap-2"
-                  >
-                    <RefreshCcw className="w-4 h-4" /> Iniciar Novo Projeto
-                  </button>
+                  {/* Botão de Iniciar Novo Projeto */}
+                  <div className="pt-4 flex justify-center">
+                    <button 
+                      onClick={() => {
+                        if(confirm("Deseja iniciar um novo projeto? Todas as configurações e roteiros atuais serão descartados.")) {
+                          setGeneratedScript(null);
+                          setGeneratedAngles(null);
+                          setImages([]);
+                          setModelImage(null);
+                          setProductImages([]);
+                          setObservations('');
+                        }
+                      }}
+                      className="px-6 py-3 rounded-2xl border transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                      style={{
+                        backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : '#ffffff',
+                        borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                        color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b'
+                      }}
+                    >
+                      <RefreshCcw className="w-3.5 h-3.5" /> Iniciar Novo Projeto
+                    </button>
+                  </div>
                 </motion.div>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center space-y-8 py-20 bg-white/[0.02] rounded-[3rem] border border-dashed border-white/5">
+                <div 
+                  className="h-full flex flex-col items-center justify-center text-center space-y-6 py-24 rounded-3xl border border-dashed transition-all"
+                  style={{
+                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.02)' : '#ffffff',
+                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : '#e2e8f0'
+                  }}
+                >
                   <div className="relative">
                     <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full" />
-                    <div className="relative bg-white/5 w-24 h-24 rounded-full flex items-center justify-center border border-white/10">
-                      <FileJson className="w-10 h-10 text-white/40" />
+                    <div 
+                      className="relative w-20 h-20 rounded-2xl flex items-center justify-center border shadow-inner"
+                      style={{
+                        backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                        borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e2e8f0'
+                      }}
+                    >
+                      <FileJson className="w-9 h-9 text-orange-500/70" />
                     </div>
                   </div>
                   <div className="max-w-xs px-6">
-                    <h3 className="text-xl font-medium mb-2 font-display">Nenhum Roteiro Gerado</h3>
-                    <p className="text-sm text-white/30 font-light leading-relaxed">
-                      Envie as fotos dos seus looks e defina um tema para criar prompts cinematográficos e narrações persuasivas.
+                    <h3 
+                      className="text-lg font-bold mb-1.5 font-display"
+                      style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                    >
+                      Nenhum Roteiro Gerado
+                    </h3>
+                    <p 
+                      className="text-xs leading-relaxed"
+                      style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.4)' : '#64748b' }}
+                    >
+                      Envie as fotos e defina os parâmetros desejados para criar prompts cinematográficos e narrações persuasivas para seus vídeos.
                     </p>
                   </div>
                 </div>
@@ -6607,6 +7138,57 @@ Angulos a variar (escolha os mais relevantes para o produto):
         )}
       </main>
 
+      {/* Modal de Prévia Ampliada de Imagem de Referência */}
+      <AnimatePresence>
+        {previewModalImage && (
+          <div 
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md cursor-pointer"
+            onClick={() => setPreviewModalImage(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-2xl max-h-[85vh] rounded-3xl overflow-hidden border shadow-2xl p-3 flex flex-col cursor-default"
+              style={{
+                backgroundColor: themeMode === 'dark' ? '#121216' : '#ffffff',
+                borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : '#cbd5e1'
+              }}
+            >
+              <div 
+                className="flex items-center justify-between px-3 py-2 border-b"
+                style={{ borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#f1f5f9' }}
+              >
+                <span 
+                  className="text-xs font-bold"
+                  style={{ color: themeMode === 'dark' ? '#ffffff' : '#0f172a' }}
+                >
+                  Imagem de Referência da Cena
+                </span>
+                <button 
+                  onClick={() => setPreviewModalImage(null)}
+                  className="p-1.5 rounded-xl border transition-colors cursor-pointer"
+                  style={{
+                    backgroundColor: themeMode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                    borderColor: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : '#e2e8f0',
+                    color: themeMode === 'dark' ? '#ffffff' : '#0f172a'
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-3 flex items-center justify-center overflow-auto max-h-[72vh]">
+                <img 
+                  src={previewModalImage} 
+                  alt="Preview" 
+                  className="max-h-[68vh] w-auto object-contain rounded-2xl shadow-lg" 
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Importador TikTok Shop */}
       <AnimatePresence>

@@ -527,6 +527,26 @@ select option:focus,
   color: #ffffff !important;
 }
 
+/* ============================================================
+   Prompt Studio - Estilos Modernos & Scrollbar Fina
+   ============================================================ */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
 
-
-
+/* Modo Claro refinado para seleções e caixas de texto */
+.light ::selection {
+  background-color: rgba(249, 115, 22, 0.25);
+  color: #0f172a;
+}
