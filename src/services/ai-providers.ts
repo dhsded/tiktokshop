@@ -41,17 +41,25 @@ export interface ModelOption {
 
 export const GEMINI_MODELS: ModelOption[] = [
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Recomendado Google)',
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash (Recomendado Google)',
     tag: 'Visão HD • Mais Rápido • Gratuito',
     desc: 'Motor de última geração do Google. Máxima velocidade com compreensão visual detalhada de produtos e roupas.',
     hasVision: true,
     isFree: true
   },
   {
-    id: 'gemini-flash-latest',
-    name: 'Gemini Flash Latest (Estável)',
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash (Estável)',
     tag: 'Alta Estabilidade • Gratuito',
+    desc: 'Versão estável e consagrada do Gemini Flash do Google.',
+    hasVision: true,
+    isFree: true
+  },
+  {
+    id: 'gemini-flash-latest',
+    name: 'Gemini Flash Latest (Automático)',
+    tag: 'Sempre Atualizado • Gratuito',
     desc: 'Versão estável e sempre atualizada do Gemini Flash do Google.',
     hasVision: true,
     isFree: true
@@ -163,7 +171,7 @@ const DEFAULT_CONFIG: ProvidersConfigState = {
   activeProvider: 'gemini',
   enableFailover: true,
   gemini: {
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     keys: []
   },
   groq: {
@@ -179,6 +187,79 @@ const DEFAULT_CONFIG: ProvidersConfigState = {
     baseUrl: 'https://openrouter.ai/api/v1'
   }
 };
+
+/**
+ * DIRETRIZ MESTRA DE HUMANIZAÇÃO E PROMPTS DE IA (PT-BR)
+ * Injetada em todas as I.As (Google Gemini, Groq, OpenRouter) para garantir
+ * que as falas soem 100% autênticas e os prompts de vídeo/imagem sejam de nível cinematográfico.
+ */
+export const MASTER_COPYWRITING_SYSTEM_INSTRUCTION = `VOCÊ É O DIRETOR CRIATIVO E COPYWRITER SÊNIOR NÚMERO #1 EM TIKTOK SHOP E VÍDEOS VIRAIS DO BRASIL.
+Sua missão é gerar roteiros e prompts de altíssima conversão, com retenção máxima nos 3 primeiros segundos e taxa de clique no carrinho extraordinária.
+
+================================================================================
+DIRETRIZ #1: HUMANIZAÇÃO PROFUNDA DAS FALAS EM PORTUGUÊS BRASILEIRO (PT-BR)
+================================================================================
+1. ORALIDADE 100% NATURAL E COLOQUIAL (FALA FALADA, NUNCA LIDA):
+   - Escreva exatamente como um criador ou criadora brasileira fala em um Story, Reel ou TikTok espontâneo, ou em um áudio de WhatsApp para um amigo íntimo.
+   - Use contrações e termos cotidianos naturais do Brasil: "tá", "pra", "olha isso", "cê não tem noção", "gente", "sério mesmo", "dá uma olhada", "olha o detalhe disso", "eu precisava mostrar isso pra vocês".
+   - NUNCA soe como locutor de comercial de TV dos anos 90, anúncio de rádio ou dublagem enlatada.
+
+2. LISTA NEGRA DE CLICHÊS DE I.A. (EXPRESSAMENTE PROIBIDOS - NUNCA USE):
+   ❌ "Não perca essa oportunidade incrível"
+   ❌ "Revolucione seu dia a dia / sua rotina"
+   ❌ "Adquira já o seu / garanta já o seu com desconto imperdível"
+   ❌ "O produto que você sempre sonhou"
+   ❌ "Prepare-se para se surpreender / se apaixonar"
+   ❌ "Combinação perfeita entre elegância e sofisticação"
+   ❌ "Venha conferir / Não fique de fora"
+   ❌ "Descubra o segredo de..."
+   ❌ Palavras corporativas artificiais: "solução indispensável", "inovador", "revolucionário", "funcionalidade ímpar".
+
+3. GANCHOS HUMANOS QUE RETÊM (HOOKS DE CRIADOR):
+   - Curiosidade / Quebra de Ceticismo: "Gente, eu não dava absolutamente nada por isso aqui até ver na prática...", "Se você também odeia quando [problema comum], para tudo e olha isso aqui..."
+   - Experiência Sensorial / Detalhes: "Olha a textura disso aqui...", "O tecido é super geladinho e não amarrota por nada...", "Vocês tão vendo o brilho e a costura dessa peça?"
+   - Prova Social Espontânea: "Tava todo mundo comentando disso aqui no TikTok e eu tive que testar..."
+
+4. CADÊNCIA E PONTUAÇÃO PARA RESPIRAÇÃO HUMANA:
+   - Frases curtas e rítmicas. Use vírgulas para indicar pausas respiratórias reais da locução. Use reticências (...) para suspense ou continuidade natural.
+   - RESPEITO AO TEMPO DA CENA: Máximo de 2 a 2.5 palavras por segundo (ex: cena de 5s = entre 10 e 12 palavras; 8s = entre 16 e 20 palavras). Se passar disso, o narrador ficará afobado e artificial.
+
+================================================================================
+DIRETRIZ #2: CONSTRUÇÃO DE PROMPTS DE VÍDEO E IMAGEM (CINEMATOGRÁFICOS)
+================================================================================
+1. GOOGLE VEO ('veoPrompt'):
+   - Sempre em INGLÊS com terminologia cinematográfica profissional.
+   - Descreva iluminação de estúdio comercial (soft key light, warm rim lighting, clean subtle reflections), lentes e enquadramentos (85mm portrait lens, 100mm macro close-up for fabric/product details, f/1.8 shallow depth of field bokeh), movimentos de câmera suaves (slow cinematic dolly push-in, subtle 45-degree orbital pan, smooth tracking).
+   - ESTRUTURA UNIFICADA OBRIGATÓRIA:
+     Visual/Camera: [Ação visual e movimento de câmera cinematográfico] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Audio/SFX: [Música de fundo comercial e efeitos sonoros táteis como unboxing, click, tecido].
+
+2. DIGEN ('digenPrompt') - AVATAR & FALA:
+   - Sempre em INGLÊS.
+   - Descreva microexpressões humanas autênticas (natural warm smile, subtle eyebrow reactions, relaxed posture, direct friendly eye contact with lens).
+   - Gesticulação de criador (naturally gesturing with hands, holding or pointing to the product, showing texture, fluid body language).
+   - Sincronia labial fluida para o áudio falado em português.
+   - ESTRUTURA UNIFICADA OBRIGATÓRIA:
+     Model/Action: [Comportamento do avatar, expressões faciais e gestos com produto] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+
+3. NANO BANANA 2 / IMAGEN 3 ('imagePrompt'):
+   - Sempre em INGLÊS.
+   - Foto estática de produto ultra-fotorrealista 8K, padrão catálogo de luxo ou TikTok Shop top seller.
+   - Detalhamento preciso de iluminação, textura, composição vertical 9:16 e nitidez de estúdio profissional.
+
+================================================================================
+DIRETRIZ #3: INCORPORAÇÃO ESTRUTURAL DA DESCRIÇÃO DO PRODUTO (TECIDO, MODELAGEM, MEDIDAS E DIFERENCIAIS)
+================================================================================
+Quando uma descrição do produto, especificações técnicas ou tabela de medidas do TikTok Shop forem fornecidas:
+1. FIDELIDADE AOS MATERIAIS & TECIDO:
+   - Se o produto cita "tecido sensorial", "algodão egípcio", "aço inoxidável", "modelagem ampla", "amarração nas costas", etc., mencione ESSES termos e atributos exatos na narração em PT-BR e nos prompts visuais de vídeo.
+   - NUNCA invente materiais ou características contraditórias às especificações oficiais fornecidas.
+2. ARGUMENTOS REAIS BASEADOS NA COPY:
+   - Use os "Destaques do Produto", "Por que você vai amar" e recomendações de uso oficiais da loja como base para os benefícios do roteiro.
+3. DETALHES DE MEDIDAS & CAIMENTO:
+   - Se houver tabela de medidas (busto, cintura, comprimento, etc.) ou informação de tamanho único / grade, transmita segurança sobre o caimento perfeito no corpo nas falas em PT-BR.
+4. PROMPTS CINEMATOGRÁFICOS (VEO/DIGEN):
+   - Traduza os atributos físicos para os prompts de vídeo em inglês (ex: 'flowing sensory fabric with soft elegant drape', 'adjustable back-tie detail', 'wide sweeping hem creating natural dynamic movement while walking').
+`;
 
 export class AIProvidersManager {
   private config: ProvidersConfigState;
@@ -207,8 +288,8 @@ export class AIProvidersManager {
         }
 
         let geminiModel = parsed.gemini?.model || DEFAULT_CONFIG.gemini.model;
-        if (geminiModel.includes('2.0') || geminiModel.includes('1.5') || geminiModel === 'gemini-2.5-flash-lite' || !GEMINI_MODELS.some(m => m.id === geminiModel)) {
-          geminiModel = 'gemini-2.5-flash';
+        if (geminiModel.includes('2.5') || !GEMINI_MODELS.some(m => m.id === geminiModel)) {
+          geminiModel = 'gemini-2.0-flash';
         }
 
         const migratedConfig: ProvidersConfigState = {
@@ -551,10 +632,9 @@ export class AIProvidersManager {
       throw new Error("Nenhuma chave Gemini válida configurada. Insira sua chave de API (AIzaSy...) nas configurações.");
     }
 
-    const preferredModel = options.model || this.config.gemini.model || 'gemini-2.5-flash';
+    const preferredModel = options.model || this.config.gemini.model || 'gemini-2.0-flash';
     const modelsToTry = [
       preferredModel,
-      'gemini-2.5-flash',
       'gemini-2.0-flash',
       'gemini-1.5-flash',
       'gemini-flash-latest'
@@ -597,9 +677,11 @@ export class AIProvidersManager {
           if (options.responseSchema) {
             genConfig.responseSchema = options.responseSchema;
           }
-          if (options.systemPrompt) {
-            genConfig.systemInstruction = options.systemPrompt;
-          }
+          const baseInstruction = MASTER_COPYWRITING_SYSTEM_INSTRUCTION;
+          const sysPrompt = options.systemPrompt
+            ? `${baseInstruction}\n\n[DIRETRIZ ESPECÍFICA DESTA OPERAÇÃO]:\n${options.systemPrompt}`
+            : baseInstruction;
+          genConfig.systemInstruction = sysPrompt;
 
           const response = await ai.models.generateContent({
             model,
@@ -710,18 +792,12 @@ export class AIProvidersManager {
       textAccumulator += `\n\n[Referência Visual: O usuário enviou ${imageCount} foto(s) de produto/look. Considere todas as especificações, nomes e diretrizes visuais informadas para construir o roteiro e os prompts de VEO, DIGEN e Nano Banana.]`;
     }
 
-    const messages: any[] = [];
-    if (options.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: options.systemPrompt + "\nResponda estritamente em formato JSON válido."
-      });
-    } else {
-      messages.push({
-        role: "system",
-        content: "Você é um assistente de IA especialista em marketing para TikTok Shop e e-commerce. Responda estritamente em formato JSON válido."
-      });
-    }
+    const baseInstruction = MASTER_COPYWRITING_SYSTEM_INSTRUCTION;
+    const sysPrompt = options.systemPrompt
+      ? `${baseInstruction}\n\n[DIRETRIZ ESPECÍFICA DESTA OPERAÇÃO]:\n${options.systemPrompt}\n\nResponda estritamente em formato JSON válido.`
+      : `${baseInstruction}\n\nResponda estritamente em formato JSON válido.`;
+
+    const messages: any[] = [{ role: "system", content: sysPrompt }];
 
     messages.push({
       role: "user",
@@ -870,13 +946,12 @@ export class AIProvidersManager {
       });
     }
 
-    const messages: any[] = [];
-    if (options.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: options.systemPrompt + "\nResponda estritamente em formato JSON válido."
-      });
-    }
+    const baseInstruction = MASTER_COPYWRITING_SYSTEM_INSTRUCTION;
+    const sysPrompt = options.systemPrompt
+      ? `${baseInstruction}\n\n[DIRETRIZ ESPECÍFICA DESTA OPERAÇÃO]:\n${options.systemPrompt}\n\nResponda estritamente em formato JSON válido.`
+      : `${baseInstruction}\n\nResponda estritamente em formato JSON válido.`;
+
+    const messages: any[] = [{ role: "system", content: sysPrompt }];
     messages.push({
       role: "user",
       content: userContent.length === 1 && userContent[0].type === "text" ? userContent[0].text : userContent
@@ -898,7 +973,7 @@ export class AIProvidersManager {
           let reqMessages = messages;
           if (model.includes('deepseek') && hasImages) {
             reqMessages = [
-              ...(options.systemPrompt ? [{ role: "system", content: options.systemPrompt }] : []),
+              { role: "system", content: sysPrompt },
               { role: "user", content: textAccumulator + "\n\nIMPORTANTE: Responda ESTRITAMENTE em formato JSON parseável válido." }
             ];
           }
@@ -1178,28 +1253,119 @@ export interface NormalizedScene {
   description: string;
 }
 
+export interface NormalizedSequence {
+  id: string;
+  sequenceNumber: number;
+  title: string;
+  approach: string;
+  scenes: NormalizedScene[];
+}
+
 export interface NormalizedScriptResponse {
   campaignTitle: string;
   scenes: NormalizedScene[];
+  sequences: NormalizedSequence[];
+}
+
+/**
+ * Converte uma lista bruta de cenas em NormalizedScene[]
+ */
+export function normalizeScenesList(rawScenes: any[], defaultDuration: string = '5s'): NormalizedScene[] {
+  if (!Array.isArray(rawScenes)) return [];
+
+  return rawScenes.map((item, index) => {
+    if (typeof item !== 'object' || !item) {
+      const textVal = String(item || '').trim();
+      return {
+        id: `scene_${index + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        imageName: `look_${index + 1}`,
+        duration: defaultDuration,
+        imagePrompt: textVal,
+        veoPrompt: textVal,
+        digenPrompt: textVal,
+        narration: '',
+        description: `Cena ${index + 1}`
+      };
+    }
+
+    const duration = item.duration || item.duracao || item.tempo || defaultDuration;
+    const imageName = item.imageName || item.image_name || item.nomeImagem || item.nome_imagem || item.image || item.foto || `look_${index + 1}`;
+
+    const veoPrompt = item.veoPrompt || item.veo_prompt || item.prompt_veo || item.videoPrompt || item.prompt_video || item.imagePrompt || item.image_prompt || '';
+    const imagePrompt = item.imagePrompt || item.image_prompt || item.prompt_imagem || item.nanoBananaPrompt || item.prompt || veoPrompt;
+    const digenPrompt = item.digenPrompt || item.digen_prompt || item.prompt_digen || item.avatarPrompt || item.prompt_avatar || veoPrompt;
+    const narration = item.narration || item.narracao || item.voiceover || item.speech || item.fala || item.texto || '';
+    const description = item.description || item.descricao || item.desc || item.cena || item.titulo || `Cena ${index + 1}`;
+
+    return {
+      id: item.id || `scene_${index + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      imageName: String(imageName).trim(),
+      duration: String(duration).trim(),
+      imagePrompt: String(imagePrompt).trim(),
+      veoPrompt: String(veoPrompt).trim(),
+      digenPrompt: String(digenPrompt).trim(),
+      narration: String(narration).trim(),
+      description: String(description).trim()
+    };
+  }).filter(sc => sc.veoPrompt.length > 0 || sc.imagePrompt.length > 0 || sc.narration.length > 0 || sc.description.length > 0);
 }
 
 /**
  * Normaliza a resposta da IA para a estrutura esperada pelo aplicativo,
- * lidando com variações de chaves em português/inglês, arrays diretos,
- * objetos aninhados e campos ausentes.
+ * lidando com variações de chaves em português/inglês, sequências múltiplas paginadas,
+ * arrays diretos, objetos aninhados e campos ausentes.
  */
 export function normalizeScriptResponse(raw: any, defaultDuration: string = '5s'): NormalizedScriptResponse | null {
   if (!raw) return null;
 
   let campaignTitle = 'Campanha TikTok Shop';
+
+  // 1. Suporte prioritário a MÚLTIPLAS SEQUÊNCIAS (Sequência 1, 2, 3, 4, 5...)
+  if (typeof raw === 'object' && raw !== null) {
+    campaignTitle = raw.campaignTitle || raw.campaign_title || raw.titulo || raw.title || raw.nomeCampanha || campaignTitle;
+
+    const rawSequences = raw.sequences || raw.sequencias || raw.variacoes || raw.videos || raw.sequencesList;
+    if (Array.isArray(rawSequences) && rawSequences.length > 0) {
+      const normalizedSequences: NormalizedSequence[] = [];
+
+      rawSequences.forEach((seqItem: any, sIdx: number) => {
+        if (!seqItem || typeof seqItem !== 'object') return;
+        const seqNumber = Number(seqItem.sequenceNumber || seqItem.numero || seqItem.seqIndex || sIdx + 1);
+        const title = String(seqItem.title || seqItem.titulo || `Sequência ${seqNumber}`);
+        const approach = String(seqItem.approach || seqItem.abordagem || seqItem.estilo || `Variação ${seqNumber}`);
+        const seqScenesRaw = seqItem.scenes || seqItem.cenas || seqItem.items || seqItem.roteiro || [];
+
+        if (Array.isArray(seqScenesRaw) && seqScenesRaw.length > 0) {
+          const normScenes = normalizeScenesList(seqScenesRaw, defaultDuration);
+          if (normScenes.length > 0) {
+            normalizedSequences.push({
+              id: `seq_${seqNumber}_${Date.now()}_${sIdx}`,
+              sequenceNumber: seqNumber,
+              title,
+              approach,
+              scenes: normScenes
+            });
+          }
+        }
+      });
+
+      if (normalizedSequences.length > 0) {
+        return {
+          campaignTitle: String(campaignTitle).trim(),
+          scenes: normalizedSequences[0].scenes,
+          sequences: normalizedSequences
+        };
+      }
+    }
+  }
+
+  // 2. Extração padrão de cenas únicas
   let rawScenes: any[] = [];
 
   // Se o raw for um array direto [ { ... }, { ... } ]
   if (Array.isArray(raw)) {
     rawScenes = raw;
   } else if (typeof raw === 'object') {
-    campaignTitle = raw.campaignTitle || raw.campaign_title || raw.titulo || raw.title || raw.nomeCampanha || campaignTitle;
-
     // Possíveis chaves onde o array de cenas pode estar alocado
     const possibleSceneArrays = [
       raw.scenes,
@@ -1234,49 +1400,21 @@ export function normalizeScriptResponse(raw: any, defaultDuration: string = '5s'
     return null;
   }
 
-  const normalizedScenes: NormalizedScene[] = rawScenes.map((item, index) => {
-    if (typeof item !== 'object' || !item) {
-      const textVal = String(item || '').trim();
-      return {
-        id: `scene_${index + 1}_${Date.now()}`,
-        imageName: `look_${index + 1}`,
-        duration: defaultDuration,
-        imagePrompt: textVal,
-        veoPrompt: textVal,
-        digenPrompt: textVal,
-        narration: '',
-        description: `Cena ${index + 1}`
-      };
-    }
-
-    const duration = item.duration || item.duracao || item.tempo || defaultDuration;
-    const imageName = item.imageName || item.image_name || item.nomeImagem || item.nome_imagem || item.image || item.foto || `look_${index + 1}`;
-
-    const veoPrompt = item.veoPrompt || item.veo_prompt || item.prompt_veo || item.videoPrompt || item.prompt_video || item.imagePrompt || item.image_prompt || '';
-    const imagePrompt = item.imagePrompt || item.image_prompt || item.prompt_imagem || item.nanoBananaPrompt || item.prompt || veoPrompt;
-    const digenPrompt = item.digenPrompt || item.digen_prompt || item.prompt_digen || item.avatarPrompt || item.prompt_avatar || veoPrompt;
-    const narration = item.narration || item.narracao || item.voiceover || item.speech || item.fala || item.texto || '';
-    const description = item.description || item.descricao || item.desc || item.cena || item.titulo || `Cena ${index + 1}`;
-
-    return {
-      id: item.id || `scene_${index + 1}_${Date.now()}`,
-      imageName: String(imageName).trim(),
-      duration: String(duration).trim(),
-      imagePrompt: String(imagePrompt).trim(),
-      veoPrompt: String(veoPrompt).trim(),
-      digenPrompt: String(digenPrompt).trim(),
-      narration: String(narration).trim(),
-      description: String(description).trim()
-    };
-  }).filter(sc => sc.veoPrompt.length > 0 || sc.imagePrompt.length > 0 || sc.narration.length > 0 || sc.description.length > 0);
-
+  const normalizedScenes = normalizeScenesList(rawScenes, defaultDuration);
   if (normalizedScenes.length === 0) {
     return null;
   }
 
   return {
     campaignTitle: String(campaignTitle).trim(),
-    scenes: normalizedScenes
+    scenes: normalizedScenes,
+    sequences: [{
+      id: `seq_1_${Date.now()}`,
+      sequenceNumber: 1,
+      title: campaignTitle || 'Sequência 1',
+      approach: 'Padrão',
+      scenes: normalizedScenes
+    }]
   };
 }
 

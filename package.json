@@ -2,7 +2,7 @@
   "name": "gerador-tiktok-shop",
   "productName": "Gerador TikTok Shop",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "Gerador de Propagandas para TikTok Shop com IA",
   "main": "out/main/index.js",
   "type": "module",
@@ -20,7 +20,7 @@
     "appId": "com.tiktokshop.gerador",
     "productName": "Gerador TikTok Shop",
     "copyright": "Copyright © 2025",
-    "icon": "resources/icon.png",
+    "icon": "resources/icon.ico",
     "directories": {
       "output": "dist-installer"
     },
@@ -43,15 +43,16 @@
           ]
         }
       ],
-      "icon": "resources/icon.png",
-      "signAndEditExecutable": false
+      "icon": "resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Gerador TikTok Shop"
+      "shortcutName": "Gerador TikTok Shop",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico"
     }
   },
   "dependencies": {

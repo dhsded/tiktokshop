@@ -70,11 +70,13 @@ import {
   AlertCircle,
   Cpu,
   RefreshCw,
-  XCircle
+  XCircle,
+  Flame
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
+import { ViralsFinder } from './components/ViralsFinder';
 import { 
   aiProvidersManager, 
   AIProviderId, 
@@ -85,13 +87,15 @@ import {
   UnifiedAIOptions,
   UnifiedAIResult,
   formatAIError,
-  normalizeScriptResponse 
+  normalizeScriptResponse,
+  MASTER_COPYWRITING_SYSTEM_INSTRUCTION,
+  NormalizedSequence
 } from './services/ai-providers';
 
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.6.0';
 
 interface VersionEntry {
   version: string;
@@ -101,6 +105,32 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.6.0',
+    date: '21/09/2026',
+    title: 'Extração Completa de Descrição e Tabela de Medidas do TikTok Shop',
+    changes: [
+      'Novo: Extração estruturada da Tabela de Medidas (Busto, Cintura, Quadris, Comprimento, etc.) e especificações técnicas completas',
+      'Novo: Extração profunda do copywriting oficial do produto (Destaques, Tecido sensorial, Modelagem e Recomendações)',
+      'Novo: Auto-expansão de accordions e botões "Ver mais" no TikTok Shop PDP para garantir extração 100% íntegra',
+      'Novo: Card dedicado "Descrição Oficial & Medidas do Produto" na aba de criação com botões de cópia rápida, edição e controle de uso na I.A',
+      'Novo: Visualização e cópia da descrição completa no Buscador de Virais e na aba de Detalhes do importador',
+      'Novo: Diretriz #3 na inteligência artificial para incorporar fidelidade a tecidos, medidas e modelagens reais nas falas e prompts cinematográficos'
+    ],
+  },
+  {
+    version: '1.5.0',
+    date: '21/09/2026',
+    title: 'Aba Buscador de Virais por ID do TikTok Shop & Ícone Nativo',
+    changes: [
+      'Novo: Nova aba "Buscador de Virais" para encontrar os 30 vídeos mais vistos com total relação ao produto pelo seu ID',
+      'Novo: Métricas consolidadas (Total de Views somadas, Top 1 Maior Viral e Média de Views por vídeo)',
+      'Novo: Player de vídeo embutido em modal sem necessidade de sair do aplicativo',
+      'Novo: Botão "Criar Roteiro com I.A" em cada card viral para inspirar novas campanhas',
+      'Fix: Ícone oficial multi-resolução (.ico) integrado aos executáveis portáteis e instaladores Windows',
+      'Fix: Atualização dos modelos Gemini para versões oficiais do Google (2.0-flash e 1.5-flash)'
+    ],
+  },
   {
     version: '1.4.0',
     date: '18/09/2026',
@@ -197,7 +227,7 @@ declare global {
   }
 }
 
-type TabMode = 'collection' | 'product';
+type TabMode = 'collection' | 'product' | 'virals';
 
 // --- Types ---
 
@@ -243,9 +273,18 @@ interface GeneratedScene {
   description: string;
 }
 
+interface ScriptSequence {
+  id: string;
+  sequenceNumber: number;
+  title: string;
+  approach: string;
+  scenes: GeneratedScene[];
+}
+
 interface ScriptResponse {
   campaignTitle: string;
   scenes: GeneratedScene[];
+  sequences?: ScriptSequence[];
 }
 
 interface GeneratedAngle {
@@ -369,41 +408,161 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
     const priceEl = document.querySelector('[class*="price-val"],[class*="price_val"],[class*="sale-price"],[class*="product-price"],[data-testid*="price"]');
     if (priceEl) price = (priceEl.textContent || priceEl.innerText || '').trim();
 
-    const descParts = [];
-    const seenDescTexts = new Set();
-    const addDescText = (txt) => {
-      if (!txt || typeof txt !== 'string') return;
-      const clean = txt.replace(/\\s+/g, ' ').trim();
-      if (clean.length < 5) return;
-      const lower = clean.toLowerCase();
-      if (lower === 'descrição do produto' || lower === 'sobre este produto' || lower === 'product description' || lower === 'about this item' || lower === 'medidas corporais' || lower === 'tabela de tamanhos' || lower.includes('comprar agora') || lower.includes('adicionar ao carrinho') || lower.includes('frete grátis') || lower.includes('cupom de desconto') || lower.includes('avaliações de clientes') || lower.includes('política de devolução') || lower.includes('todos os direitos reservados')) return;
-      if (!seenDescTexts.has(clean)) { seenDescTexts.add(clean); descParts.push(clean); }
-    };
-
+    // 1. Tentar auto-expandir accordions / botões de descrição do produto
     try {
-      const allHeaders = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span,p,strong,b')).filter(el => {
-        if (el.children.length > 2) return false;
-        const t = (el.textContent || el.innerText || '').trim().toLowerCase();
-        return t === 'descrição do produto' || t === 'sobre este produto' || t === 'detalhes do produto' || t === 'especificações' || t === 'product description' || t === 'about this item';
+      const expandTargets = Array.from(document.querySelectorAll('button, div, span, p, h2, h3, h4, h5, h6, [role="button"], summary, a')).filter(el => {
+        if (el.children.length > 3) return false;
+        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        return (
+          t === 'descrição do produto' ||
+          t === 'medidas do produto' ||
+          t === 'detalhes do produto' ||
+          t === 'sobre este produto' ||
+          t === 'especificações' ||
+          t === 'product description' ||
+          t === 'tabela de medidas' ||
+          t === 'tabela de tamanhos' ||
+          t === 'ver mais' ||
+          t === 'leia mais' ||
+          t === 'mostrar mais'
+        );
       });
-      for (const h of allHeaders) {
-        let container = h.closest('section,article,[class*="detail"],[class*="desc"],[class*="about"],[class*="collapse"],[class*="module"]');
-        if (!container) container = (h.parentElement && h.parentElement.parentElement) || h.parentElement;
-        if (container) {
-          Array.from(container.querySelectorAll('table,[class*="table"],[class*="size-chart"]')).forEach(tb => {
-            const lines = [];
-            Array.from(tb.querySelectorAll('tr')).forEach(r => {
-              const cells = Array.from(r.querySelectorAll('th,td')).map(c => (c.textContent || '').trim()).filter(Boolean);
-              if (cells.length > 0) lines.push(cells.join(' | '));
-            });
-            if (lines.length > 0) addDescText('Tabela de Medidas:\\n' + lines.slice(0, 12).join('\\n'));
+      for (const target of expandTargets) {
+        try {
+          const isExpanded = target.getAttribute('aria-expanded') === 'true' || target.closest('[aria-expanded="true"]');
+          if (!isExpanded) {
+            target.click();
+            target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    // 2. Extração da Tabela de Medidas (HTML Table e CSS Grid/Divs)
+    let extractedSizeTable = '';
+    try {
+      const tableEls = Array.from(document.querySelectorAll('table, [class*="size-chart"], [class*="size_chart"], [class*="sizeTable"], [class*="SizeChart"], [role="table"]'));
+      for (const tb of tableEls) {
+        const rows = Array.from(tb.querySelectorAll('tr, [role="row"]'));
+        if (rows.length > 0) {
+          const tableLines = [];
+          rows.forEach(r => {
+            const cells = Array.from(r.querySelectorAll('th, td, [role="columnheader"], [role="cell"]'))
+              .map(c => (c.innerText || c.textContent || '').trim())
+              .filter(Boolean);
+            if (cells.length > 0) {
+              tableLines.push(cells.join(' | '));
+            }
           });
-          Array.from(container.querySelectorAll('p,li,[class*="desc"],[class*="text"],[class*="spec"],[class*="item"]')).forEach(el => {
-            if (!el.querySelector('p,li,table')) addDescText((el.textContent || el.innerText || '').trim());
-          });
+          if (tableLines.length >= 2 && !extractedSizeTable) {
+            extractedSizeTable = '📏 TABELA DE MEDIDAS DO PRODUTO:\\n' + tableLines.join('\\n');
+            break;
+          }
+        }
+      }
+
+      if (!extractedSizeTable) {
+        const measureHeaders = Array.from(document.querySelectorAll('*')).filter(el => {
+          if (el.children.length > 2) return false;
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          return t === 'medidas do produto' || t === 'tabela de medidas' || t === 'size guide';
+        });
+        for (const mh of measureHeaders) {
+          const container = mh.parentElement || mh.nextElementSibling;
+          if (container) {
+            const raw = (container.innerText || '').trim();
+            if (raw && (raw.includes('Busto') || raw.includes('Cintura') || raw.includes('Tamanho') || raw.includes('cm'))) {
+              const lines = raw.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+              if (lines.length > 2) {
+                extractedSizeTable = '📏 ' + lines.join('\\n');
+                break;
+              }
+            }
+          }
         }
       }
     } catch (e) {}
+
+    // 3. Extração dos textos da descrição
+    const descParts = [];
+    const seenTexts = new Set();
+    const addCleanText = (txt) => {
+      if (!txt || typeof txt !== 'string') return;
+      const clean = txt.trim();
+      if (clean.length < 4) return;
+      const lower = clean.toLowerCase();
+      if (
+        lower === 'descrição do produto' ||
+        lower === 'product description' ||
+        lower === 'comprar agora' ||
+        lower === 'adicionar ao carrinho' ||
+        lower === 'frete grátis' ||
+        lower === 'cupom de desconto' ||
+        lower.includes('política de devolução') ||
+        lower.includes('todos os direitos reservados') ||
+        lower.includes('denunciar este produto') ||
+        lower.includes('tiktok shop')
+      ) return;
+      if (!seenTexts.has(clean)) {
+        seenTexts.add(clean);
+        descParts.push(clean);
+      }
+    };
+
+    try {
+      const descHeaders = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span,p,strong,b,summary,button')).filter(el => {
+        if (el.children.length > 2) return false;
+        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        return (
+          t === 'descrição do produto' ||
+          t === 'detalhes do produto' ||
+          t === 'sobre este produto' ||
+          t === 'especificações' ||
+          t === 'product description' ||
+          t === 'about this item'
+        );
+      });
+
+      for (const h of descHeaders) {
+        let container = h.closest('section, article, [class*="detail"], [class*="desc"], [class*="about"], [class*="collapse"], [class*="panel"], [class*="module"], [class*="Specification"], [class*="Content"]');
+        if (!container) {
+          container = h.nextElementSibling || (h.parentElement && h.parentElement.nextElementSibling) || h.parentElement;
+        }
+        if (container) {
+          const rawInnerText = (container.innerText || '').trim();
+          if (rawInnerText.length > 20) {
+            const rawLines = rawInnerText.split('\\n').map(l => l.trim()).filter(Boolean);
+            rawLines.forEach(l => {
+              if (l.toLowerCase() !== (h.innerText || '').trim().toLowerCase()) {
+                addCleanText(l);
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    if (descParts.length < 3) {
+      try {
+        const directSelectors = [
+          '[class*="desc-content"]',
+          '[class*="detail-desc"]',
+          '[class*="product-desc"]',
+          '[class*="rich-text"]',
+          '[class*="Specification"]',
+          '[class*="specification"]',
+          '[data-testid*="desc"]',
+          '[data-testid*="detail"]',
+          '[data-testid*="specification"]'
+        ];
+        directSelectors.forEach(sel => {
+          document.querySelectorAll(sel).forEach(el => {
+            const lines = (el.innerText || '').split('\\n').map(l => l.trim()).filter(Boolean);
+            lines.forEach(l => addCleanText(l));
+          });
+        });
+      } catch (e) {}
+    }
 
     try {
       const scanObjForDesc = (obj, depth) => {
@@ -412,22 +571,52 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
           for (const k of Object.keys(obj)) {
             const lk = k.toLowerCase();
             const val = obj[k];
-            if ((lk === 'description' || lk === 'product_description' || lk === 'product_desc' || lk === 'detail_desc' || lk === 'specifications' || lk === 'desc' || lk === 'introduction') && typeof val === 'string' && val.trim().length > 10) addDescText(val.replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim());
-            if (Array.isArray(val)) val.forEach(item => { if (typeof item === 'string' && item.length > 15 && depth < 5 && (lk.includes('desc') || lk.includes('highlight') || lk.includes('feature') || lk.includes('prop'))) addDescText(item); else if (typeof item === 'object') scanObjForDesc(item, depth + 1); });
-            else if (typeof val === 'object') scanObjForDesc(val, depth + 1);
+            if (
+              (lk === 'description' || lk === 'product_description' || lk === 'product_desc' || lk === 'detail_desc' || lk === 'specifications' || lk === 'desc' || lk === 'rich_text' || lk === 'introduction') &&
+              typeof val === 'string' && val.trim().length > 10
+            ) {
+              const cleaned = val
+                .replace(/<br\\s*[\\/]?>/gi, '\\n')
+                .replace(/<\\/p>/gi, '\\n')
+                .replace(/<\\/li>/gi, '\\n')
+                .replace(/<[^>]*>/g, ' ')
+                .trim();
+              cleaned.split('\\n').map(l => l.trim()).filter(Boolean).forEach(l => addCleanText(l));
+            }
+            if (lk.includes('size_chart') || lk.includes('size_table')) {
+              if (typeof val === 'string' && val.length > 10 && !extractedSizeTable) {
+                extractedSizeTable = '📏 ' + val.replace(/<[^>]*>/g, ' ').trim();
+              }
+            }
+            if (Array.isArray(val)) {
+              val.forEach(item => {
+                if (typeof item === 'string' && item.length > 15 && depth < 5 && (lk.includes('desc') || lk.includes('highlight') || lk.includes('feature') || lk.includes('prop'))) {
+                  addCleanText(item);
+                } else if (typeof item === 'object') {
+                  scanObjForDesc(item, depth + 1);
+                }
+              });
+            } else if (typeof val === 'object') {
+              scanObjForDesc(val, depth + 1);
+            }
           }
         } catch (e) {}
       };
+
       if (window.__UNIVERSAL_DATA_FOR_REHYDRATION__) scanObjForDesc(window.__UNIVERSAL_DATA_FOR_REHYDRATION__, 0);
       if (window.SIGI_STATE) scanObjForDesc(window.SIGI_STATE, 0);
       if (window.__INIT_DATA__) scanObjForDesc(window.__INIT_DATA__, 0);
+      if (window.__RENDER_DATA__) scanObjForDesc(window.__RENDER_DATA__, 0);
     } catch (e) {}
 
-    if (descParts.length < 2) {
-      try {
-        Array.from(document.querySelectorAll('[class*="spec-item"],[class*="property-item"],[class*="desc-content"],[class*="detail-desc"],[class*="rich-text"],[data-testid*="desc"],[data-testid*="detail"],div[class*="desc"] p,div[class*="detail"] p')).forEach(el => addDescText((el.textContent || el.innerText || '').trim()));
-      } catch (e) {}
+    let finalDescription = '';
+    if (extractedSizeTable) {
+      finalDescription += extractedSizeTable + '\\n\\n';
     }
+    if (descParts.length > 0) {
+      finalDescription += descParts.join('\\n');
+    }
+    finalDescription = finalDescription.trim();
 
     const rawImages = [];
     const seenUrls = new Set();
@@ -552,7 +741,7 @@ const TIKTOK_PDP_SCRAPER_SCRIPT = `
       status: 'success',
       title,
       price,
-      description: descParts.join('\\n'),
+      description: finalDescription,
       images: uniqueImages.map((img, i) => ({ id: 'img_' + i, url: img.highResUrl, fallbackUrl: img.fallbackUrl })),
       reviews: reviewsData
     };
@@ -1053,6 +1242,8 @@ function MainApp() {
   const [modelImage, setModelImage] = useState<SceneImage | null>(null);
   const [productImages, setProductImages] = useState<SceneImage[]>([]);
   const [numScenes, setNumScenes] = useState(3);
+  const [numSequences, setNumSequences] = useState(3);
+  const [activeSequenceIndex, setActiveSequenceIndex] = useState(0);
   const [videoStyle, setVideoStyle] = useState<'standard' | 'pov'>('standard');
   const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'none'>('female');
   const modelInputRef = useRef<HTMLInputElement>(null);
@@ -1393,7 +1584,8 @@ function MainApp() {
             projectIndex: 0,
             injectionTarget: injectionTarget,
             targetConfigs: targetConfigs,
-            productReviews: null
+            productReviews: null,
+            productDescription: productResult.description || ''
           };
 
           setProjects(prev => [...prev, newProj]);
@@ -1613,6 +1805,8 @@ function MainApp() {
     if (extractedTikTokProduct.title) updatedObs += `Nome: ${extractedTikTokProduct.title}\n`;
     if (extractedTikTokProduct.price) updatedObs += `Preço: ${extractedTikTokProduct.price}\n`;
     if (extractedTikTokProduct.description) {
+      setProductDescription(extractedTikTokProduct.description);
+      setIncludeProductDescription(true);
       updatedObs += `\nEspecificações / Detalhes:\n${extractedTikTokProduct.description}\n`;
     }
 
@@ -1740,6 +1934,72 @@ function MainApp() {
     } finally {
       setIsDownloadingZip(false);
       setZipDownloadProgress(null);
+    }
+  };
+
+  const handleDownloadSceneImagesZip = async (imagesList: SceneImage[], prefix: string = 'fotos_produto') => {
+    if (!imagesList || imagesList.length === 0) return;
+    setIsDownloadingZip(true);
+    try {
+      const zip = new JSZip();
+      for (let i = 0; i < imagesList.length; i++) {
+        const img = imagesList[i];
+        const num = String(i + 1).padStart(2, '0');
+        const urlToFetch = img.croppedPreview || img.preview;
+        let blob: Blob | null = null;
+        let ext = 'jpg';
+
+        if (urlToFetch && (urlToFetch.startsWith('data:') || urlToFetch.startsWith('blob:'))) {
+          try {
+            const resp = await fetch(urlToFetch);
+            blob = await resp.blob();
+            if (blob.type.includes('png')) ext = 'png';
+            else if (blob.type.includes('webp')) ext = 'webp';
+          } catch (e) {}
+        }
+
+        if (!blob && img.file && img.file.size > 0) {
+          blob = img.file;
+          if (img.file.type.includes('png')) ext = 'png';
+          else if (img.file.type.includes('webp')) ext = 'webp';
+          else if (img.file.name && img.file.name.includes('.')) ext = img.file.name.split('.').pop() || 'jpg';
+        }
+
+        if (!blob && urlToFetch) {
+          try {
+            const resp = await fetch(urlToFetch);
+            blob = await resp.blob();
+          } catch (e) {}
+        }
+
+        if (blob) {
+          const fileName = `${prefix}_${num}.${ext}`;
+          zip.file(fileName, blob);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const downloadUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `${prefix}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+
+      setValidationAlert({
+        title: "Download Concluído com Sucesso!",
+        message: `O arquivo ZIP "${prefix}.zip" com ${imagesList.length} fotos foi baixado na sua pasta de Downloads.`
+      });
+    } catch (err: any) {
+      console.error('Erro ao baixar fotos em ZIP:', err);
+      setValidationAlert({
+        title: "Erro no Download",
+        message: `Não foi possível gerar o arquivo ZIP: ${err?.message || err}`
+      });
+    } finally {
+      setIsDownloadingZip(false);
     }
   };
 
@@ -1965,6 +2225,10 @@ function MainApp() {
 
   // Shared
   const [observations, setObservations] = useState('');
+  const [productDescription, setProductDescription] = useState('');
+  const [includeProductDescription, setIncludeProductDescription] = useState(true);
+  const [isEditingProductDescription, setIsEditingProductDescription] = useState(false);
+  const [copiedProductDescription, setCopiedProductDescription] = useState(false);
   const [duration, setDuration] = useState(DURATIONS[0]);
   const [isGenerating, setIsGenerating] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -2050,6 +2314,7 @@ function MainApp() {
       comments: string[];
       includeInPrompt: boolean;
     } | null;
+    productDescription?: string;
   }
 
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -2576,6 +2841,8 @@ function MainApp() {
     setInjectionTarget(proj.injectionTarget || 'none');
     setTargetConfigs(proj.targetConfigs || {});
     setProductReviews(proj.productReviews || null);
+    setProductDescription(proj.productDescription || '');
+    setIncludeProductDescription(true);
     
     setTimeout(() => {
       setActiveProjectId(proj.id);
@@ -2604,7 +2871,8 @@ function MainApp() {
       projectIndex: nextIndex,
       injectionTarget: 'none',
       targetConfigs: {},
-      productReviews: null
+      productReviews: null,
+      productDescription: ''
     };
 
     setProjects(prev => [...prev, newProj]);
@@ -2621,6 +2889,8 @@ function MainApp() {
       setImages([]);
       setModelImage(null);
       setProductImages([]);
+      setProductDescription('');
+      setIncludeProductDescription(true);
       setGeneratedScript(null);
       setGeneratedAngles(null);
       setInjectionTarget('none');
@@ -2923,8 +3193,9 @@ function MainApp() {
 
   // Modelo primário + fallbacks ativos (suportados na API oficial do Google)
   const GEMINI_MODEL_CHAIN = [
-    "gemini-2.5-flash",      // Modelo primário ativo
-    "gemini-flash-latest",   // Fallback oficial estável
+    "gemini-2.0-flash",      // Modelo primário ativo oficial
+    "gemini-1.5-flash",      // Fallback oficial estável
+    "gemini-flash-latest",   // Fallback automático
   ];
 
   const playAlertSound = () => {
@@ -3259,6 +3530,16 @@ ${configList}
 - Certifique-se de que os prompts gerados em 'veoPrompt' e 'digenPrompt' reflitam e respeitem essas escolhas (por exemplo, se o formato é vertical 9:16, descreva enquadramentos verticais móveis; se o narrador selecionado é Jenny, monte o tom de voz e estilo adequados).`
         : '';
 
+      const productDescriptionInstruction = (productDescription && includeProductDescription)
+        ? `\n📦 ESPECIFICAÇÕES TÉCNICAS E DESCRIÇÃO OFICIAL DO PRODUTO (TIKTOK SHOP):
+${productDescription}
+
+🎯 DIRETRIZES DE USO DA DESCRIÇÃO E MEDIDAS DO PRODUTO:
+1. FIDELIDADE AOS MATERIAIS & MODELAGEM: Use o tecido exato (ex: tecido sensorial, caimento fluido, amarração, barra ampla), acabamentos e diferenciais da peça nas falas da narração em PT-BR.
+2. CAIMENTO E MEDIDAS: Se houver tabela de medidas ou dados de tamanho, mencione com naturalidade a precisão do caimento no corpo para passar segurança aos compradores.
+3. PROMPTS DE VÍDEO E IMAGEM: Descreva nos prompts visuais (veoPrompt, digenPrompt e imagePrompt) as texturas, drapeados e detalhes reais destacados na descrição oficial.\n`
+        : '';
+
       const reviewsInstruction = (productReviews && productReviews.includeInPrompt && (productReviews.comments.length > 0 || productReviews.tags.length > 0))
         ? `\n💬 ORIENTAÇÃO ESPECIAL BASEADA EM AVALIAÇÕES E FEEDBACK REAL DE CLIENTES (TIKTOK SHOP):
 O usuário optou expressamente por incluir as avaliações reais de compradores do TikTok Shop para orientar este roteiro.
@@ -3270,6 +3551,33 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
 4. PROMPTS DE VÍDEO (veoPrompt e digenPrompt): Oriente as ações do apresentador e os movimentos de câmera para demonstrar visualmente e em close exatamente os aspectos que os clientes mais elogiaram.\n`
         : '';
 
+      const humanVoiceGuidelines = `
+🗣️ DIRETRIZES DE HUMANIZAÇÃO DAS FALAS EM PT-BR (100% CRIADOR DO TIKTOK):
+- ORALIDADE REAL: Escreva exatamente como uma pessoa real brasileira fala em vídeos espontâneos do TikTok ou áudios para amigos. Use contrações e termos naturais ("tá", "pra", "olha isso", "gente", "cê não tem noção", "sério mesmo", "dá uma olhada", "olha o detalhe disso", "eu precisava mostrar isso pra vocês").
+- 🚫 LISTA NEGRA DE CLICHÊS DE I.A. (TOTALMENTE PROIBIDOS): NUNCA use "Não perca essa oportunidade", "revolucione sua rotina", "adquira já o seu", "produto indispensável", "prepare-se para se apaixonar", "combinação perfeita entre elegância e sofisticação", "venha conferir", "descubra o segredo".
+- CADÊNCIA & FÔLEGO: Frases curtas e diretas. Use vírgulas para demarcar onde o narrador/avatar respira.
+- TEMPO DA CENA (${duration}): A narração deve ter rigorosamente entre ${parseInt(duration) * 2} e ${Math.round(parseInt(duration) * 2.4)} palavras, para ser dita com calma e naturalidade.`;
+
+      const superiorPromptGuidelines = `
+🎬 DIRETRIZES CINEMATOGRÁFICAS PARA PROMPTS (VEO, DIGEN e IMAGEM):
+- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória:
+  Visual & Camera: [Ação e movimento de câmera cinematográfico] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
+- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural com o produto nas mãos e sincronia labial fluida para o áudio em português:
+  Model/Action: [Comportamento do avatar e gestos com produto] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+- NANO BANANA 2 ('imagePrompt'): Em inglês. Fotografia estática hiper-realista 8K, padrão catálogo de luxo ou TikTok Shop oficial, iluminação tridimensional suave.`;
+
+      const multiSequencesInstruction = numSequences > 1
+        ? `\n🎯 ATENÇÃO CRÍTICA - GERAÇÃO DE ${numSequences} SEQUÊNCIAS / VÍDEOS COMPLETOS (VARIAÇÕES):
+Você DEVE gerar exatamente ${numSequences} sequências de vídeos completas no array 'sequences'.
+Cada sequência representa um vídeo completo diferente do produto para postar no TikTok, contendo ${numScenes} cenas cada e explorando uma linha narrativa e falas exclusivas:
+${numSequences >= 1 ? '- Sequência 1: "Gancho de Curiosidade & Quebra de Ceticismo" (Gancho forte nos 3 primeiros segundos, quebrando desconfiança: "Gente, eu não dava nada por isso até ver funcionando...").\n' : ''}${numSequences >= 2 ? '- Sequência 2: "Quebra de Objeção Principal" (Responde diretamente às principais dúvidas e medos dos compradores: durabilidade, se funciona mesmo, se vale o preço).\n' : ''}${numSequences >= 3 ? '- Sequência 3: "Benefício Prático no Dia a Dia" (Mostra o produto resolvendo um problema real da rotina de forma simples, visual e rápida).\n' : ''}${numSequences >= 4 ? '- Sequência 4: "Detalhes, Acabamento & Percepção de Luxo" (Enfatiza a textura, costura, encaixe, material premium e o custo-benefício surpreendente).\n' : ''}${numSequences >= 5 ? '- Sequência 5: "Prova Social & Viral" (Foco no feedback dos compradores, na febre do produto no TikTok Shop e na urgência).\n' : ''}
+Cada sequência no array 'sequences' deve conter:
+- "sequenceNumber": número de 1 a ${numSequences}
+- "title": título temático da sequência
+- "approach": abordagem narrativa (ex: "Curiosidade", "Quebra de Objeção", "Benefício Real", "Acabamento & Detalhes", "Prova Social")
+- "scenes": array com exatamente ${numScenes} cenas completas.`
+        : `Gere 1 sequência de roteiro completa com exatamente ${numScenes} cenas detalhando a apresentação do produto.`;
+
       parts.push({
         text: `Gere um roteiro narrativo e prompts de animação focados na apresentação de um produto.
 Imagens fornecidas: 
@@ -3277,8 +3585,11 @@ Imagens fornecidas:
 2. Fotos do Produto: ${productImages.map(p => p.name).join(', ')}
 
 Duração de cada vídeo: ${duration}
-Número de cenas a gerar: ${numScenes}
+Número de cenas por vídeo: ${numScenes}
+Quantidade de Variações de Sequências (Vídeos): ${numSequences}
 Observações específicas: ${observations || "INSTRUÇÃO: Se este campo estiver vazio, por favor analise as imagens enviadas e extraia qualquer texto, marca, benefício ou característica visível do produto para usar no roteiro e narração."}
+
+${productDescriptionInstruction}
 
 ${reviewsInstruction}
 
@@ -3288,33 +3599,54 @@ ${styleInstruction}
 
 ${voiceInstruction}
 
+${humanVoiceGuidelines}
+
+${superiorPromptGuidelines}
+
+${multiSequencesInstruction}
+
 REGRAS OBRIGATÓRIAS:
-1. Crie exatamente ${numScenes} cenas detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
+1. Crie exatamente ${numScenes} cenas por vídeo detalhando a apresentação do produto. Varie as fotos do produto nas cenas se houver mais de uma.
 2. O campo 'imageName' deve indicar qual das fotos fornecidas (modelo ou produto) serve de referência visual principal para aquela cena (apenas referência interna, NÃO inclua esse nome nos prompts).
 3. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string do prompt em inglês:
    - (1) Descrição visual da cena e movimento de câmera (Camera Movement & Visual Action);
    - (2) Narração e falas dos personagens (Narration / Voiceover / Character Speech em PT-BR);
    - (3) Música de fundo e efeitos sonoros (Background Music & SFX).
-   Exemplo no veoPrompt: 'Cinematic slow-motion camera pan across product. Voiceover/Dialogue: \'[Texto da narração/fala em PT-BR]\'. Background Music: Upbeat commercial soundtrack with crisp product handling SFX.'
-4. O VEO é excelente para as animações de câmera e ambiente. O DIGEN é para falas e vozes.
-5. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
-6. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'} Se escrever em inglês, será considerado um erro grave.
-7. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
-8. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS (para as ferramentas de IA) com as partes faladas em PT-BR indicadas claramente entre aspas simples (ex: 'fala').
-9. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional. Não inclua texto explicativo, apenas a descrição visual em inglês.
-10. ⚠️ FORMATAÇÃO JSON ESTREITA: NUNCA use aspas duplas (") dentro dos textos de prompts, narrações ou descrições. Use SEMPRE aspas simples (') para falas e diálogos, evitando quebrar a sintaxe JSON.
+4. As roupas, cenário da modelo (se houver) e o produto original devem ser mantidos intactos.
+5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok com oralidade 100% natural e zero clichês.'}
+6. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}.
+7. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS com as partes faladas em PT-BR indicadas claramente entre aspas simples (ex: 'fala').
+8. ⚠️ FORMATAÇÃO JSON ESTREITA: NUNCA use aspas duplas (") dentro dos textos de prompts, narrações ou descrições. Use SEMPRE aspas simples (') para falas e diálogos, evitando quebrar a sintaxe JSON.
 
 Retorne em estrutura JSON:
 {
   "campaignTitle": "Nome da Campanha",
+  "sequences": [
+    {
+      "sequenceNumber": 1,
+      "title": "Sequência 1: [Nome do Gancho]",
+      "approach": "Curiosidade / Quebra de Ceticismo",
+      "scenes": [
+        { 
+          "imageName": "Nome exato do arquivo de referência (uso interno)", 
+          "duration": "${duration}", 
+          "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
+          "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
+          "digenPrompt": "Model/Action: Natural talking head model presenting product. | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
+          "narration": "Fala em PT-BR 100% humana...", 
+          "description": "Explicação da cena" 
+        }
+      ]
+    }
+  ],
   "scenes": [
     { 
       "imageName": "Nome exato do arquivo de referência (uso interno)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Cinematic camera pan across product. Voiceover/Dialogue: '[Narração em PT-BR]'. Background Music: Upbeat commercial soundtrack with ambient SFX.", 
-      "digenPrompt": "Natural talking head model presenting product. Dialogue: '[Narração em PT-BR]'. Background Music: Upbeat commercial music.", 
-      "narration": "Narração em PT-BR...", 
+      "veoPrompt": "Visual & Camera: Cinematic camera pan across product. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Upbeat commercial soundtrack with ambient SFX.", 
+      "digenPrompt": "Model/Action: Natural talking head model presenting product. | Dialogue: '[Narração em PT-BR]' | Background Music: Upbeat commercial music.", 
+      "narration": "Fala em PT-BR 100% humana...", 
       "description": "Explicação da cena" 
     }
   ]
@@ -3323,10 +3655,39 @@ Retorne em estrutura JSON:
 
       const response = await executeUnifiedAI({
         parts: parts,
+        systemPrompt: MASTER_COPYWRITING_SYSTEM_INSTRUCTION,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             campaignTitle: { type: Type.STRING },
+            sequences: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  sequenceNumber: { type: Type.INTEGER },
+                  title: { type: Type.STRING },
+                  approach: { type: Type.STRING },
+                  scenes: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        imageName: { type: Type.STRING },
+                        duration: { type: Type.STRING },
+                        imagePrompt: { type: Type.STRING },
+                        veoPrompt: { type: Type.STRING },
+                        digenPrompt: { type: Type.STRING },
+                        narration: { type: Type.STRING },
+                        description: { type: Type.STRING }
+                      },
+                      required: ["imageName", "duration", "imagePrompt", "veoPrompt", "digenPrompt", "narration", "description"]
+                    }
+                  }
+                },
+                required: ["sequenceNumber", "title", "approach", "scenes"]
+              }
+            },
             scenes: {
               type: Type.ARRAY,
               items: {
@@ -3344,7 +3705,7 @@ Retorne em estrutura JSON:
               }
             }
           },
-          required: ["campaignTitle", "scenes"]
+          required: ["campaignTitle"]
         }
       });
 
@@ -3356,6 +3717,7 @@ Retorne em estrutura JSON:
         throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
       }
       setGeneratedScript(parsed);
+      setActiveSequenceIndex(0);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Geração cancelada pelo usuário');
@@ -3438,6 +3800,21 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
         };
       }));
 
+      const humanVoiceGuidelines = `
+🗣️ DIRETRIZES DE HUMANIZAÇÃO DAS FALAS EM PT-BR (100% CRIADOR DO TIKTOK):
+- ORALIDADE REAL: Escreva exatamente como uma pessoa real brasileira fala em vídeos de moda/lifestyle no TikTok. Use contrações e termos naturais ("tá", "pra", "olha isso", "gente", "cê não tem noção", "sério mesmo", "dá uma olhada no caimento", "olha o detalhe dessa peça").
+- 🚫 LISTA NEGRA DE CLICHÊS DE I.A. (TOTALMENTE PROIBIDOS): NUNCA use "Não perca essa oportunidade", "revolucione sua rotina", "adquira já o seu", "produto indispensável", "prepare-se para se apaixonar", "combinação perfeita entre elegância e sofisticação", "venha conferir", "descubra o segredo".
+- CADÊNCIA & FÔLEGO: Frases curtas e diretas. Use vírgulas para demarcar onde o narrador/avatar respira.
+- TEMPO DA CENA (${duration}): A narração deve ter rigorosamente entre ${parseInt(duration) * 2} e ${Math.round(parseInt(duration) * 2.4)} palavras, para ser dita com calma e naturalidade.`;
+
+      const superiorPromptGuidelines = `
+🎬 DIRETRIZES CINEMATOGRÁFICAS PARA PROMPTS (VEO, DIGEN e IMAGEM):
+- GOOGLE VEO ('veoPrompt'): Em inglês com terminologia cinematográfica profissional (85mm portrait lens, 100mm macro for textures, f/1.8 shallow depth of field, slow dynamic dolly push-in, subtle 45-degree orbital pan), iluminação de estúdio comercial (soft key light, warm rim light) e a estrutura unificada obrigatória:
+  Visual & Camera: [Ação visual e movimento de câmera] | Voiceover/Dialogue: '[Fala exata em PT-BR]' | Background Music & SFX: [Trilha comercial e efeitos sonoros táteis como unboxing, click, tecido].
+- DIGEN ('digenPrompt'): Em inglês. Avatar com microexpressões humanas (natural warm smile, relaxed breathing, friendly direct eye contact, subtle eyebrow reactions), gesticulação natural e sincronia labial fluida para o áudio em português:
+  Model/Action: [Comportamento do avatar e gestos] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
+- NANO BANANA 2 ('imagePrompt'): Em inglês. Fotografia estática hiper-realista 8K, padrão editorial de moda / catálogo de luxo, iluminação tridimensional suave.`;
+
       const response = await executeUnifiedAI({
         parts: [
           ...imageParts,
@@ -3453,15 +3830,19 @@ ${platformInstruction}
 
 ${voiceInstruction}
 
+${humanVoiceGuidelines}
+
+${superiorPromptGuidelines}
+
 REGRAS OBRIGATÓRIAS:
 1. ⚠️ UNIFICAÇÃO CRÍTICA DO PROMPT DE VÍDEO ('veoPrompt' e 'digenPrompt'): O prompt de animação de vídeo DEVE vir COMPLETO e UNIFICADO, contendo obrigatoriamente dentro da própria string em inglês: (1) Animação/movimento de câmera; (2) Narração/falas dos personagens ('Voiceover/Dialogue: [Texto da narração em PT-BR]'); (3) Música de fundo e SFX ('Background Music: [Música de fundo]').
 2. As roupas e o CENÁRIO devem ser mantidos idênticos. Não mude cores, tecidos ou o ambiente.
 3. Foque em animações cinematográficas para VEO: movimento de câmera (pan, tilt, zoom), partículas de luz, vento sutil no cabelo e expressões faciais, sempre incluindo a narração/falas e a trilha sonora.
 4. Para DIGEN, foque na naturalidade do modelo digital falando ou reagindo.
-5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok.'}
+5. ⚠️ CRÍTICO — IDIOMA DA NARRAÇÃO: O campo 'narration' DEVE ser OBRIGATORIAMENTE escrito em PORTUGUÊS BRASILEIRO (PT-BR). NUNCA escreva a narração em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva a trilha sonora/SFX e legendas de tela em PT-BR.' : 'A narração é o texto falado em voz alta para o público brasileiro do TikTok com oralidade 100% natural e zero clichês.'}
 6. Os campos 'veoPrompt' e 'digenPrompt' devem estar em INGLÊS para as partes técnicas de câmera e áudio, mantendo as falas em PT-BR dentro de aspas simples (ex: 'fala').
 7. CRÍTICO (Prompt de Imagem Estática da Cena - Nano Banana 2): Para cada cena, crie um prompt detalhado em inglês no campo 'imagePrompt'. O prompt deve ser riquíssimo em detalhes visuais, estilo fotográfico realista, iluminação profissional, mantendo consistência total com a imagem original. Não inclua texto explicativo, apenas a descrição visual em inglês.
-8. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}. Um vídeo de ${duration} só comporta poucas palavras faladas. Para ${duration}, a narração DEVE ter no máximo ${parseInt(duration) * 2} palavras (aproximadamente 2 palavras por segundo) para que o narrador consiga pronunciar tudo de forma natural e sem pressa. Ajuste rigorosamente o tamanho do texto ao tempo de ${duration}.
+8. CRÍTICO: A narração (campo 'narration') DEVE SE ADEQUAR EXATAMENTE à duração do vídeo de ${duration}.
 9. ⚠️ FORMATAÇÃO JSON ESTREITA: NUNCA use aspas duplas (") dentro dos textos de prompts, narrações ou descrições. Use SEMPRE aspas simples (') para falas e diálogos, evitando quebrar a sintaxe JSON.
 
 Retorne em estrutura JSON:
@@ -3472,8 +3853,8 @@ Retorne em estrutura JSON:
       "imageName": "Nome exato do arquivo (referência interna)", 
       "duration": "${duration}", 
       "imagePrompt": "Detailed English still image generation prompt for Nano Banana 2/Imagen...",
-      "veoPrompt": "Cinematic camera pan across model. Voiceover/Dialogue: '[Narração em PT-BR]'. Background Music: Soft acoustic fashion soundtrack with ambient room reverb.", 
-      "digenPrompt": "Natural talking head model presenting clothing. Dialogue: '[Narração em PT-BR]'. Background Music: Modern fashion beat.", 
+      "veoPrompt": "Visual & Camera: Cinematic camera pan across model. | Voiceover/Dialogue: '[Narração em PT-BR]' | Background Music & SFX: Soft acoustic fashion soundtrack with ambient room reverb.", 
+      "digenPrompt": "Model/Action: Natural talking head model presenting clothing. | Dialogue: '[Narração em PT-BR]' | Background Music: Modern fashion beat.", 
       "narration": "Narração em PT-BR...", 
       "description": "Explicação da cena" 
     }
@@ -3481,6 +3862,7 @@ Retorne em estrutura JSON:
 }`
           }
         ],
+        systemPrompt: MASTER_COPYWRITING_SYSTEM_INSTRUCTION,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -3514,6 +3896,7 @@ Retorne em estrutura JSON:
         throw new Error("A IA respondeu mas o roteiro não pôde ser estruturado. Tente novamente ou alterne para outro provedor de IA no topo.");
       }
       setGeneratedScript(parsed);
+      setActiveSequenceIndex(0);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Geração cancelada pelo usuário');
@@ -3627,7 +4010,7 @@ REGRAS ABSOLUTAS — NUNCA VIOLE:
 2. Apenas o ÂNGULO DA CÂMERA e a COMPOSIÇÃO DA CENA mudam.
 3. Nos campos imagePrompt, veoPrompt e digenPrompt, SEMPRE mencione "exact same product, identical colors, textures and design unchanged" para garantir fidelidade absoluta.
 4. Os campos veoPrompt e digenPrompt DEVEM vir COMPLETOS e UNIFICADOS, incluindo em um único prompt: (1) Animação visual e movimento de câmera; (2) Narração e falas dos personagens em PT-BR ("Voiceover/Dialogue: [Texto da narração]"); (3) Música de fundo e SFX ("Background Music: [Trilha comercial]").
-5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. ${voiceGender === 'none' ? 'No modo Sem Narração, descreva apenas trilha sonora/SFX e legendas de tela em PT-BR (ex: "[Música instrumental de fundo] [Legenda: Veja a costura...]").' : 'Descreva a fala falada em PT-BR.'}
+5. ⚠️ O campo narration DEVE ser em PORTUGUÊS BRASILEIRO (PT-BR) — NUNCA em inglês. Linguagem 100% humana, espontânea, como criador do TikTok mostrando o detalhe do produto para um amigo ("olha esse acabamento...", "sente a textura...", "dá uma olhada nesse fecho..."). ZERO clichês de IA.
 6. Os campos veoPrompt e digenPrompt devem ser prompts PUROS e AUTO-CONTIDOS — NUNCA inclua nomes de arquivo, colchetes com nomes ou referências a imagens originais. As imagens servem apenas como referência visual para a IA.
 7. ${voiceGender === 'none' ? 'Como está Sem Narração (no-speech), o campo digenPrompt deve especificar apenas música instrumental e SFX, sem fala humana (ex: "No speech. Energetic background music and sound effects, highlighting details.").' : 'Especifique no digenPrompt o estilo de voz de acordo com o GÊNERO DA VOZ.'}
 
@@ -3644,6 +4027,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
       const response = await executeUnifiedAI({
         parts: [...productParts, textPart],
+        systemPrompt: MASTER_COPYWRITING_SYSTEM_INSTRUCTION,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -3741,14 +4125,21 @@ Angulos a variar (escolha os mais relevantes para o produto):
       `<p style="font-weight:bold;font-size:9pt;color:${color};text-transform:uppercase;margin:8px 0 2px">${label}</p>
        <div style="background:#f5f5f5;padding:8px 10px;border-left:3px solid ${color};margin-bottom:10px;font-size:10pt">${content}</div>`;
 
-    const scenesHtml = generatedScript.scenes.map((scene, i) => `
-      <h2 style="font-size:13pt;color:#333;border-bottom:2px solid #E65C00;padding-bottom:4px">Cena ${i + 1} &bull; ${scene.duration} &bull; ${scene.imageName}</h2>
-      ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', scene.imagePrompt)}
-      ${buildSectionHtml('VEO — Animação', '#2563eb', scene.veoPrompt)}
-      ${buildSectionHtml('DIGEN — Fala', '#7c3aed', scene.digenPrompt)}
-      <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
-      <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${scene.narration}</div>
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+    const sequencesToExport = (generatedScript.sequences && generatedScript.sequences.length > 0)
+      ? generatedScript.sequences
+      : [{ id: 'seq-1', sequenceNumber: 1, title: generatedScript.campaignTitle, approach: 'Padrão', scenes: generatedScript.scenes }];
+
+    const scenesHtml = sequencesToExport.map((seq, sIdx) => `
+      ${sequencesToExport.length > 1 ? `<h1 style="font-size:16pt;color:#E65C00;margin-top:28px;border-bottom:2px solid #E65C00;padding-bottom:4px">SEQUÊNCIA ${sIdx + 1}: ${seq.title} (${seq.approach})</h1>` : ''}
+      ${seq.scenes.map((scene, i) => `
+        <h2 style="font-size:13pt;color:#333;border-bottom:1px solid #ddd;padding-bottom:4px">Cena ${i + 1} &bull; ${scene.duration} &bull; ${scene.imageName}</h2>
+        ${buildSectionHtml('Imagem (Nano Banana 2)', '#b45309', scene.imagePrompt)}
+        ${buildSectionHtml('VEO — Animação', '#2563eb', scene.veoPrompt)}
+        ${buildSectionHtml('DIGEN — Fala', '#7c3aed', scene.digenPrompt)}
+        <p style="font-weight:bold;font-size:9pt;color:#ea580c;text-transform:uppercase;margin:8px 0 2px">Narração (PT-BR)</p>
+        <div style="background:#fff7ed;padding:8px 10px;border-left:3px solid #ea580c;margin-bottom:10px;font-style:italic;font-size:11pt">${scene.narration}</div>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
+      `).join('')}
     `).join('');
 
     const anglesHtml = (generatedAngles && generatedAngles.length > 0) ? `
@@ -3815,18 +4206,34 @@ Angulos a variar (escolha os mais relevantes para o produto):
     doc.text(titleLines, margin, y); y += titleLines.length * 8 + 4;
     doc.setDrawColor(230, 92, 0); doc.line(margin, y, pageW - margin, y); y += 8;
 
-    generatedScript.scenes.forEach((scene, i) => {
-      checkPage(20);
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
-      doc.text(`Cena ${i + 1}  •  ${scene.duration}  •  ${scene.imageName}`, margin, y); y += 7;
-      addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(scene.imagePrompt);
-      addLabel('VEO — Animação', 37, 99, 235); addBody(scene.veoPrompt);
-      addLabel('DIGEN — Fala', 124, 58, 237); addBody(scene.digenPrompt);
-      addLabel('Narração PT-BR', 234, 88, 12);
-      doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
-      const nlines = doc.splitTextToSize(scene.narration, maxW);
-      checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
-      addDivider();
+    const sequencesToPdf = (generatedScript.sequences && generatedScript.sequences.length > 0)
+      ? generatedScript.sequences
+      : [{ id: 'seq-1', sequenceNumber: 1, title: generatedScript.campaignTitle, approach: 'Padrão', scenes: generatedScript.scenes }];
+
+    sequencesToPdf.forEach((seq, sIdx) => {
+      if (sIdx > 0) {
+        doc.addPage();
+        y = margin;
+      }
+      if (sequencesToPdf.length > 1) {
+        doc.setFontSize(15); doc.setFont('helvetica', 'bold'); doc.setTextColor(230, 92, 0);
+        doc.text(`SEQUÊNCIA ${sIdx + 1}: ${seq.title.toUpperCase()} (${seq.approach})`, margin, y); y += 9;
+        doc.setDrawColor(230, 92, 0); doc.line(margin, y, pageW - margin, y); y += 6;
+      }
+
+      seq.scenes.forEach((scene, i) => {
+        checkPage(20);
+        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+        doc.text(`Cena ${i + 1}  •  ${scene.duration}  •  ${scene.imageName}`, margin, y); y += 7;
+        addLabel('Imagem (Nano Banana 2)', 180, 83, 9); addBody(scene.imagePrompt);
+        addLabel('VEO — Animação', 37, 99, 235); addBody(scene.veoPrompt);
+        addLabel('DIGEN — Fala', 124, 58, 237); addBody(scene.digenPrompt);
+        addLabel('Narração PT-BR', 234, 88, 12);
+        doc.setFontSize(10); doc.setFont('helvetica', 'italic'); doc.setTextColor(30, 30, 30);
+        const nlines = doc.splitTextToSize(scene.narration, maxW);
+        checkPage(nlines.length * 5); doc.text(nlines, margin, y); y += nlines.length * 5 + 4;
+        addDivider();
+      });
     });
 
     if (generatedAngles && generatedAngles.length > 0) {
@@ -4137,8 +4544,11 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 animate={{ opacity: 1, y: 0 }}
                 className="flex items-center gap-3 text-orange-500"
               >
-                <Sparkles className="w-5 h-5" />
-                <span className="text-xs font-bold tracking-[0.2em] uppercase text-orange-500">Produção com IA</span>
+                <img src="/icon.png" alt="TikTok Shop Logo" className="w-7 h-7 rounded-lg shadow-md border border-orange-500/30 object-cover shadow-orange-500/10" />
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" />
+                  <span className="text-xs font-bold tracking-[0.2em] uppercase text-orange-500">Produção com IA</span>
+                </div>
               </motion.div>
               <motion.h1 
                 initial={{ opacity: 0, y: 20 }}
@@ -4259,23 +4669,49 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
         {/* Module Switcher */}
         <div className="flex justify-center mb-12">
-          <div className="bg-white/5 p-1 rounded-2xl flex border border-white/10 overflow-hidden">
+          <div className="bg-white/5 p-1 rounded-2xl flex border border-white/10 overflow-hidden flex-wrap justify-center gap-1">
             <button 
               onClick={() => setActiveTab('collection')}
-              className={`px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase ${activeTab === 'collection' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
+              className={`px-6 md:px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase cursor-pointer ${activeTab === 'collection' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
             >
               Fotos Diversas / Coleção
             </button>
             <button 
               onClick={() => setActiveTab('product')}
-              className={`px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase ${activeTab === 'product' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
+              className={`px-6 md:px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase cursor-pointer ${activeTab === 'product' ? 'bg-orange-500 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
             >
               Apresentador & Produto
+            </button>
+            <button 
+              onClick={() => setActiveTab('virals')}
+              className={`px-6 md:px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase flex items-center gap-2 cursor-pointer ${activeTab === 'virals' ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/25' : 'text-white/40 hover:text-white/80'}`}
+            >
+              <Flame className="w-4 h-4 text-orange-400" />
+              <span>Buscador de Virais</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        {activeTab === 'virals' ? (
+          <ViralsFinder
+            themeMode={themeMode}
+            onUseForScript={(data) => {
+              setActiveTab('product');
+              setExtractedTikTokProduct({
+                title: data.title,
+                price: data.price,
+                description: data.description,
+                images: data.image ? [{ id: 'img_viral_0', url: data.image, fallbackUrl: data.image }] : []
+              });
+              if (data.description) {
+                setProductDescription(data.description);
+                setIncludeProductDescription(true);
+                setObservations(data.description);
+              }
+            }}
+          />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           {/* Left Column: UI Controls */}
           <div className="lg:col-span-12 xl:col-span-5 space-y-10">
             
@@ -4307,14 +4743,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       )}
                       <span className="text-xs text-white/40">{images.length} fotos</span>
                       {images.length > 0 && (
-                        <button
-                          onClick={() => { if (confirm('Remover todas as imagens?')) setImages([]); }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[10px] font-bold uppercase tracking-wider text-red-400"
-                          title="Limpar todas as imagens"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Limpar
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleDownloadSceneImagesZip(images, 'fotos_colecao')}
+                            disabled={isDownloadingZip}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full hover:bg-blue-500/20 transition-all text-[10px] font-bold uppercase tracking-wider text-blue-400 cursor-pointer disabled:opacity-50"
+                            title="Baixar todas as fotos da coleção em arquivo .ZIP"
+                          >
+                            {isDownloadingZip ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                            Baixar .ZIP
+                          </button>
+                          <button
+                            onClick={() => { if (confirm('Remover todas as imagens?')) setImages([]); }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[10px] font-bold uppercase tracking-wider text-red-400 cursor-pointer"
+                            title="Limpar todas as imagens"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Limpar
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -4599,14 +5046,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           <>
                             <div className="flex items-center justify-between mt-2 mb-1">
                               <span className="text-[10px] text-white/30">{productImages.length} foto(s) de produto</span>
-                              <button
-                                onClick={() => { if (confirm('Remover todas as imagens de produto?')) setProductImages([]); }}
-                                className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[9px] font-bold uppercase tracking-wider text-red-400"
-                                title="Limpar todas as imagens de produto"
-                              >
-                                <Trash2 className="w-2.5 h-2.5" />
-                                Limpar tudo
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleDownloadSceneImagesZip(productImages, 'fotos_produto')}
+                                  disabled={isDownloadingZip}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full hover:bg-blue-500/20 transition-all text-[9px] font-bold uppercase tracking-wider text-blue-400 cursor-pointer disabled:opacity-50"
+                                  title="Baixar todas as fotos de produto em arquivo .ZIP"
+                                >
+                                  {isDownloadingZip ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
+                                  Baixar .ZIP
+                                </button>
+                                <button
+                                  onClick={() => { if (confirm('Remover todas as imagens de produto?')) setProductImages([]); }}
+                                  className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-all text-[9px] font-bold uppercase tracking-wider text-red-400 cursor-pointer"
+                                  title="Limpar todas as imagens de produto"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                  Limpar tudo
+                                </button>
+                              </div>
                             </div>
                           <motion.div 
                             initial={{ opacity: 0, height: 0 }}
@@ -4819,6 +5277,42 @@ Angulos a variar (escolha os mais relevantes para o produto):
                         )}
                       </div>
 
+                      {/* Variações de Vídeo (Sequências do Produto - Até 5 Vídeos) */}
+                      <div className="space-y-2 pt-2 border-t border-white/5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] text-white/70 font-bold block leading-tight flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-orange-400" />
+                            Variações de Vídeo do Produto (Sequências)
+                          </label>
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-400 font-semibold border border-orange-500/20">
+                            {numSequences} {numSequences === 1 ? 'vídeo' : 'vídeos diferentes'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-white/40 leading-relaxed">
+                          Gera até 5 sequências completas de vídeos divididas em páginas (Sequência 1, 2, 3, 4, 5) com abordagens narrativas e falas exclusivas para o mesmo produto.
+                        </p>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {[1, 2, 3, 4, 5].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setNumSequences(num)}
+                              className={`py-2 px-1 rounded-xl text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                numSequences === num
+                                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25 ring-1 ring-orange-400'
+                                  : 'bg-white/5 hover:bg-white/10 text-white/50 hover:text-white border border-white/5'
+                              }`}
+                              title={`${num} vídeo(s) completo(s) com diferentes ganchos e falas`}
+                            >
+                              <span>{num} {num === 1 ? 'Vídeo' : 'Vídeos'}</span>
+                              <span className="text-[8px] opacity-70 font-normal">
+                                {num === 1 ? 'Padrão' : num === 2 ? '2 Ângulos' : num === 3 ? 'Recomendado' : num === 4 ? 'Avançado' : 'Máximo'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       {/* Configurações Dinâmicas para Digen */}
                       {injectionTarget === 'digen' && (
                         !digenSchema || digenSchema.configs.length === 0 ? (
@@ -4967,6 +5461,95 @@ Angulos a variar (escolha os mais relevantes para o produto):
 
             {/* Step 3: Observations & Action (Shared) */}
             <section className="space-y-6">
+              {/* Card de Descrição Oficial & Medidas do Produto (TikTok Shop) */}
+              {productDescription && (
+                <div className="p-4 rounded-2xl bg-orange-500/10 border border-orange-500/25 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-orange-400" />
+                      <span className="text-xs font-bold text-orange-200">
+                        Descrição Oficial & Medidas (TikTok Shop)
+                      </span>
+                      <span className="text-[10px] bg-orange-500/20 text-orange-300 font-mono font-bold px-2 py-0.5 rounded-full">
+                        {productDescription.length} caracteres
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(productDescription);
+                          setCopiedProductDescription(true);
+                          setTimeout(() => setCopiedProductDescription(false), 2000);
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Copiar texto completo da descrição e medidas"
+                      >
+                        {copiedProductDescription ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedProductDescription ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingProductDescription(prev => !prev)}
+                        className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all cursor-pointer"
+                        title="Editar descrição do produto"
+                      >
+                        {isEditingProductDescription ? 'Concluir' : 'Editar'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('Remover esta descrição do produto?')) {
+                            setProductDescription('');
+                            setIsEditingProductDescription(false);
+                          }
+                        }}
+                        className="p-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all cursor-pointer"
+                        title="Remover descrição"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIncludeProductDescription(prev => !prev)}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          includeProductDescription
+                            ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
+                            : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
+                        }`}
+                        title="Ativar ou desativar uso da descrição pelo gerador de I.A"
+                      >
+                        {includeProductDescription && <Check className="w-3.5 h-3.5" />}
+                        <span>{includeProductDescription ? 'Usar na IA: SIM' : 'Usar na IA: NÃO'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] opacity-75 leading-relaxed">
+                    {includeProductDescription
+                      ? '✅ A I.A utilizará as medidas exatas, tecido sensorial, modelagem e destaques oficiais do produto para criar falas em PT-BR autênticas e prompts visuais fiéis.'
+                      : '⏸️ Descrição desativada. A I.A gerará o roteiro baseando-se apenas nas fotos e observações gerais.'}
+                  </p>
+
+                  {isEditingProductDescription ? (
+                    <textarea
+                      value={productDescription}
+                      onChange={(e) => setProductDescription(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white leading-relaxed font-mono resize-y min-h-[140px] focus:outline-none focus:border-orange-500/50"
+                      placeholder="Edite as especificações ou tabela de medidas do produto..."
+                    />
+                  ) : (
+                    <div className="text-xs opacity-90 bg-black/40 p-3.5 rounded-xl border border-white/5 max-h-60 overflow-y-auto leading-relaxed whitespace-pre-line font-mono select-text">
+                      {productDescription}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Card de Controle de Avaliações de Clientes no Roteiro */}
               {productReviews && (productReviews.comments.length > 0 || productReviews.tags.length > 0) && (
                 <div className="p-4 rounded-2xl bg-purple-500/10 border border-purple-500/25 space-y-3">
@@ -5126,8 +5709,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               } catch (err) {
                                 console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
                               }
+                              const seqsList = (generatedScript.sequences && generatedScript.sequences.length > 0)
+                                ? generatedScript.sequences
+                                : [{ id: 'seq-1', sequenceNumber: 1, title: generatedScript.campaignTitle, approach: 'Padrão', scenes: generatedScript.scenes }];
+                              const scenesToInject = seqsList[Math.min(activeSequenceIndex, seqsList.length - 1)]?.scenes || generatedScript.scenes;
+
                               window.electronAPI.openInjectorWindow({ 
-                                generatedScript, 
+                                generatedScript: {
+                                  ...generatedScript,
+                                  scenes: scenesToInject
+                                }, 
                                 generatedAngles,
                                 injectionTarget: 'flow',
                                 targetConfigs,
@@ -5148,8 +5739,16 @@ Angulos a variar (escolha os mais relevantes para o produto):
                               } catch (err) {
                                 console.warn("Aviso ao salvar assets antes de abrir o injetor:", err);
                               }
+                              const seqsList = (generatedScript.sequences && generatedScript.sequences.length > 0)
+                                ? generatedScript.sequences
+                                : [{ id: 'seq-1', sequenceNumber: 1, title: generatedScript.campaignTitle, approach: 'Padrão', scenes: generatedScript.scenes }];
+                              const scenesToInject = seqsList[Math.min(activeSequenceIndex, seqsList.length - 1)]?.scenes || generatedScript.scenes;
+
                               window.electronAPI.openInjectorWindow({ 
-                                generatedScript, 
+                                generatedScript: {
+                                  ...generatedScript,
+                                  scenes: scenesToInject
+                                }, 
                                 generatedAngles,
                                 injectionTarget: 'digen',
                                 targetConfigs,
@@ -5178,8 +5777,108 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </div>
                   </div>
 
-                  <div className="space-y-6">
-                    {generatedScript.scenes.map((scene, i) => (
+                  {(() => {
+                    const sequencesList = (generatedScript.sequences && generatedScript.sequences.length > 0)
+                      ? generatedScript.sequences
+                      : [{ id: 'seq-1', sequenceNumber: 1, title: generatedScript.campaignTitle || 'Sequência 1', approach: 'Padrão', scenes: generatedScript.scenes }];
+                    const safeSeqIndex = Math.min(activeSequenceIndex, sequencesList.length - 1);
+                    const currentSequence = sequencesList[safeSeqIndex] || sequencesList[0];
+                    const currentScenes = currentSequence.scenes || generatedScript.scenes;
+
+                    return (
+                      <>
+                        {/* Barra de Paginação de Sequências (Sequência 1, 2, 3, 4, 5...) */}
+                        {sequencesList.length > 1 && (
+                          <div className="bg-white/5 border border-white/10 rounded-3xl p-5 mb-6 space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-white/5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                                  <Layers className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <h3 className="text-xs uppercase tracking-wider text-white font-bold font-display">
+                                    Variações de Roteiro do Produto
+                                  </h3>
+                                  <p className="text-[10px] text-white/40">
+                                    Dividido em páginas &bull; {sequencesList.length} vídeos com falas e abordagens diferentes
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                                <button
+                                  onClick={() => setActiveSequenceIndex(prev => Math.max(0, prev - 1))}
+                                  disabled={safeSeqIndex === 0}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                >
+                                  <ChevronLeft className="w-3.5 h-3.5" /> Anterior
+                                </button>
+                                <span className="px-2.5 py-1 rounded-xl bg-black/30 border border-white/5 text-[11px] font-bold text-orange-400">
+                                  Página {safeSeqIndex + 1} de {sequencesList.length}
+                                </span>
+                                <button
+                                  onClick={() => setActiveSequenceIndex(prev => Math.min(sequencesList.length - 1, prev + 1))}
+                                  disabled={safeSeqIndex === sequencesList.length - 1}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs font-semibold transition-all cursor-pointer"
+                                >
+                                  Próxima <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Abas das Páginas das Sequências */}
+                            <div className="flex flex-wrap gap-2">
+                              {sequencesList.map((seq, idx) => {
+                                const isActive = safeSeqIndex === idx;
+                                return (
+                                  <button
+                                    key={seq.id || idx}
+                                    onClick={() => setActiveSequenceIndex(idx)}
+                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                                      isActive
+                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25 scale-[1.02]'
+                                        : 'bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5'
+                                    }`}
+                                  >
+                                    <span>Sequência {idx + 1}</span>
+                                    {seq.approach && (
+                                      <span className={`text-[10px] font-normal px-2 py-0.5 rounded-full ${isActive ? 'bg-black/25 text-white' : 'bg-white/10 text-white/50'}`}>
+                                        {seq.approach}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Descrição e Gancho da Sequência Ativa */}
+                            <div className="bg-black/30 rounded-2xl p-3.5 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="text-white/40">Abordagem Desta Sequência:</span>
+                                <span className="font-semibold text-orange-300">{currentSequence.title || `Sequência ${safeSeqIndex + 1}`}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-white/40">{currentScenes.length} cena(s)</span>
+                                <button
+                                  onClick={() => {
+                                    const allSeqText = sequencesList.map((s, si) => 
+                                      `=== SEQUÊNCIA ${si + 1}: ${s.title} (${s.approach}) ===\n` +
+                                      s.scenes.map((sc, sci) => `Cena ${sci + 1} (${sc.duration}):\nImagem: ${sc.imagePrompt}\nVEO: ${sc.veoPrompt}\nDIGEN: ${sc.digenPrompt}\nFala PT-BR: "${sc.narration}"`).join('\n\n')
+                                    ).join('\n\n=========================================\n\n');
+                                    copyText(allSeqText);
+                                  }}
+                                  className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 cursor-pointer font-bold"
+                                  title="Copiar todas as sequências juntas"
+                                >
+                                  <Copy className="w-3 h-3" /> Copiar Todas as Sequências
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-6">
+                          {currentScenes.map((scene, i) => (
                       <motion.div 
                         key={i}
                         initial={{ opacity: 0, y: 20 }}
@@ -5317,6 +6016,9 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </motion.div>
                     ))}
                   </div>
+                </>
+              );
+            })()}
 
                   {/* Product Angles Generator (Only shown in final generation) */}
                   {activeTab === 'product' && (
@@ -5476,6 +6178,7 @@ Angulos a variar (escolha os mais relevantes para o produto):
             </AnimatePresence>
           </div>
         </div>
+        )}
       </main>
 
 
@@ -6323,11 +7026,25 @@ Angulos a variar (escolha os mais relevantes para o produto):
                     </div>
 
                     {extractedTikTokProduct.description ? (
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] uppercase font-bold tracking-wider opacity-60">
-                          Especificações Técnicas / Descrição:
-                        </span>
-                        <div className="text-xs opacity-80 bg-black/40 p-4 rounded-xl border border-white/5 max-h-72 overflow-y-auto leading-relaxed whitespace-pre-line font-mono">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold tracking-wider opacity-60">
+                            Especificações Técnicas, Medidas & Descrição:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(extractedTikTokProduct.description);
+                              setCopiedProductDescription(true);
+                              setTimeout(() => setCopiedProductDescription(false), 2000);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedProductDescription ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedProductDescription ? 'Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+                        <div className="text-xs opacity-90 bg-black/40 p-4 rounded-xl border border-white/5 max-h-72 overflow-y-auto leading-relaxed whitespace-pre-line font-mono select-text">
                           {extractedTikTokProduct.description}
                         </div>
                       </div>

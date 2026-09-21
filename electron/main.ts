@@ -9,9 +9,15 @@ let pendingPromptsData: any = null;
 let pendingSpyData: any = null;
 let currentDownloadInfo: any = null;
 
+function getAppIconPath(): string {
+  const isWindows = process.platform === 'win32';
+  const iconFileName = isWindows ? 'icon.ico' : 'icon.png';
+  return join(__dirname, '../../resources', iconFileName);
+}
+
 function createWindow(): void {
   console.log('[Main] Creating main window...');
-  const iconPath = join(__dirname, '../../resources/icon.png');
+  const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -89,6 +95,7 @@ ipcMain.on('open-injector-window', (_event, data) => {
     title: 'Injetor de Prompts - Digen & Google Labs Flow',
     backgroundColor: '#0a0a0b',
     autoHideMenuBar: true,
+    icon: getAppIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -135,6 +142,7 @@ function createSpyWindow(): void {
     title: '🔍 Mapeador de Integrações',
     backgroundColor: '#0a0a0b',
     autoHideMenuBar: true,
+    icon: getAppIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
