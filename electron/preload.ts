@@ -36,4 +36,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   fetchImageAsBase64: (url: string) => ipcRenderer.invoke('fetch-image-as-base64', url),
+  clearViralsSession: () => ipcRenderer.invoke('virals:clear-session'),
 });

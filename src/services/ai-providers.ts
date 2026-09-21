@@ -259,6 +259,19 @@ Quando uma descrição do produto, especificações técnicas ou tabela de medid
    - Se houver tabela de medidas (busto, cintura, comprimento, etc.) ou informação de tamanho único / grade, transmita segurança sobre o caimento perfeito no corpo nas falas em PT-BR.
 4. PROMPTS CINEMATOGRÁFICOS (VEO/DIGEN):
    - Traduza os atributos físicos para os prompts de vídeo em inglês (ex: 'flowing sensory fabric with soft elegant drape', 'adjustable back-tie detail', 'wide sweeping hem creating natural dynamic movement while walking').
+
+================================================================================
+DIRETRIZ #4: FLUXOS DE GERAÇÃO DE IMAGENS E VÍDEOS (NANO BANANA vs FOTOS COLETADAS)
+================================================================================
+Quando o usuário definir o modo de fluxo de trabalho:
+
+MODO A: 'nano_banana_first' (GERAR PRIMEIRO NO NANO BANANA 2 / PRO):
+- O foco prioritário nesta etapa é a CRIAÇÃO DE NOVAS FOTOS DE CATÁLOGO no campo 'imagePrompt' (Nano Banana 2 / Imagen 3).
+- Crie descrições fotográficas ricas em detalhes visuais, estilo editorial de luxo, enquadramentos perfeitos, iluminação de estúdio profissional 8K, modelos profissionais interagindo com a peça e poses dinâmicas com o produto, prontas para gerar fotos inéditas de alta qualidade antes de animar os vídeos.
+- Os campos 'veoPrompt' e 'digenPrompt' devem indicar como dar vida e movimento fluído a ESSA NOVA IMAGEM que será gerada no Nano Banana.
+
+MODO B: 'direct_collected' (USAR FOTOS COLETADAS DO PRODUTO):
+- Os prompts visuais e cinematográficos devem utilizar diretamente as imagens originais já coletadas do produto como referência de cena final, adaptando a iluminação e câmera para destacar o produto real exatamente como ele é nas fotos enviadas.
 `;
 
 export class AIProvidersManager {

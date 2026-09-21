@@ -591,6 +591,42 @@ if (!gotTheLock) {
       callback({ cancel: false });
     });
 
+    // Configurar a sessão 100% anônima e deslogada para o Buscador de Virais
+    const viralsSession = session.fromPartition('virals_search_anonymous');
+    viralsSession.setUserAgent(CHROME_USER_AGENT);
+
+    viralsSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const requestHeaders = { ...details.requestHeaders };
+      requestHeaders['User-Agent'] = CHROME_USER_AGENT;
+      delete requestHeaders['X-Electron'];
+      callback({ requestHeaders });
+    });
+
+    viralsSession.webRequest.onBeforeRequest((details, callback) => {
+      const url = details.url.toLowerCase();
+      if (
+        url.startsWith('bytedance:') ||
+        url.startsWith('tiktok:') ||
+        url.startsWith('snssdk') ||
+        url.startsWith('intent:')
+      ) {
+        callback({ cancel: true });
+        return;
+      }
+      callback({ cancel: false });
+    });
+
+    ipcMain.handle('virals:clear-session', async () => {
+      try {
+        console.log('[Main] Limpando dados da sessão anônima de virais...');
+        await viralsSession.clearStorageData();
+        return { success: true };
+      } catch (err: any) {
+        console.error('[Main] Erro ao limpar sessão de virais:', err);
+        return { success: false, error: err.message };
+      }
+    });
+
     // Proteger todas as webContents criadas (inclusive <webview> e janelas filhas)
     app.on('web-contents-created', (_event, contents) => {
       contents.setWindowOpenHandler((details) => {

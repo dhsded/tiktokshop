@@ -95,7 +95,7 @@ import {
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 interface VersionEntry {
   version: string;
@@ -105,6 +105,19 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.7.0',
+    date: '21/09/2026',
+    title: 'Buscador de Virais Anônimo, Validação de Produto & Fluxo Nano Banana',
+    changes: [
+      'Novo: Buscador de Virais opera em partição anônima 100% isolada e deslogada, sem carregar conta de vendedor',
+      'Novo: Análise semântica e validação de correspondência de produto (🟢 Match Exato vs 🟡 Variação)',
+      'Novo: Filtro dedicado "Apenas Match Exato" e métrica consolidada de correspondência',
+      'Novo: Chips de termos sugeridos para refinar buscas com palavras-chave dinâmicas',
+      'Novo: Seletor de Fluxo de Imagens e Vídeos: "Fotos Coletadas Diretamente" vs "Nano Banana Primeiro"',
+      'Novo: Diretriz #4 na inteligência artificial para orquestração do pipeline em dois estágios'
+    ],
+  },
   {
     version: '1.6.0',
     date: '21/09/2026',
@@ -1246,6 +1259,7 @@ function MainApp() {
   const [activeSequenceIndex, setActiveSequenceIndex] = useState(0);
   const [videoStyle, setVideoStyle] = useState<'standard' | 'pov'>('standard');
   const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'none'>('female');
+  const [imageWorkflowMode, setImageWorkflowMode] = useState<'direct_collected' | 'nano_banana_first'>('direct_collected');
   const modelInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
 
@@ -2315,6 +2329,7 @@ function MainApp() {
       includeInPrompt: boolean;
     } | null;
     productDescription?: string;
+    imageWorkflowMode?: 'direct_collected' | 'nano_banana_first';
   }
 
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -2798,7 +2813,8 @@ function MainApp() {
           generatedAngles,
           injectionTarget,
           targetConfigs,
-          productReviews
+          productReviews,
+          imageWorkflowMode
         };
       }
       return proj;
@@ -2820,7 +2836,8 @@ function MainApp() {
     generatedAngles,
     injectionTarget,
     targetConfigs,
-    productReviews
+    productReviews,
+    imageWorkflowMode
   ]);
 
   const loadProject = (proj: ProjectItem) => {
@@ -2834,6 +2851,7 @@ function MainApp() {
     setNumScenes(proj.numScenes);
     setVideoStyle(proj.videoStyle);
     setVoiceGender(proj.voiceGender);
+    setImageWorkflowMode(proj.imageWorkflowMode || 'direct_collected');
     setObservations(proj.observations);
     setDuration(proj.duration);
     setGeneratedScript(proj.generatedScript);
@@ -2863,6 +2881,7 @@ function MainApp() {
       numScenes: 3,
       videoStyle: 'standard',
       voiceGender: 'female',
+      imageWorkflowMode: 'direct_collected',
       observations: '',
       duration: DURATIONS[0],
       generatedScript: null,
@@ -3551,6 +3570,16 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
 4. PROMPTS DE VÍDEO (veoPrompt e digenPrompt): Oriente as ações do apresentador e os movimentos de câmera para demonstrar visualmente e em close exatamente os aspectos que os clientes mais elogiaram.\n`
         : '';
 
+      const workflowInstruction = imageWorkflowMode === 'nano_banana_first'
+        ? `\n🎨 FLUXO DE PRODUÇÃO SELECIONADO: CRIAR NOVAS FOTOS NO NANO BANANA 2 PRIMEIRO (PIPELINE DE DOIS ESTÁGIOS)
+- O usuário escolheu expressamente gerar primeiro cada prompt de imagem no Nano Banana 2 / Imagen 3 para criar fotos novas de estúdio e catálogo antes dos vídeos.
+- No campo 'imagePrompt': Crie prompts ultra-detalhados para o Nano Banana 2 gerar fotografias estáticas profissionais de alta costura e estúdio comercial baseadas no produto.
+- Nos campos 'veoPrompt' e 'digenPrompt': Construa os prompts de animação e vídeo especificando que a animação parte destas NOVAS imagens criadas no Nano Banana (não das fotos originais brutas coletadas).\n`
+        : `\n📸 FLUXO DE PRODUÇÃO SELECIONADO: USAR FOTOS COLETADAS DIRETAMENTE NO VÍDEO (FLUXO DIRETO)
+- O usuário escolheu criar os prompts de vídeo diretamente a partir das imagens já coletadas do produto.
+- No campo 'imagePrompt': Crie prompts de imagem de backup consistentes com as fotos originais.
+- Nos campos 'veoPrompt' e 'digenPrompt': Construa os prompts de animação e movimentação de câmera direcionados diretamente para as fotos já coletadas do produto (referenciadas em 'imageName').\n`;
+
       const humanVoiceGuidelines = `
 🗣️ DIRETRIZES DE HUMANIZAÇÃO DAS FALAS EM PT-BR (100% CRIADOR DO TIKTOK):
 - ORALIDADE REAL: Escreva exatamente como uma pessoa real brasileira fala em vídeos espontâneos do TikTok ou áudios para amigos. Use contrações e termos naturais ("tá", "pra", "olha isso", "gente", "cê não tem noção", "sério mesmo", "dá uma olhada", "olha o detalhe disso", "eu precisava mostrar isso pra vocês").
@@ -3594,6 +3623,8 @@ ${productDescriptionInstruction}
 ${reviewsInstruction}
 
 ${platformInstruction}
+
+${workflowInstruction}
 
 ${styleInstruction}
 
@@ -3815,6 +3846,16 @@ ${productReviews.rating ? `- Avaliação Média dos Compradores: ${productReview
   Model/Action: [Comportamento do avatar e gestos] | Dialogue: '[Fala exata em PT-BR]' | Background Music: [Trilha comercial moderna].
 - NANO BANANA 2 ('imagePrompt'): Em inglês. Fotografia estática hiper-realista 8K, padrão editorial de moda / catálogo de luxo, iluminação tridimensional suave.`;
 
+      const workflowInstruction = imageWorkflowMode === 'nano_banana_first'
+        ? `\n🎨 FLUXO DE PRODUÇÃO SELECIONADO: CRIAR NOVAS FOTOS NO NANO BANANA 2 PRIMEIRO (PIPELINE DE DOIS ESTÁGIOS)
+- O usuário escolheu expressamente gerar primeiro cada prompt de imagem no Nano Banana 2 / Imagen 3 para criar fotos novas de estúdio e catálogo antes dos vídeos.
+- No campo 'imagePrompt': Crie prompts ultra-detalhados para o Nano Banana 2 gerar fotografias estáticas profissionais de alta costura e estúdio comercial baseadas nas roupas das fotos.
+- Nos campos 'veoPrompt' e 'digenPrompt': Construa os prompts de animação e vídeo especificando que a animação parte destas NOVAS imagens criadas no Nano Banana (não das fotos originais brutas coletadas).\n`
+        : `\n📸 FLUXO DE PRODUÇÃO SELECIONADO: USAR FOTOS COLETADAS DIRETAMENTE NO VÍDEO (FLUXO DIRETO)
+- O usuário escolheu criar os prompts de vídeo diretamente a partir das imagens já coletadas da coleção.
+- No campo 'imagePrompt': Crie prompts de imagem de backup consistentes com as fotos originais.
+- Nos campos 'veoPrompt' e 'digenPrompt': Construa os prompts de animação e movimentação de câmera direcionados diretamente para as fotos já coletadas (referenciadas em 'imageName').\n`;
+
       const response = await executeUnifiedAI({
         parts: [
           ...imageParts,
@@ -3827,6 +3868,8 @@ Observações específicas: ${observations || "Seguir estilo padrão de alta cos
 ${reviewsInstruction}
 
 ${platformInstruction}
+
+${workflowInstruction}
 
 ${voiceInstruction}
 
@@ -4950,6 +4993,55 @@ Angulos a variar (escolha os mais relevantes para o produto):
                       </button>
                     </div>
                   </div>
+
+                  {/* Sequência do Fluxo de Imagens e Vídeos */}
+                  <div className="space-y-2.5 pt-4 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        Sequência do Fluxo (Fotos & Vídeos)
+                      </label>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20">
+                        {imageWorkflowMode === 'nano_banana_first' ? 'Dois Estágios' : 'Direto'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setImageWorkflowMode('direct_collected')}
+                        className={`p-2.5 rounded-xl text-left transition-all flex flex-col gap-1 cursor-pointer ${
+                          imageWorkflowMode === 'direct_collected'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <span>📸 Fotos Coletadas</span>
+                          {imageWorkflowMode === 'direct_collected' && <Check className="w-3 h-3" />}
+                        </span>
+                        <span className={`text-[10px] leading-tight ${imageWorkflowMode === 'direct_collected' ? 'text-white/80' : 'text-white/40'}`}>
+                          Usa as fotos já coletadas diretamente para animar os vídeos.
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImageWorkflowMode('nano_banana_first')}
+                        className={`p-2.5 rounded-xl text-left transition-all flex flex-col gap-1 cursor-pointer ${
+                          imageWorkflowMode === 'nano_banana_first'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                            : 'text-white/60 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <span>🍌 Nano Banana Primeiro</span>
+                          {imageWorkflowMode === 'nano_banana_first' && <Check className="w-3 h-3" />}
+                        </span>
+                        <span className={`text-[10px] leading-tight ${imageWorkflowMode === 'nano_banana_first' ? 'text-white/80' : 'text-white/40'}`}>
+                          Cria fotos novas no Nano Banana 2 antes; vídeos usam as novas fotos.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                 </section>
               </>
             ) : (
@@ -5183,6 +5275,55 @@ Angulos a variar (escolha os mais relevantes para o produto):
                           }`}
                         >
                           <span>Sem Narração</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sequência do Fluxo de Imagens e Vídeos */}
+                    <div className="space-y-2.5 pt-2 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs uppercase tracking-widest text-white/40 font-bold flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          Sequência do Fluxo (Fotos & Vídeos)
+                        </label>
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20">
+                          {imageWorkflowMode === 'nano_banana_first' ? 'Dois Estágios' : 'Direto'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setImageWorkflowMode('direct_collected')}
+                          className={`p-2.5 rounded-xl text-left transition-all flex flex-col gap-1 cursor-pointer ${
+                            imageWorkflowMode === 'direct_collected'
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold flex items-center gap-1.5">
+                            <span>📸 Fotos Coletadas</span>
+                            {imageWorkflowMode === 'direct_collected' && <Check className="w-3 h-3" />}
+                          </span>
+                          <span className={`text-[10px] leading-tight ${imageWorkflowMode === 'direct_collected' ? 'text-white/80' : 'text-white/40'}`}>
+                            Usa as fotos já coletadas diretamente para animar os vídeos.
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImageWorkflowMode('nano_banana_first')}
+                          className={`p-2.5 rounded-xl text-left transition-all flex flex-col gap-1 cursor-pointer ${
+                            imageWorkflowMode === 'nano_banana_first'
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                              : 'text-white/60 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-bold flex items-center gap-1.5">
+                            <span>🍌 Nano Banana Primeiro</span>
+                            {imageWorkflowMode === 'nano_banana_first' && <Check className="w-3 h-3" />}
+                          </span>
+                          <span className={`text-[10px] leading-tight ${imageWorkflowMode === 'nano_banana_first' ? 'text-white/80' : 'text-white/40'}`}>
+                            Cria fotos novas no Nano Banana 2 antes; vídeos usam as novas fotos.
+                          </span>
                         </button>
                       </div>
                     </div>
