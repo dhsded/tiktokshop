@@ -282,10 +282,11 @@ declare global {
       fetchImageAsBase64: (url: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; error?: string }>;
       clearViralsSession?: () => Promise<{ success: boolean; error?: string }>;
       // Estúdio de Curadoria & Melhores Vídeos
-      curatorScanFolder?: (folderPath?: string) => Promise<{ success: boolean; folderPath?: string; files: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }>; error?: string }>;
+      curatorScanFolder?: (folderPath?: string) => Promise<{ success: boolean; folderPath?: string; files: Array<{ name: string; fullPath: string; url?: string; thumbnailUrl?: string; sizeBytes: number; modifiedAt: number }>; error?: string }>;
       curatorSelectFolder?: () => Promise<{ canceled: boolean; folderPath?: string }>;
       curatorExportFinalCut?: (payload: any) => Promise<{ success: boolean; destFolder?: string; exportedFilesCount?: number; reportPath?: string; error?: string }>;
       curatorGetMediaUrl?: (filePath: string) => Promise<string>;
+      curatorGetThumbnail?: (filePath: string) => Promise<string>;
     };
   }
 }

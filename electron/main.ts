@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol, dialog, net } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol, dialog, net, nativeImage } from 'electron';
 import { join } from 'path';
 import path from 'path';
 import fs from 'fs';
@@ -868,7 +868,7 @@ if (!gotTheLock) {
       }
 
       const validVideoExts = ['.mp4', '.webm', '.mov', '.mkv', '.avi'];
-      const allFiles: Array<{ name: string; fullPath: string; url: string; sizeBytes: number; modifiedAt: number }> = [];
+      const allFiles: Array<{ name: string; fullPath: string; url: string; thumbnailUrl: string; sizeBytes: number; modifiedAt: number }> = [];
 
       try {
         const items = fs.readdirSync(targetDir);
@@ -879,10 +879,19 @@ if (!gotTheLock) {
             const stat = fs.statSync(full);
             // Escanear arquivos diretos de vídeo da pasta selecionada (sem misturar outras pastas)
             if (!stat.isDirectory() && validVideoExts.includes(path.extname(item).toLowerCase())) {
+              let thumbUrl = '';
+              try {
+                const thumbImage = await nativeImage.createThumbnailFromPath(full, { width: 360, height: 640 });
+                thumbUrl = thumbImage.toDataURL();
+              } catch (thErr) {
+                console.warn('[curator] Falha ao gerar thumbnail nativo:', thErr);
+              }
+
               allFiles.push({
                 name: item,
                 fullPath: full,
                 url: getLocalMediaUrl(full),
+                thumbnailUrl: thumbUrl,
                 sizeBytes: stat.size,
                 modifiedAt: stat.mtimeMs
               });
@@ -897,6 +906,15 @@ if (!gotTheLock) {
       allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
 
       return { success: true, folderPath: targetDir, files: allFiles };
+    });
+
+    ipcMain.handle('curator:get-thumbnail', async (_event, filePath: string) => {
+      try {
+        const thumbImage = await nativeImage.createThumbnailFromPath(filePath, { width: 360, height: 640 });
+        return thumbImage.toDataURL();
+      } catch (e) {
+        return '';
+      }
     });
 
     ipcMain.handle('curator:get-media-url', (_event, filePath: string) => {

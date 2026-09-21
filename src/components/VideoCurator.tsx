@@ -50,6 +50,7 @@ export interface VideoTakeItem {
   name: string;
   fullPath: string;
   url: string;
+  thumbnailUrl?: string; // Thumbnail nativo em alta definição
   sizeBytes: number;
   modifiedAt: number;
   assignedSceneIndex: number; // 1, 2, 3... ou 0 para não atribuído
@@ -286,6 +287,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
         name: f.name,
         fullPath: f.fullPath,
         url: videoUrl,
+        thumbnailUrl: (f as any).thumbnailUrl || '',
         sizeBytes: f.sizeBytes,
         modifiedAt: f.modifiedAt,
         assignedSceneIndex: assignedScene,
@@ -342,7 +344,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       const take = updated[i];
       try {
         // Análise de qualidade do vídeo (Canvas / Variância Laplaciana / 9:16)
-        const qualityRes = await analyzeVideoQuality(take.url);
+        const qualityRes = await analyzeVideoQuality(take.url, take.thumbnailUrl);
         take.quality = qualityRes;
 
         // Análise de áudio e voz (Web Audio API / FFT / Pitch F0)
@@ -1150,7 +1152,8 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               <div className="bg-black flex items-center justify-center max-h-[65vh]">
                 <video
                   src={activePreviewTake.url}
-                  poster={activePreviewTake.quality?.keyframes?.[0] || ''}
+                  poster={activePreviewTake.thumbnailUrl || activePreviewTake.quality?.keyframes?.[0] || ''}
+                  crossOrigin="anonymous"
                   preload="metadata"
                   controls
                   autoPlay
@@ -1220,7 +1223,8 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
                 <video
                   key={winningTakes[fullCutCurrentIndex]?.take.id}
                   src={winningTakes[fullCutCurrentIndex]?.take.url}
-                  poster={winningTakes[fullCutCurrentIndex]?.take.quality?.keyframes?.[0] || ''}
+                  poster={winningTakes[fullCutCurrentIndex]?.take.thumbnailUrl || winningTakes[fullCutCurrentIndex]?.take.quality?.keyframes?.[0] || ''}
+                  crossOrigin="anonymous"
                   preload="metadata"
                   autoPlay
                   controls
@@ -1330,6 +1334,7 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
 
   const score = take.quality?.overallScore || 80;
   const isWinner = take.isWinner;
+  const thumb = take.thumbnailUrl || take.quality?.keyframes?.[0] || '';
 
   return (
     <div 
@@ -1390,10 +1395,10 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
 
       {/* Player de Vídeo com Preview Instantâneo do Frame */}
       <div className="relative aspect-[9/14] bg-black group overflow-hidden">
-        {/* Preview do Frame capturado em canvas (visível por padrão até dar play) */}
-        {take.quality?.keyframes?.[0] && !isPlaying && (
+        {/* Preview do Frame capturado em alta definição (visível por padrão até dar play) */}
+        {thumb && !isPlaying && (
           <img
-            src={take.quality.keyframes[0]}
+            src={thumb}
             alt={take.name}
             className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none"
           />
@@ -1403,7 +1408,8 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         <video
           ref={videoRef}
           src={take.url}
-          poster={take.quality?.keyframes?.[0] || ''}
+          poster={thumb}
+          crossOrigin="anonymous"
           preload="metadata"
           loop
           muted={isMuted}
@@ -1416,7 +1422,7 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         />
 
         {/* Indicador de processamento enquanto analisa */}
-        {take.analyzing && !take.quality?.keyframes?.[0] && (
+        {take.analyzing && !thumb && (
           <div className="absolute inset-0 z-15 bg-zinc-900/90 flex flex-col items-center justify-center gap-2 text-white">
             <RefreshCw className="w-6 h-6 text-orange-500 animate-spin" />
             <span className="text-[11px] font-bold tracking-wide">Gerando preview...</span>
