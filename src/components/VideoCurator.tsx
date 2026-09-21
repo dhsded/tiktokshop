@@ -36,7 +36,10 @@ import {
   Info,
   Clock,
   Mic,
-  Tag
+  Tag,
+  Search,
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { analyzeAudioFromUrl, AudioAnalysisResult, compareVoiceprints, VoiceMatchResult } from '../services/audio-analyzer';
 import { analyzeVideoQuality, VideoQualityResult } from '../services/video-quality-analyzer';
@@ -76,11 +79,30 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 }) => {
   const isDark = themeMode === 'dark';
 
+  // Paleta de cores explícita para imunidade total a resets de CSS
+  const theme = {
+    cardBg: isDark ? '#18181b' : '#ffffff',
+    cardBorder: isDark ? '#27272a' : '#e2e8f0',
+    cardInnerBg: isDark ? '#111113' : '#f8fafc',
+    textTitle: isDark ? '#ffffff' : '#0f172a',
+    textMuted: isDark ? '#94a3b8' : '#64748b',
+    textBody: isDark ? '#e4e4e7' : '#1e293b',
+    pillBg: isDark ? '#27272a' : '#f1f5f9',
+    pillBorder: isDark ? '#3f3f46' : '#cbd5e1',
+    pillText: isDark ? '#e4e4e7' : '#334155',
+    tabInactiveBg: isDark ? '#18181b' : '#ffffff',
+    tabInactiveBorder: isDark ? '#27272a' : '#cbd5e1',
+    tabInactiveText: isDark ? '#a1a1aa' : '#475569',
+    dockedBg: isDark ? 'rgba(24, 24, 27, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+    dockedBorder: isDark ? '#3f3f46' : '#cbd5e1',
+  };
+
   // Estados principais
   const [folderPath, setFolderPath] = useState<string>('');
   const [takes, setTakes] = useState<VideoTakeItem[]>([]);
   const [isLoadingVideos, setIsLoadingVideos] = useState<boolean>(false);
   const [selectedSceneTab, setSelectedSceneTab] = useState<number>(0); // 0 = Todas as cenas
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [showScenePrompts, setShowScenePrompts] = useState<boolean>(true);
 
@@ -152,32 +174,27 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
     }
   };
 
-  // Mapeamento inteligente de arquivos para cenas (baseado em nomes como cena1_1.mp4)
+  // Mapeamento inteligente de arquivos (apenas quando houver indicação explícita de cena)
   const mapAndImportFiles = (files: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }>, baseDir: string) => {
     const newTakes: VideoTakeItem[] = files.map((f, idx) => {
       const lower = f.name.toLowerCase();
       let assignedScene = 0;
 
-      // Heurística de matching por nome
-      if (lower.includes('cena1') || lower.includes('cena01') || lower.includes('scene1') || lower.includes('hook')) {
+      // Matching estrito para NÃO misturar vídeos aleatórios com cenas
+      if (/(?:cena|scene|take)[\s_\-]*0?1\b|hook/i.test(lower)) {
         assignedScene = 1;
-      } else if (lower.includes('cena2') || lower.includes('cena02') || lower.includes('scene2') || lower.includes('problema')) {
+      } else if (/(?:cena|scene|take)[\s_\-]*0?2\b|problema/i.test(lower)) {
         assignedScene = 2;
-      } else if (lower.includes('cena3') || lower.includes('cena03') || lower.includes('scene3') || lower.includes('solucao')) {
+      } else if (/(?:cena|scene|take)[\s_\-]*0?3\b|solucao|oferta/i.test(lower)) {
         assignedScene = 3;
-      } else if (lower.includes('cena4') || lower.includes('cena04') || lower.includes('scene4')) {
+      } else if (/(?:cena|scene|take)[\s_\-]*0?4\b|beneficio/i.test(lower)) {
         assignedScene = 4;
-      } else if (lower.includes('cena5') || lower.includes('cena05') || lower.includes('scene5') || lower.includes('cta')) {
+      } else if (/(?:cena|scene|take)[\s_\-]*0?5\b|cta/i.test(lower)) {
         assignedScene = 5;
-      } else {
-        // Se houver número isolado no nome ex: 1_xxx ou 2_xxx
-        const match = lower.match(/(?:^|[_\-\s])0?([1-9])(?:[_\-\s]|\.|$)/);
-        if (match && Number(match[1]) <= scriptScenes.length) {
-          assignedScene = Number(match[1]);
-        }
       }
+      // Vídeos sem prefixo claro de cena ficam como "Não Classificados" (0)
 
-      // URL segura do protocolo local-video:// ou file:///
+      // URL segura com Range Streaming no protocolo local-video://
       const cleanPath = f.fullPath.replace(/\\/g, '/');
       const videoUrl = `local-video://${cleanPath}`;
 
@@ -202,7 +219,6 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
   // Análise em lote nativa (100% no cliente sem gastar IA)
   const processBatchAnalysis = async (takesToProcess: VideoTakeItem[]) => {
-    // 1. Processar cada take
     const updated = [...takesToProcess];
 
     for (let i = 0; i < updated.length; i++) {
@@ -224,23 +240,22 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       }
     }
 
-    // 2. Definir Take de referência vocal (primeiro take válido da Cena 1 ou vencedor)
+    // Definir Take de referência vocal (primeiro take válido da Cena 1 ou vencedor)
     const refTake = updated.find(t => t.assignedSceneIndex === 1 && t.audio?.hasAudio) || updated.find(t => t.audio?.hasAudio);
     const refAudio = refTake?.audio || null;
 
-    // 3. Comparar consistência vocal de todos os takes com a referência
+    // Comparar consistência vocal de todos os takes com a referência
     for (const take of updated) {
       if (take.audio) {
         take.voiceMatch = compareVoiceprints(refAudio, take.audio);
       }
     }
 
-    // 4. Marcar automaticamente o melhor take por cena se ainda não houver vencedor
+    // Marcar automaticamente o melhor take por cena se ainda não houver vencedor
     for (let s = 1; s <= scriptScenes.length; s++) {
       const sceneTakes = updated.filter(t => t.assignedSceneIndex === s);
       const hasWinner = sceneTakes.some(t => t.isWinner);
       if (!hasWinner && sceneTakes.length > 0) {
-        // Ordena pelo maior score técnico de qualidade
         sceneTakes.sort((a, b) => (b.quality?.overallScore || 0) - (a.quality?.overallScore || 0));
         sceneTakes[0].isWinner = true;
       }
@@ -259,7 +274,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
     }
   };
 
-  // Upload Manual via Input de Arquivo (suporta arrastar ou escolher múltiplos vídeos)
+  // Upload Manual via Input de Arquivo
   const handleManualVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -269,9 +284,9 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       const lower = file.name.toLowerCase();
       let assigned = 0;
 
-      if (lower.includes('cena1') || lower.includes('cena01')) assigned = 1;
-      else if (lower.includes('cena2') || lower.includes('cena02')) assigned = 2;
-      else if (lower.includes('cena3') || lower.includes('cena03')) assigned = 3;
+      if (/(?:cena|scene|take)[\s_\-]*0?1\b|hook/i.test(lower)) assigned = 1;
+      else if (/(?:cena|scene|take)[\s_\-]*0?2\b|problema/i.test(lower)) assigned = 2;
+      else if (/(?:cena|scene|take)[\s_\-]*0?3\b|solucao/i.test(lower)) assigned = 3;
 
       return {
         id: `manual_${Date.now()}_${idx}`,
@@ -314,12 +329,18 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
     }));
   };
 
+  // Limpar lista de vídeos da tela
+  const handleClearList = () => {
+    if (window.confirm('Deseja limpar a lista de vídeos da tela atual?')) {
+      setTakes([]);
+    }
+  };
+
   // Consultar Parecer Criativo Opcional com I.A (Gemini 2.0 Flash)
   const handleRequestAIReview = async (take: VideoTakeItem) => {
     if (!take.quality) return;
 
     setTakes(prev => prev.map(t => t.id === take.id ? { ...t, analyzing: true } : t));
-
     const scene = scriptScenes[take.assignedSceneIndex - 1] || scriptScenes[0];
 
     try {
@@ -430,85 +451,111 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
     }
   };
 
-  // Filtragem de takes pela aba de cena ativa
+  // Filtragem de takes pela aba de cena ativa e termo de busca
   const filteredTakes = useMemo(() => {
-    if (selectedSceneTab === 0) return takes;
-    if (selectedSceneTab === -1) return takes.filter(t => t.assignedSceneIndex === 0);
-    return takes.filter(t => t.assignedSceneIndex === selectedSceneTab);
-  }, [takes, selectedSceneTab]);
+    let list = takes;
+    if (selectedSceneTab > 0) {
+      list = list.filter(t => t.assignedSceneIndex === selectedSceneTab);
+    } else if (selectedSceneTab === -1) {
+      list = list.filter(t => t.assignedSceneIndex === 0);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(t => t.name.toLowerCase().includes(q));
+    }
+
+    return list;
+  }, [takes, selectedSceneTab, searchQuery]);
 
   return (
-    <div className={`w-full max-w-7xl mx-auto space-y-8 transition-colors duration-300 ${isDark ? 'text-zinc-100' : 'text-slate-800'}`}>
+    <div className="w-full max-w-7xl mx-auto space-y-8 transition-colors duration-200">
       
-      {/* 1. Header do Estúdio de Curadoria */}
-      <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl relative overflow-hidden ${
-        isDark ? 'bg-zinc-900/90 border-zinc-800/80 shadow-black/40' : 'bg-white border-slate-200/90 shadow-slate-200/50'
-      }`}>
+      {/* 1. Header do Estúdio de Curadoria com Contraste Perfeito */}
+      <div 
+        className="p-6 sm:p-8 rounded-3xl border shadow-lg relative overflow-hidden"
+        style={{
+          backgroundColor: theme.cardBg,
+          borderColor: theme.cardBorder,
+          color: theme.textBody
+        }}
+      >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25 shrink-0">
                 <Film className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+                <h1 
+                  className="text-2xl sm:text-3xl font-black tracking-tight"
+                  style={{ color: theme.textTitle }}
+                >
                   Curador & Melhores Vídeos
                 </h1>
-                <p className={`text-xs sm:text-sm ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
-                  Classificação inteligente de qualidade, coerência de voz (Web Audio API) e montagem final para TikTok Shop.
+                <p 
+                  className="text-xs sm:text-sm mt-0.5"
+                  style={{ color: theme.textMuted }}
+                >
+                  Auditoria inteligente de qualidade, consistência de voz (Web Audio API) e montagem final para TikTok Shop.
                 </p>
               </div>
             </div>
 
-            {/* Informações de voz e campanha */}
+            {/* Pílulas de informações do projeto e voz */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
-                isDark ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-700'
-              }`}>
-                <Tag className="w-3.5 h-3.5 text-orange-400" />
-                Projeto: <strong className="text-orange-400">{generatedScript?.campaignTitle || 'TikTok Shop Campanha'}</strong>
+              <span 
+                className="px-3 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 border"
+                style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder, color: theme.pillText }}
+              >
+                <Tag className="w-3.5 h-3.5 text-orange-500" />
+                Projeto: <strong className="text-orange-500">{generatedScript?.campaignTitle || 'TikTok Shop Campanha'}</strong>
               </span>
 
-              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
-                isDark ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-700'
-              }`}>
-                <Mic className="w-3.5 h-3.5 text-emerald-400" />
-                Padrão de Voz: <strong className="text-emerald-400">{voiceGender || 'Feminino'} ({voiceTone || 'Entusiasta'})</strong>
+              <span 
+                className="px-3 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 border"
+                style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder, color: theme.pillText }}
+              >
+                <Mic className="w-3.5 h-3.5 text-emerald-500" />
+                Padrão de Voz: <strong className="text-emerald-500">{voiceGender || 'Feminino'} ({voiceTone || 'Entusiasta'})</strong>
               </span>
 
-              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
-                isDark ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-700'
-              }`}>
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                Inteligência: <strong>100% Nativa no Código (Instantânea & Gratuita)</strong>
+              <span 
+                className="px-3 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 border"
+                style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder, color: theme.pillText }}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Inteligência: <strong>100% Nativa (Instantânea & Gratuita)</strong>
               </span>
             </div>
           </div>
 
-          {/* Controles de Pasta e Ações */}
+          {/* Botões de Ação da Pasta */}
           <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
             <button
               onClick={handleSelectFolder}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border ${
-                isDark 
-                  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700' 
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-              }`}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border shadow-sm"
+              style={{
+                backgroundColor: isDark ? '#27272a' : '#f8fafc',
+                borderColor: theme.cardBorder,
+                color: theme.textTitle
+              }}
             >
-              <FolderOpen className="w-4 h-4 text-orange-400" />
+              <FolderOpen className="w-4 h-4 text-orange-500" />
               <span>Alterar Pasta</span>
             </button>
 
             <button
               onClick={() => scanFolder(folderPath)}
               disabled={isLoadingVideos}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border ${
-                isDark 
-                  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700' 
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-              }`}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border shadow-sm"
+              style={{
+                backgroundColor: isDark ? '#27272a' : '#f8fafc',
+                borderColor: theme.cardBorder,
+                color: theme.textTitle
+              }}
             >
-              <RefreshCw className={`w-4 h-4 text-amber-400 ${isLoadingVideos ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 text-amber-500 ${isLoadingVideos ? 'animate-spin' : ''}`} />
               <span>Reescanear</span>
             </button>
 
@@ -528,15 +575,33 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
         {/* Linha indicadora do caminho da pasta */}
         {folderPath && (
-          <div className={`mt-4 pt-4 border-t flex items-center gap-2 text-xs truncate ${
-            isDark ? 'border-zinc-800 text-zinc-400' : 'border-slate-100 text-slate-500'
-          }`}>
-            <Folder className="w-3.5 h-3.5 shrink-0 text-orange-400" />
-            <span className="shrink-0 font-medium">Pasta Ativa:</span>
-            <span className="truncate font-mono text-[11px] opacity-80">{folderPath}</span>
-            <span className="shrink-0 ml-auto font-bold text-orange-400">
-              {takes.length} {takes.length === 1 ? 'vídeo encontrado' : 'vídeos encontrados'}
-            </span>
+          <div 
+            className="mt-5 pt-4 border-t flex flex-wrap items-center justify-between gap-3 text-xs"
+            style={{ borderColor: theme.cardBorder }}
+          >
+            <div className="flex items-center gap-2 truncate max-w-xl">
+              <Folder className="w-4 h-4 shrink-0 text-orange-500" />
+              <span className="shrink-0 font-medium" style={{ color: theme.textMuted }}>Pasta Selecionada:</span>
+              <span className="truncate font-mono text-[11px] font-bold" style={{ color: theme.textTitle }}>
+                {folderPath}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-orange-500">
+                {takes.length} {takes.length === 1 ? 'vídeo nesta pasta' : 'vídeos nesta pasta'}
+              </span>
+              {takes.length > 0 && (
+                <button
+                  onClick={handleClearList}
+                  className="text-[11px] font-bold text-rose-500 hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Limpar vídeos da tela"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Limpar</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -551,19 +616,19 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
             className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-4"
           >
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0" />
               <div>
-                <h4 className="text-sm font-bold text-emerald-400">
+                <h4 className="text-sm font-bold text-emerald-500">
                   Corte Final Exportado com Sucesso! ({exportSuccessNotice.count} Cenas)
                 </h4>
-                <p className="text-xs opacity-90 truncate max-w-2xl">
+                <p className="text-xs opacity-90 truncate max-w-2xl" style={{ color: theme.textTitle }}>
                   Arquivos organizados e renomeados em: {exportSuccessNotice.folder}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setExportSuccessNotice(null)}
-              className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-300"
+              className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-600"
             >
               <X className="w-4 h-4" />
             </button>
@@ -571,19 +636,23 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 2. Barra de Navegação por Cenas (Tabs) */}
-      <div className="flex items-center justify-between border-b pb-4 gap-4 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-2 shrink-0">
+      {/* 2. Barra de Navegação por Cenas (Tabs) & Busca */}
+      <div 
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b pb-4 gap-4"
+        style={{ borderColor: theme.cardBorder }}
+      >
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto pb-1 sm:pb-0">
           <button
             onClick={() => setSelectedSceneTab(0)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedSceneTab === 0
-                ? 'bg-orange-500 text-white shadow-md shadow-orange-500/25'
-                : isDark ? 'bg-zinc-800/80 text-zinc-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-            }`}
+            className="px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border shadow-sm"
+            style={{
+              backgroundColor: selectedSceneTab === 0 ? '#f97316' : theme.tabInactiveBg,
+              borderColor: selectedSceneTab === 0 ? '#ea580c' : theme.tabInactiveBorder,
+              color: selectedSceneTab === 0 ? '#ffffff' : theme.tabInactiveText
+            }}
           >
             <span>Todas as Cenas</span>
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono">
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono text-white">
               {takes.length}
             </span>
           </button>
@@ -597,23 +666,26 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               <button
                 key={scene.id || idx}
                 onClick={() => setSelectedSceneTab(sceneIndex)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
-                  selectedSceneTab === sceneIndex
-                    ? 'bg-orange-500 text-white border-orange-400 shadow-md shadow-orange-500/25'
-                    : isDark
-                      ? 'bg-zinc-800/60 text-zinc-400 border-zinc-700/60 hover:text-white'
-                      : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
-                }`}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border shadow-sm shrink-0"
+                style={{
+                  backgroundColor: selectedSceneTab === sceneIndex ? '#f97316' : theme.tabInactiveBg,
+                  borderColor: selectedSceneTab === sceneIndex ? '#ea580c' : theme.tabInactiveBorder,
+                  color: selectedSceneTab === sceneIndex ? '#ffffff' : theme.tabInactiveText
+                }}
               >
                 {hasWinner ? (
                   <Star className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
                 ) : (
-                  <span className="w-2 h-2 rounded-full bg-zinc-400" />
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
                 )}
                 <span>Cena {sceneIndex}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-                  count > 0 ? (isDark ? 'bg-zinc-700 text-zinc-200' : 'bg-slate-200 text-slate-800') : 'opacity-40'
-                }`}>
+                <span 
+                  className="px-1.5 py-0.5 rounded-full text-[10px] font-mono"
+                  style={{
+                    backgroundColor: selectedSceneTab === sceneIndex ? 'rgba(0,0,0,0.2)' : theme.pillBg,
+                    color: selectedSceneTab === sceneIndex ? '#ffffff' : theme.textTitle
+                  }}
+                >
                   {count}
                 </span>
               </button>
@@ -622,90 +694,144 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
           <button
             onClick={() => setSelectedSceneTab(-1)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedSceneTab === -1
-                ? 'bg-orange-500 text-white shadow-md'
-                : isDark ? 'bg-zinc-800/80 text-zinc-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-            }`}
+            className="px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border shadow-sm shrink-0"
+            style={{
+              backgroundColor: selectedSceneTab === -1 ? '#f97316' : theme.tabInactiveBg,
+              borderColor: selectedSceneTab === -1 ? '#ea580c' : theme.tabInactiveBorder,
+              color: selectedSceneTab === -1 ? '#ffffff' : theme.tabInactiveText
+            }}
           >
             <span>Não Classificados</span>
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono">
+            <span 
+              className="px-1.5 py-0.5 rounded-full text-[10px] font-mono"
+              style={{
+                backgroundColor: selectedSceneTab === -1 ? 'rgba(0,0,0,0.2)' : theme.pillBg,
+                color: selectedSceneTab === -1 ? '#ffffff' : theme.textTitle
+              }}
+            >
               {takes.filter(t => t.assignedSceneIndex === 0).length}
             </span>
           </button>
+        </div>
+
+        {/* Campo de Busca Rápida por Nome do Vídeo */}
+        <div className="relative w-full sm:w-64 shrink-0">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filtrar vídeos pelo nome..."
+            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border transition-all focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+            style={{
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+              color: theme.textTitle
+            }}
+          />
         </div>
       </div>
 
       {/* 3. Card de Contexto da Cena Atual (Prompts e Narração) */}
       {selectedSceneTab > 0 && selectedSceneTab <= scriptScenes.length && (
-        <div className={`p-5 rounded-2xl border transition-all ${
-          isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-slate-50 border-slate-200'
-        }`}>
-          <div className="flex items-center justify-between gap-4 cursor-pointer" onClick={() => setShowScenePrompts(!showScenePrompts)}>
+        <div 
+          className="p-5 rounded-2xl border transition-all shadow-sm"
+          style={{
+            backgroundColor: theme.cardInnerBg,
+            borderColor: theme.cardBorder,
+            color: theme.textBody
+          }}
+        >
+          <div 
+            className="flex items-center justify-between gap-4 cursor-pointer" 
+            onClick={() => setShowScenePrompts(!showScenePrompts)}
+          >
             <div className="flex items-center gap-3">
-              <span className="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 font-black text-sm flex items-center justify-center border border-orange-500/30">
+              <span className="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-500 font-black text-sm flex items-center justify-center border border-orange-500/30 shrink-0">
                 {selectedSceneTab}
               </span>
               <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
+                <h3 className="font-bold text-base flex items-center gap-2" style={{ color: theme.textTitle }}>
                   <span>Cena {selectedSceneTab}: {scriptScenes[selectedSceneTab - 1]?.description}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded font-normal ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-slate-200 text-slate-600'}`}>
+                  <span 
+                    className="text-xs px-2 py-0.5 rounded font-normal border"
+                    style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder, color: theme.pillText }}
+                  >
                     Duração: {scriptScenes[selectedSceneTab - 1]?.duration || '4s'}
                   </span>
                 </h3>
-                <p className={`text-xs mt-0.5 italic ${isDark ? 'text-zinc-400' : 'text-slate-600'}`}>
+                <p className="text-xs mt-0.5 italic" style={{ color: theme.textMuted }}>
                   "{scriptScenes[selectedSceneTab - 1]?.narration}"
                 </p>
               </div>
             </div>
 
-            <button className="text-xs font-bold flex items-center gap-1 text-orange-400 hover:underline">
+            <button className="text-xs font-bold flex items-center gap-1 text-orange-500 hover:underline shrink-0">
               <span>{showScenePrompts ? 'Ocultar Prompts' : 'Ver Prompts'}</span>
               {showScenePrompts ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
 
-          {/* Prompts originais expansíveis */}
+          {/* Prompts originais expansíveis com cores nítidas */}
           {showScenePrompts && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-zinc-800/50">
+            <div 
+              className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t"
+              style={{ borderColor: theme.cardBorder }}
+            >
               {/* Google VEO Prompt */}
-              <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
-                isDark ? 'bg-zinc-950/60 border-zinc-800/80' : 'bg-white border-slate-200'
-              }`}>
+              <div 
+                className="p-4 rounded-xl border text-xs space-y-2 shadow-sm"
+                style={{
+                  backgroundColor: theme.cardBg,
+                  borderColor: theme.cardBorder,
+                  color: theme.textBody
+                }}
+              >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-orange-400 flex items-center gap-1.5">
+                  <span className="font-bold text-orange-500 flex items-center gap-1.5">
                     <Video className="w-3.5 h-3.5" /> Google VEO Prompt
                   </span>
                   <button
                     onClick={() => copyToClipboard(scriptScenes[selectedSceneTab - 1]?.veoPrompt || '', `veo_${selectedSceneTab}`)}
-                    className="p-1 rounded hover:bg-orange-500/20 text-zinc-400 hover:text-orange-400 transition-colors"
+                    className="p-1 rounded hover:bg-orange-500/10 text-slate-400 hover:text-orange-500 transition-colors"
                     title="Copiar prompt VEO"
                   >
-                    {copiedPromptId === `veo_${selectedSceneTab}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedPromptId === `veo_${selectedSceneTab}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <p className={`font-mono text-[11px] leading-relaxed line-clamp-3 ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
+                <p 
+                  className="font-mono text-[11px] leading-relaxed line-clamp-3"
+                  style={{ color: theme.textBody }}
+                >
                   {scriptScenes[selectedSceneTab - 1]?.veoPrompt || 'Prompt VEO não informado'}
                 </p>
               </div>
 
               {/* DIGEN.ai Prompt */}
-              <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
-                isDark ? 'bg-zinc-950/60 border-zinc-800/80' : 'bg-white border-slate-200'
-              }`}>
+              <div 
+                className="p-4 rounded-xl border text-xs space-y-2 shadow-sm"
+                style={{
+                  backgroundColor: theme.cardBg,
+                  borderColor: theme.cardBorder,
+                  color: theme.textBody
+                }}
+              >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-amber-400 flex items-center gap-1.5">
+                  <span className="font-bold text-amber-500 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> DIGEN.ai (Apresentador)
                   </span>
                   <button
                     onClick={() => copyToClipboard(scriptScenes[selectedSceneTab - 1]?.digenPrompt || '', `digen_${selectedSceneTab}`)}
-                    className="p-1 rounded hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 transition-colors"
+                    className="p-1 rounded hover:bg-amber-500/10 text-slate-400 hover:text-amber-500 transition-colors"
                     title="Copiar prompt DIGEN"
                   >
-                    {copiedPromptId === `digen_${selectedSceneTab}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedPromptId === `digen_${selectedSceneTab}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <p className={`font-mono text-[11px] leading-relaxed line-clamp-3 ${isDark ? 'text-zinc-300' : 'text-slate-700'}`}>
+                <p 
+                  className="font-mono text-[11px] leading-relaxed line-clamp-3"
+                  style={{ color: theme.textBody }}
+                >
                   {scriptScenes[selectedSceneTab - 1]?.digenPrompt || 'Prompt DIGEN não informado'}
                 </p>
               </div>
@@ -716,13 +842,20 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
       {/* 4. Grid de Takes de Vídeo */}
       {filteredTakes.length === 0 ? (
-        <div className={`p-12 text-center rounded-3xl border border-dashed ${
-          isDark ? 'bg-zinc-900/30 border-zinc-800 text-zinc-400' : 'bg-slate-50 border-slate-300 text-slate-500'
-        }`}>
-          <Video className="w-12 h-12 mx-auto mb-3 opacity-30 text-orange-400" />
-          <h3 className="text-lg font-bold">Nenhum vídeo encontrado para este filtro</h3>
-          <p className="text-xs max-w-md mx-auto mt-1 mb-5">
-            Adicione vídeos gerados pelo Google VEO ou DIGEN clicando em "Adicionar Vídeos" ou selecione a pasta onde os arquivos foram salvos.
+        <div 
+          className="p-12 text-center rounded-3xl border border-dashed shadow-sm"
+          style={{
+            backgroundColor: theme.cardInnerBg,
+            borderColor: theme.cardBorder,
+            color: theme.textMuted
+          }}
+        >
+          <Video className="w-12 h-12 mx-auto mb-3 opacity-40 text-orange-500" />
+          <h3 className="text-lg font-bold" style={{ color: theme.textTitle }}>
+            Nenhum vídeo encontrado para este filtro
+          </h3>
+          <p className="text-xs max-w-md mx-auto mt-1 mb-5" style={{ color: theme.textMuted }}>
+            {searchQuery ? 'Nenhum vídeo coincide com o termo pesquisado.' : 'Clique em "Alterar Pasta" ou arraste vídeos gerados para esta tela.'}
           </p>
           <button
             onClick={handleSelectFolder}
@@ -739,6 +872,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               key={take.id}
               take={take}
               themeMode={themeMode}
+              theme={theme}
               scriptScenes={scriptScenes}
               onToggleWinner={() => toggleWinningTake(take.id, take.assignedSceneIndex)}
               onReassignScene={(newIdx) => reassignScene(take.id, newIdx)}
@@ -750,18 +884,23 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       )}
 
       {/* 5. Barra Fixa / Docked: Timeline do Corte Final */}
-      <div className={`sticky bottom-4 z-40 p-4 sm:p-5 rounded-2xl border shadow-2xl backdrop-blur-xl transition-all ${
-        isDark ? 'bg-zinc-900/95 border-zinc-700/80 shadow-black/80' : 'bg-white/95 border-slate-300 shadow-slate-400/30'
-      }`}>
+      <div 
+        className="sticky bottom-4 z-40 p-4 sm:p-5 rounded-2xl border shadow-2xl backdrop-blur-xl transition-all"
+        style={{
+          backgroundColor: theme.dockedBg,
+          borderColor: theme.dockedBorder,
+          color: theme.textBody
+        }}
+      >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <Scissors className="w-4 h-4 text-orange-400" />
-              <h3 className="font-black text-sm uppercase tracking-wider">
+              <Scissors className="w-4 h-4 text-orange-500" />
+              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: theme.textTitle }}>
                 Montagem do Corte Final ({winningTakes.length}/{scriptScenes.length} Cenas Definidas)
               </h3>
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                cutVoiceHealth.color === 'emerald' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                cutVoiceHealth.color === 'emerald' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'
               }`}>
                 {cutVoiceHealth.label}
               </span>
@@ -777,19 +916,20 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
                   <div
                     key={sceneNum}
                     onClick={() => setSelectedSceneTab(sceneNum)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer border transition-all ${
-                      winner
-                        ? (isDark ? 'bg-orange-500/15 border-orange-500/40 text-orange-300' : 'bg-orange-50 border-orange-200 text-orange-700')
-                        : (isDark ? 'bg-zinc-800/60 border-zinc-700/40 text-zinc-500' : 'bg-slate-100 border-slate-200 text-slate-400')
-                    }`}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer border transition-all"
+                    style={{
+                      backgroundColor: winner ? (isDark ? 'rgba(249, 115, 22, 0.15)' : '#fff7ed') : theme.pillBg,
+                      borderColor: winner ? 'rgba(249, 115, 22, 0.4)' : theme.pillBorder,
+                      color: winner ? '#ea580c' : theme.textMuted
+                    }}
                   >
                     {winner ? (
-                      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                      <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
                     ) : (
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                     )}
                     <span>Cena {sceneNum}:</span>
-                    <strong className="truncate max-w-[100px] font-mono text-[11px]">
+                    <strong className="truncate max-w-[120px] font-mono text-[11px]">
                       {winner ? winner.take.name : 'Pendente'}
                     </strong>
                   </div>
@@ -801,8 +941,8 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
           {/* Duração e Botões de Ação */}
           <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
             <div className="text-right hidden sm:block">
-              <div className="text-[10px] uppercase font-bold opacity-60">Duração Total</div>
-              <div className="font-mono font-black text-sm text-orange-400">
+              <div className="text-[10px] uppercase font-bold opacity-70" style={{ color: theme.textMuted }}>Duração Total</div>
+              <div className="font-mono font-black text-sm text-orange-500">
                 ~{Math.round(totalCutSeconds)}s <span className="text-xs font-normal opacity-70">(TikTok Shop)</span>
               </div>
             </div>
@@ -816,13 +956,14 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
                 setFullCutCurrentIndex(0);
                 setIsPlayingFullCut(true);
               }}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer border transition-all ${
-                isDark 
-                  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700' 
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-              }`}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer border transition-all shadow-sm"
+              style={{
+                backgroundColor: theme.cardBg,
+                borderColor: theme.cardBorder,
+                color: theme.textTitle
+              }}
             >
-              <Play className="w-3.5 h-3.5 text-orange-400" />
+              <Play className="w-3.5 h-3.5 text-orange-500 fill-current" />
               <span>Prévia Contínua</span>
             </button>
 
@@ -832,7 +973,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               className={`px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-all shadow-lg ${
                 winningTakes.length > 0
                   ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-orange-500/25'
-                  : 'bg-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed'
+                  : 'opacity-40 cursor-not-allowed bg-slate-300 text-slate-500'
               }`}
             >
               <Download className={`w-4 h-4 ${isExporting ? 'animate-bounce' : ''}`} />
@@ -850,18 +991,26 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className={`max-w-3xl w-full rounded-3xl border overflow-hidden shadow-2xl relative ${
-                isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'
-              }`}
+              className="max-w-3xl w-full rounded-3xl border overflow-hidden shadow-2xl relative"
+              style={{
+                backgroundColor: theme.cardBg,
+                borderColor: theme.cardBorder,
+                color: theme.textBody
+              }}
             >
-              <div className="p-4 flex items-center justify-between border-b border-zinc-800">
+              <div 
+                className="p-4 flex items-center justify-between border-b"
+                style={{ borderColor: theme.cardBorder }}
+              >
                 <div className="flex items-center gap-2">
-                  <Film className="w-5 h-5 text-orange-400" />
-                  <span className="font-bold text-sm truncate max-w-md">{activePreviewTake.name}</span>
+                  <Film className="w-5 h-5 text-orange-500" />
+                  <span className="font-bold text-sm truncate max-w-md" style={{ color: theme.textTitle }}>
+                    {activePreviewTake.name}
+                  </span>
                 </div>
                 <button
                   onClick={() => setActivePreviewTake(null)}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -870,6 +1019,8 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
               <div className="bg-black flex items-center justify-center max-h-[65vh]">
                 <video
                   src={activePreviewTake.url}
+                  poster={activePreviewTake.quality?.keyframes?.[0] || ''}
+                  preload="metadata"
                   controls
                   autoPlay
                   loop
@@ -879,7 +1030,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
               <div className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-orange-400">
+                  <span className="font-bold text-orange-500">
                     Score Técnico: {activePreviewTake.quality?.overallScore || 80}/100
                   </span>
                   <span>•</span>
@@ -921,7 +1072,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
                   <h4 className="font-bold text-sm text-orange-400">
                     Prévia Contínua: Cena {winningTakes[fullCutCurrentIndex]?.sceneIndex} de {winningTakes.length}
                   </h4>
-                  <p className="text-[11px] opacity-70 truncate">
+                  <p className="text-[11px] opacity-70 truncate text-zinc-300">
                     {winningTakes[fullCutCurrentIndex]?.scene?.description}
                   </p>
                 </div>
@@ -938,20 +1089,20 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
                 <video
                   key={winningTakes[fullCutCurrentIndex]?.take.id}
                   src={winningTakes[fullCutCurrentIndex]?.take.url}
+                  poster={winningTakes[fullCutCurrentIndex]?.take.quality?.keyframes?.[0] || ''}
+                  preload="metadata"
                   autoPlay
                   controls
                   onEnded={() => {
                     if (fullCutCurrentIndex < winningTakes.length - 1) {
                       setFullCutCurrentIndex(prev => prev + 1);
                     } else {
-                      // Repetir do início
                       setFullCutCurrentIndex(0);
                     }
                   }}
                   className="h-full w-auto object-contain mx-auto"
                 />
 
-                {/* Badge da cena atual */}
                 <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-xs font-bold text-orange-400 border border-orange-500/30">
                   Cena {winningTakes[fullCutCurrentIndex]?.sceneIndex} • Take {winningTakes[fullCutCurrentIndex]?.take.name}
                 </div>
@@ -996,11 +1147,12 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 };
 
 // ============================================================================
-// Subcomponente: Card de Take de Vídeo
+// Subcomponente: Card de Take de Vídeo com Preview Instantâneo e Visual Calibrado
 // ============================================================================
 interface VideoTakeCardProps {
   take: VideoTakeItem;
   themeMode: 'dark' | 'light';
+  theme: any;
   scriptScenes: any[];
   onToggleWinner: () => void;
   onReassignScene: (newSceneIndex: number) => void;
@@ -1011,6 +1163,7 @@ interface VideoTakeCardProps {
 const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
   take,
   themeMode,
+  theme,
   scriptScenes,
   onToggleWinner,
   onReassignScene,
@@ -1026,7 +1179,7 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play();
+      videoRef.current.play().catch(err => console.warn('Play error:', err));
       setIsPlaying(true);
     } else {
       videoRef.current.pause();
@@ -1044,26 +1197,37 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
   const isWinner = take.isWinner;
 
   return (
-    <div className={`rounded-3xl border transition-all duration-300 overflow-hidden flex flex-col relative ${
-      isWinner 
-        ? 'ring-2 ring-amber-400 border-amber-400 shadow-xl shadow-amber-500/15'
-        : isDark ? 'bg-zinc-900/80 border-zinc-800/80 hover:border-zinc-700' : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
-    }`}>
+    <div 
+      className="rounded-3xl border transition-all duration-300 overflow-hidden flex flex-col relative shadow-sm"
+      style={{
+        backgroundColor: theme.cardBg,
+        borderColor: isWinner ? '#f59e0b' : theme.cardBorder,
+        boxShadow: isWinner ? '0 10px 25px -5px rgba(245, 158, 11, 0.25)' : undefined
+      }}
+    >
       
       {/* Ribbon de Take Vencedor */}
       {isWinner && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[11px] font-black uppercase tracking-wider py-1 px-3 text-center flex items-center justify-center gap-1.5 shadow-sm">
           <Star className="w-3.5 h-3.5 fill-current" />
-          <span>Take Campeão Escolhido para Cena {take.assignedSceneIndex}</span>
+          <span>Take Campeão da Cena {take.assignedSceneIndex || 1}</span>
         </div>
       )}
 
       {/* Header do Card */}
-      <div className="p-4 flex items-center justify-between gap-2 border-b border-zinc-800/50">
+      <div 
+        className="p-4 flex items-center justify-between gap-2 border-b"
+        style={{ borderColor: theme.cardBorder }}
+      >
         <div className="truncate">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-xs truncate max-w-[180px]">{take.name}</span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-slate-100 text-slate-600'}`}>
+            <span className="font-bold text-xs truncate max-w-[170px]" style={{ color: theme.textTitle }} title={take.name}>
+              {take.name}
+            </span>
+            <span 
+              className="px-1.5 py-0.5 rounded text-[10px] font-mono border"
+              style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder, color: theme.pillText }}
+            >
               {(take.sizeBytes / (1024 * 1024)).toFixed(1)}MB
             </span>
           </div>
@@ -1073,11 +1237,14 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         <select
           value={take.assignedSceneIndex}
           onChange={(e) => onReassignScene(Number(e.target.value))}
-          className={`text-[11px] font-bold rounded-lg px-2 py-1 cursor-pointer border ${
-            isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-slate-100 border-slate-300 text-slate-700'
-          }`}
+          className="text-[11px] font-bold rounded-lg px-2 py-1 cursor-pointer border"
+          style={{
+            backgroundColor: theme.pillBg,
+            borderColor: theme.pillBorder,
+            color: theme.textTitle
+          }}
         >
-          <option value={0}>Não Atribuído</option>
+          <option value={0}>Não Classificado</option>
           {scriptScenes.map((_, idx) => (
             <option key={idx + 1} value={idx + 1}>
               Cena {idx + 1}
@@ -1086,15 +1253,26 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         </select>
       </div>
 
-      {/* Player de Vídeo */}
+      {/* Player de Vídeo com Preview Instantâneo do Frame */}
       <div className="relative aspect-[9/14] bg-black group overflow-hidden">
+        {/* Preview do Frame capturado em canvas (aparece imediatamente) */}
+        {take.quality?.keyframes?.[0] && !isPlaying && (
+          <img
+            src={take.quality.keyframes[0]}
+            alt={take.name}
+            className="absolute inset-0 w-full h-full object-cover z-0"
+          />
+        )}
+
         <video
           ref={videoRef}
           src={take.url}
+          poster={take.quality?.keyframes?.[0] || ''}
+          preload="metadata"
           loop
           muted={isMuted}
           playsInline
-          className="w-full h-full object-cover cursor-pointer"
+          className="relative z-10 w-full h-full object-cover cursor-pointer"
           onClick={togglePlay}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
@@ -1104,18 +1282,18 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         {!isPlaying && (
           <div 
             onClick={togglePlay}
-            className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer transition-opacity"
+            className="absolute inset-0 z-20 bg-black/30 flex items-center justify-center cursor-pointer transition-opacity"
           >
-            <div className="w-12 h-12 rounded-full bg-orange-500/90 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
-              <Play className="w-5 h-5 ml-0.5" />
+            <div className="w-13 h-13 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform">
+              <Play className="w-6 h-6 ml-0.5 fill-current" />
             </div>
           </div>
         )}
 
         {/* Badges Flutuantes Superiores */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+        <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between gap-2 pointer-events-none">
           {/* Badge de Score Geral */}
-          <div className="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-white text-xs font-black flex items-center gap-1.5 shadow-md">
+          <div className="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/20 text-white text-xs font-black flex items-center gap-1.5 shadow-md">
             <span className={`w-2 h-2 rounded-full ${
               score >= 85 ? 'bg-emerald-400' : score >= 70 ? 'bg-amber-400' : 'bg-rose-400'
             }`} />
@@ -1125,7 +1303,7 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
           {/* Botão de Ampliar Modal */}
           <button
             onClick={onOpenPreview}
-            className="p-1.5 rounded-full bg-black/75 backdrop-blur-md text-white/80 hover:text-white border border-white/10 pointer-events-auto transition-colors"
+            className="p-1.5 rounded-full bg-black/75 backdrop-blur-md text-white/90 hover:text-white border border-white/20 pointer-events-auto transition-colors cursor-pointer"
             title="Visualização Ampliada"
           >
             <Maximize2 className="w-3.5 h-3.5" />
@@ -1133,10 +1311,10 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         </div>
 
         {/* Controles Flutuantes Inferiores */}
-        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+        <div className="absolute bottom-3 left-3 right-3 z-30 flex items-center justify-between gap-2 pointer-events-none">
           <button
             onClick={toggleMute}
-            className="p-1.5 rounded-full bg-black/75 backdrop-blur-md text-white/80 hover:text-white border border-white/10 pointer-events-auto transition-colors"
+            className="p-1.5 rounded-full bg-black/75 backdrop-blur-md text-white/90 hover:text-white border border-white/20 pointer-events-auto transition-colors cursor-pointer"
           >
             {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
           </button>
@@ -1147,88 +1325,135 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         </div>
       </div>
 
-      {/* Seção de Análise Inteligente Local */}
+      {/* Seção de Diagnóstico Inteligente Local */}
       <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
         <div className="space-y-2">
           {/* Badge de Coerência Vocal */}
           {take.voiceMatch && (
-            <div className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 border ${
-              take.voiceMatch.badgeColor === 'emerald'
-                ? (isDark ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700')
-                : take.voiceMatch.badgeColor === 'amber'
-                  ? (isDark ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700')
-                  : (isDark ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-700')
-            }`}>
+            <div 
+              className="p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border font-medium"
+              style={{
+                backgroundColor: take.voiceMatch.badgeColor === 'emerald'
+                  ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ecfdf5')
+                  : take.voiceMatch.badgeColor === 'amber'
+                  ? (isDark ? 'rgba(245, 158, 11, 0.15)' : '#fffbeb')
+                  : (isDark ? 'rgba(244, 63, 94, 0.15)' : '#fff1f2'),
+                borderColor: take.voiceMatch.badgeColor === 'emerald'
+                  ? 'rgba(16, 185, 129, 0.3)'
+                  : take.voiceMatch.badgeColor === 'amber'
+                  ? 'rgba(245, 158, 11, 0.3)'
+                  : 'rgba(244, 63, 94, 0.3)',
+                color: take.voiceMatch.badgeColor === 'emerald'
+                  ? '#059669'
+                  : take.voiceMatch.badgeColor === 'amber'
+                  ? '#d97706'
+                  : '#e11d48'
+              }}
+            >
               <div className="flex items-center gap-1.5 truncate">
                 <Mic className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-bold truncate">{take.voiceMatch.badgeLabel}</span>
               </div>
-              <span className="text-[10px] font-mono opacity-80 shrink-0">
+              <span className="text-[10px] font-mono opacity-90 shrink-0">
                 {take.audio?.pitchHz ? `~${take.audio.pitchHz}Hz` : ''}
               </span>
             </div>
           )}
 
-          {/* Pílulas de Métricas Rápidas */}
+          {/* Pílulas de Métricas Técnicas */}
           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-            <div className={`p-2 rounded-lg border flex items-center justify-between ${
-              isDark ? 'bg-zinc-800/40 border-zinc-800 text-zinc-300' : 'bg-slate-50 border-slate-200 text-slate-700'
-            }`}>
-              <span className="opacity-70">Nitidez:</span>
-              <strong className="font-mono text-orange-400">{take.quality?.sharpnessScore || 85}%</strong>
+            <div 
+              className="p-2 rounded-lg border flex items-center justify-between"
+              style={{ backgroundColor: theme.cardInnerBg, borderColor: theme.cardBorder }}
+            >
+              <span style={{ color: theme.textMuted }}>Nitidez:</span>
+              <strong className="font-mono text-orange-500">{take.quality?.sharpnessScore || 85}%</strong>
             </div>
 
-            <div className={`p-2 rounded-lg border flex items-center justify-between ${
-              isDark ? 'bg-zinc-800/40 border-zinc-800 text-zinc-300' : 'bg-slate-50 border-slate-200 text-slate-700'
-            }`}>
-              <span className="opacity-70">Formato:</span>
-              <strong className="font-mono text-emerald-400">{take.quality?.isTikTokVertical ? '9:16 OK' : 'Outro'}</strong>
+            <div 
+              className="p-2 rounded-lg border flex items-center justify-between"
+              style={{ backgroundColor: theme.cardInnerBg, borderColor: theme.cardBorder }}
+            >
+              <span style={{ color: theme.textMuted }}>Formato:</span>
+              <strong className="font-mono text-emerald-500">{take.quality?.isTikTokVertical ? '9:16 OK' : 'Outro'}</strong>
             </div>
           </div>
 
-          {/* Acordeão de Métricas Detalhadas */}
+          {/* Acordeão de Diagnóstico Técnico */}
           <button
             onClick={() => setShowMetrics(!showMetrics)}
-            className="w-full text-left text-[11px] font-bold text-orange-400 flex items-center justify-between pt-1"
+            className="w-full text-left text-[11px] font-bold text-orange-500 flex items-center justify-between pt-1 cursor-pointer"
           >
             <span>{showMetrics ? 'Ocultar Detalhes Técnicos' : 'Ver Diagnóstico Técnico'}</span>
             {showMetrics ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
           {showMetrics && (
-            <div className={`p-3 rounded-xl border text-[11px] space-y-1.5 ${
-              isDark ? 'bg-zinc-950/60 border-zinc-800' : 'bg-slate-50 border-slate-200'
-            }`}>
+            <div 
+              className="p-3 rounded-xl border text-[11px] space-y-1.5"
+              style={{
+                backgroundColor: theme.cardInnerBg,
+                borderColor: theme.cardBorder,
+                color: theme.textBody
+              }}
+            >
               <div className="flex justify-between">
-                <span className="opacity-70">Variância Laplaciana:</span>
-                <strong className="font-mono">{take.quality?.laplacianVariance || 210}</strong>
+                <span style={{ color: theme.textMuted }}>Variância Laplaciana:</span>
+                <strong className="font-mono" style={{ color: theme.textTitle }}>{take.quality?.laplacianVariance || 210}</strong>
               </div>
               <div className="flex justify-between">
-                <span className="opacity-70">Luminância Média:</span>
-                <strong className="font-mono">{take.quality?.averageLuminance || 120}/255</strong>
+                <span style={{ color: theme.textMuted }}>Luminância Média:</span>
+                <strong className="font-mono" style={{ color: theme.textTitle }}>{take.quality?.averageLuminance || 120}/255</strong>
               </div>
               <div className="flex justify-between">
-                <span className="opacity-70">Perfil de Voz:</span>
-                <strong className="font-mono truncate max-w-[120px]">{take.audio?.timbreLabel || 'Voz Padrão'}</strong>
+                <span style={{ color: theme.textMuted }}>Perfil Vocal:</span>
+                <strong className="font-mono truncate max-w-[120px]" style={{ color: theme.textTitle }}>
+                  {take.audio?.timbreLabel || 'Voz Padrão'}
+                </strong>
               </div>
               {take.quality?.pros && take.quality.pros.length > 0 && (
-                <div className="pt-1 border-t border-zinc-800/60 text-emerald-400 font-medium">
+                <div className="pt-1 border-t text-emerald-500 font-medium" style={{ borderColor: theme.cardBorder }}>
                   ✓ {take.quality.pros[0]}
                 </div>
               )}
             </div>
           )}
 
-          {/* Feedback Opcional da IA se já tiver sido consultado */}
+          {/* Botões Rápidos para Atribuir Cena caso não classificado */}
+          {take.assignedSceneIndex === 0 && (
+            <div className="p-2 rounded-xl border space-y-1" style={{ backgroundColor: theme.pillBg, borderColor: theme.pillBorder }}>
+              <span className="text-[10px] font-bold uppercase tracking-wider block" style={{ color: theme.textMuted }}>
+                Atribuir a uma cena:
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {scriptScenes.map((_, sIdx) => (
+                  <button
+                    key={sIdx + 1}
+                    onClick={() => onReassignScene(sIdx + 1)}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                  >
+                    + Cena {sIdx + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Feedback Opcional da IA se consultado */}
           {take.aiFeedback && (
-            <div className={`p-3 rounded-xl border text-[11px] space-y-1 ${
-              isDark ? 'bg-orange-500/10 border-orange-500/30 text-orange-200' : 'bg-orange-50 border-orange-200 text-orange-800'
-            }`}>
-              <div className="flex items-center gap-1 font-bold text-orange-400">
+            <div 
+              className="p-3 rounded-xl border text-[11px] space-y-1"
+              style={{
+                backgroundColor: isDark ? 'rgba(249, 115, 22, 0.1)' : '#fff7ed',
+                borderColor: 'rgba(249, 115, 22, 0.3)',
+                color: theme.textBody
+              }}
+            >
+              <div className="flex items-center gap-1 font-bold text-orange-500">
                 <Sparkles className="w-3.5 h-3.5" /> Parecer Criativo da IA:
               </div>
               <p className="italic">"{take.aiFeedback.realismVerdict}"</p>
-              <p className="font-semibold text-[10px] text-amber-400 pt-0.5">
+              <p className="font-semibold text-[10px] text-amber-500 pt-0.5">
                 💡 Dica: {take.aiFeedback.retentionTip}
               </p>
             </div>
@@ -1236,18 +1461,19 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
         </div>
 
         {/* Botões de Ação do Take */}
-        <div className="pt-3 border-t border-zinc-800/50 space-y-2">
+        <div 
+          className="pt-3 border-t space-y-2"
+          style={{ borderColor: theme.cardBorder }}
+        >
           <button
             onClick={onToggleWinner}
             className={`w-full py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md ${
               isWinner
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-amber-500/20'
-                : isDark
-                  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                : 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/15'
             }`}
           >
-            <Star className={`w-4 h-4 ${isWinner ? 'fill-current text-white' : 'text-amber-400'}`} />
+            <Star className={`w-4 h-4 ${isWinner ? 'fill-current text-white' : 'text-amber-200'}`} />
             <span>{isWinner ? 'Take Campeão Escolhido' : 'Definir como Melhor Take'}</span>
           </button>
 
@@ -1255,11 +1481,10 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
             <button
               onClick={onRequestAIReview}
               disabled={take.analyzing}
-              className={`w-full py-1.5 px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                isDark ? 'text-zinc-400 hover:text-orange-400 hover:bg-zinc-800/50' : 'text-slate-500 hover:text-orange-600 hover:bg-slate-100'
-              }`}
+              className="w-full py-1.5 px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:opacity-80"
+              style={{ color: theme.textMuted }}
             >
-              <Sparkles className={`w-3 h-3 ${take.analyzing ? 'animate-spin text-orange-400' : ''}`} />
+              <Sparkles className={`w-3 h-3 ${take.analyzing ? 'animate-spin text-orange-500' : ''}`} />
               <span>{take.analyzing ? 'Consultando IA...' : 'Parecer Criativo com IA (Opcional)'}</span>
             </button>
           )}

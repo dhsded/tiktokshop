@@ -572,20 +572,82 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.tiktokshop.gerador');
 
-    // Registrar streaming de vídeos locais seguros para o Estúdio de Curadoria
+    // Registrar streaming de vídeos locais seguros para o Estúdio de Curadoria com suporte a Range Requests (HTTP 206)
     try {
-      protocol.handle('local-video', (request) => {
+      protocol.handle('local-video', async (request) => {
+        const fs = require('fs');
+        const path = require('path');
+
         try {
-          const urlStr = request.url;
-          let rawPath = urlStr.replace(/^local-video:\/\//i, '');
+          let rawPath = request.url.replace(/^local-video:\/\//i, '');
           if (rawPath.startsWith('/') && process.platform === 'win32') {
             rawPath = rawPath.slice(1);
           }
           rawPath = decodeURIComponent(rawPath);
-          return net.fetch(pathToFileURL(rawPath).toString());
-        } catch (err) {
+
+          if (!fs.existsSync(rawPath)) {
+            console.warn('[local-video] Arquivo não encontrado:', rawPath);
+            return new Response('Video not found', { status: 404 });
+          }
+
+          const stat = fs.statSync(rawPath);
+          const fileSize = stat.size;
+          const rangeHeader = request.headers.get('range');
+
+          const ext = path.extname(rawPath).toLowerCase();
+          let mimeType = 'video/mp4';
+          if (ext === '.webm') mimeType = 'video/webm';
+          else if (ext === '.mov') mimeType = 'video/quicktime';
+          else if (ext === '.mkv') mimeType = 'video/x-matroska';
+
+          if (rangeHeader) {
+            const parts = rangeHeader.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunkSize = (end - start) + 1;
+
+            const fileStream = fs.createReadStream(rawPath, { start, end });
+            const readable = new ReadableStream({
+              start(controller) {
+                fileStream.on('data', (chunk: Buffer) => controller.enqueue(chunk));
+                fileStream.on('end', () => controller.close());
+                fileStream.on('error', (err: any) => controller.error(err));
+              }
+            });
+
+            return new Response(readable, {
+              status: 206,
+              headers: {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': String(chunkSize),
+                'Content-Type': mimeType,
+                'Access-Control-Allow-Origin': '*'
+              }
+            });
+          } else {
+            const fileStream = fs.createReadStream(rawPath);
+            const readable = new ReadableStream({
+              start(controller) {
+                fileStream.on('data', (chunk: Buffer) => controller.enqueue(chunk));
+                fileStream.on('end', () => controller.close());
+                fileStream.on('error', (err: any) => controller.error(err));
+              }
+            });
+
+            return new Response(readable, {
+              status: 200,
+              headers: {
+                'Content-Length': String(fileSize),
+                'Content-Type': mimeType,
+                'Accept-Ranges': 'bytes',
+                'Access-Control-Allow-Origin': '*'
+              }
+            });
+          }
+        } catch (err: any) {
           console.error('[local-video handler error]:', err);
-          return new Response('Video not found', { status: 404 });
+          return new Response('Error loading video', { status: 500 });
         }
       });
     } catch (err) {
@@ -701,32 +763,31 @@ if (!gotTheLock) {
       const validVideoExts = ['.mp4', '.webm', '.mov', '.mkv', '.avi'];
       const allFiles: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }> = [];
 
-      function scanRecursive(dir: string, depth = 0) {
-        if (depth > 2) return;
-        try {
-          const items = fs.readdirSync(dir);
-          for (const item of items) {
-            const full = path.join(dir, item);
-            try {
-              const stat = fs.statSync(full);
-              if (stat.isDirectory()) {
-                if (!item.toLowerCase().includes('corte_final') && !item.toLowerCase().includes('node_modules') && !item.startsWith('.')) {
-                  scanRecursive(full, depth + 1);
-                }
-              } else if (validVideoExts.includes(path.extname(item).toLowerCase())) {
-                allFiles.push({
-                  name: item,
-                  fullPath: full,
-                  sizeBytes: stat.size,
-                  modifiedAt: stat.mtimeMs
-                });
-              }
-            } catch (e) {}
-          }
-        } catch (e) {}
+      try {
+        const items = fs.readdirSync(targetDir);
+        for (const item of items) {
+          if (item.startsWith('.')) continue;
+          const full = path.join(targetDir, item);
+          try {
+            const stat = fs.statSync(full);
+            // Escanear arquivos diretos de vídeo da pasta selecionada (sem misturar outras pastas)
+            if (!stat.isDirectory() && validVideoExts.includes(path.extname(item).toLowerCase())) {
+              allFiles.push({
+                name: item,
+                fullPath: full,
+                sizeBytes: stat.size,
+                modifiedAt: stat.mtimeMs
+              });
+            }
+          } catch (e) {}
+        }
+      } catch (err: any) {
+        console.error('[curator:scan-folder error]:', err);
       }
 
-      scanRecursive(targetDir);
+      // Ordenar por data de modificação decrescente (mais recentes no topo)
+      allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
+
       return { success: true, folderPath: targetDir, files: allFiles };
     });
 

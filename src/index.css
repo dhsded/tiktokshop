@@ -168,13 +168,13 @@ select option {
   color: #ffffff !important;
 }
 
-/* Botões ativos que usam bg-white text-black */
-.light .bg-white {
+/* Botões ativos específicos que usam bg-white text-black */
+.light button.bg-white.text-black {
   background-color: #0f172a !important;
   color: #ffffff !important;
 }
 .light .text-black {
-  color: #ffffff !important;
+  color: #0f172a !important;
 }
 
 /* Controles de opção ativos (ex: durações da cena, estilo de vídeo inativo) */
