@@ -37,4 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   fetchImageAsBase64: (url: string) => ipcRenderer.invoke('fetch-image-as-base64', url),
   clearViralsSession: () => ipcRenderer.invoke('virals:clear-session'),
+  // Estúdio de Curadoria & Melhores Vídeos
+  curatorScanFolder: (folderPath?: string) => ipcRenderer.invoke('curator:scan-folder', folderPath),
+  curatorSelectFolder: () => ipcRenderer.invoke('curator:select-folder'),
+  curatorExportFinalCut: (payload: any) => ipcRenderer.invoke('curator:export-final-cut', payload),
 });
+

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol, dialog, net } from 'electron';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
 let mainWindow: BrowserWindow | null = null;
@@ -538,6 +539,24 @@ ipcMain.handle('upload-file-to-webview', async (_event, { webContentsId, project
 // ============================================================
 app.commandLine.appendSwitch('disable-gpu-cache');
 
+try {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: 'local-video',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+        bypassCSP: true,
+        corsEnabled: true
+      }
+    }
+  ]);
+} catch (e) {
+  console.warn('[Main] registerSchemesAsPrivileged local-video:', e);
+}
+
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -552,6 +571,26 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.tiktokshop.gerador');
+
+    // Registrar streaming de vídeos locais seguros para o Estúdio de Curadoria
+    try {
+      protocol.handle('local-video', (request) => {
+        try {
+          const urlStr = request.url;
+          let rawPath = urlStr.replace(/^local-video:\/\//i, '');
+          if (rawPath.startsWith('/') && process.platform === 'win32') {
+            rawPath = rawPath.slice(1);
+          }
+          rawPath = decodeURIComponent(rawPath);
+          return net.fetch(pathToFileURL(rawPath).toString());
+        } catch (err) {
+          console.error('[local-video handler error]:', err);
+          return new Response('Video not found', { status: 404 });
+        }
+      });
+    } catch (err) {
+      console.warn('[Main] protocol.handle local-video error:', err);
+    }
 
     const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
@@ -623,6 +662,162 @@ if (!gotTheLock) {
         return { success: true };
       } catch (err: any) {
         console.error('[Main] Erro ao limpar sessão de virais:', err);
+        return { success: false, error: err.message };
+      }
+    });
+
+    // ============================================================
+    // Estúdio de Curadoria & Melhores Vídeos (Smart Video Curator)
+    // ============================================================
+    ipcMain.handle('curator:scan-folder', async (_event, customFolderPath?: string) => {
+      const fs = require('fs');
+      const path = require('path');
+      const downloadsPath = app.getPath('downloads');
+      let targetDir = customFolderPath;
+
+      if (!targetDir) {
+        const baseTikTokDir = path.join(downloadsPath, 'TikTok Shop');
+        if (fs.existsSync(baseTikTokDir)) {
+          const subdirs = fs.readdirSync(baseTikTokDir).filter((d: string) => {
+            try {
+              const full = path.join(baseTikTokDir, d);
+              return fs.statSync(full).isDirectory() && !d.toLowerCase().includes('corte_final');
+            } catch (e) { return false; }
+          });
+          if (subdirs.length > 0) {
+            targetDir = path.join(baseTikTokDir, subdirs[subdirs.length - 1]);
+          } else {
+            targetDir = baseTikTokDir;
+          }
+        } else {
+          targetDir = downloadsPath;
+        }
+      }
+
+      if (!fs.existsSync(targetDir)) {
+        return { success: false, folderPath: targetDir, files: [], error: 'Diretório não encontrado' };
+      }
+
+      const validVideoExts = ['.mp4', '.webm', '.mov', '.mkv', '.avi'];
+      const allFiles: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }> = [];
+
+      function scanRecursive(dir: string, depth = 0) {
+        if (depth > 2) return;
+        try {
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const full = path.join(dir, item);
+            try {
+              const stat = fs.statSync(full);
+              if (stat.isDirectory()) {
+                if (!item.toLowerCase().includes('corte_final') && !item.toLowerCase().includes('node_modules') && !item.startsWith('.')) {
+                  scanRecursive(full, depth + 1);
+                }
+              } else if (validVideoExts.includes(path.extname(item).toLowerCase())) {
+                allFiles.push({
+                  name: item,
+                  fullPath: full,
+                  sizeBytes: stat.size,
+                  modifiedAt: stat.mtimeMs
+                });
+              }
+            } catch (e) {}
+          }
+        } catch (e) {}
+      }
+
+      scanRecursive(targetDir);
+      return { success: true, folderPath: targetDir, files: allFiles };
+    });
+
+    ipcMain.handle('curator:select-folder', async () => {
+      const result = await dialog.showOpenDialog(mainWindow || undefined, {
+        properties: ['openDirectory'],
+        title: 'Selecione a Pasta de Vídeos Gerados'
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true };
+      }
+      return { canceled: false, folderPath: result.filePaths[0] };
+    });
+
+    ipcMain.handle('curator:export-final-cut', async (_event, payload: {
+      targetFolder?: string;
+      projectName?: string;
+      selectedTakes: Array<{
+        sceneIndex: number;
+        sceneTitle: string;
+        sourcePath: string;
+        duration?: string;
+        narration?: string;
+        score?: number;
+        voiceMatch?: string;
+      }>;
+    }) => {
+      const fs = require('fs');
+      const path = require('path');
+      const downloadsPath = app.getPath('downloads');
+      
+      try {
+        let baseDir = payload.targetFolder;
+        if (!baseDir) {
+          baseDir = path.join(downloadsPath, 'TikTok Shop', 'Corte_Final');
+        } else {
+          baseDir = path.join(baseDir, 'Corte_Final');
+        }
+
+        if (!fs.existsSync(baseDir)) {
+          fs.mkdirSync(baseDir, { recursive: true });
+        }
+
+        const exportedFiles: string[] = [];
+        let reportContent = `=====================================================\n`;
+        reportContent += `ESTÚDIO DE CURADORIA - RELATÓRIO DO CORTE FINAL\n`;
+        reportContent += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+        reportContent += `Projeto: ${payload.projectName || 'TikTok Shop Campanha'}\n`;
+        reportContent += `Total de Cenas Montadas: ${payload.selectedTakes?.length || 0}\n`;
+        reportContent += `=====================================================\n\n`;
+
+        if (payload.selectedTakes && payload.selectedTakes.length > 0) {
+          for (let i = 0; i < payload.selectedTakes.length; i++) {
+            const take = payload.selectedTakes[i];
+            const ext = path.extname(take.sourcePath) || '.mp4';
+            const cleanSceneTitle = (take.sceneTitle || `Cena_${take.sceneIndex || i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+            const orderPrefix = String(i + 1).padStart(2, '0');
+            const outFileName = `${orderPrefix}_${cleanSceneTitle}${ext}`;
+            const destPath = path.join(baseDir, outFileName);
+
+            if (fs.existsSync(take.sourcePath)) {
+              fs.copyFileSync(take.sourcePath, destPath);
+              exportedFiles.push(destPath);
+            }
+
+            reportContent += `[CENA ${i + 1}] ${take.sceneTitle || 'Sem título'}\n`;
+            reportContent += `Arquivo Final: ${outFileName}\n`;
+            reportContent += `Arquivo Original: ${path.basename(take.sourcePath)}\n`;
+            if (take.duration) reportContent += `Duração Estimada: ${take.duration}\n`;
+            if (take.score) reportContent += `Qualidade Técnica: ${take.score}/100\n`;
+            if (take.voiceMatch) reportContent += `Coerência de Voz: ${take.voiceMatch}\n`;
+            if (take.narration) reportContent += `Narração da Cena: "${take.narration}"\n`;
+            reportContent += `-----------------------------------------------------\n\n`;
+          }
+        }
+
+        // Salvar relatório em TXT
+        const reportPath = path.join(baseDir, 'ordem_montagem_corte_final.txt');
+        fs.writeFileSync(reportPath, reportContent, 'utf-8');
+
+        // Abrir pasta no Windows Explorer
+        shell.openPath(baseDir);
+
+        return {
+          success: true,
+          destFolder: baseDir,
+          exportedFilesCount: exportedFiles.length,
+          reportPath
+        };
+      } catch (err: any) {
+        console.error('[Curator Export Error]:', err);
         return { success: false, error: err.message };
       }
     });

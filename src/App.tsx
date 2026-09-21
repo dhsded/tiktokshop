@@ -72,12 +72,14 @@ import {
   Cpu,
   RefreshCw,
   XCircle,
-  Flame
+  Flame,
+  Film
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 import { ViralsFinder } from './components/ViralsFinder';
+import { VideoCurator } from './components/VideoCurator';
 import { 
   aiProvidersManager, 
   AIProviderId, 
@@ -96,7 +98,7 @@ import {
 // ============================================================
 // Versão e Histórico
 // ============================================================
-const APP_VERSION = '1.7.2';
+const APP_VERSION = '1.8.0';
 
 interface VersionEntry {
   version: string;
@@ -106,6 +108,21 @@ interface VersionEntry {
 }
 
 const VERSION_HISTORY: VersionEntry[] = [
+  {
+    version: '1.8.0',
+    date: '21/09/2026',
+    title: 'Estúdio de Curadoria de Vídeos, Coerência Vocal Nativa e Montagem do Corte Final',
+    changes: [
+      'Novo: 4ª Aba dedicada "Curador & Melhores Vídeos" para auditar, comparar e organizar takes gerados',
+      'Novo: Identificação inteligente de consistência vocal via Web Audio API (Pitch F0 e impressão digital de timbre sem custos de IA)',
+      'Novo: Avaliação inteligente de qualidade de vídeo por visão computacional leve (Nitidez Laplaciana, Formato 9:16 TikTok, Exposição e Contraste)',
+      'Novo: Agrupamento e mapeamento automático de takes por cenas do roteiro e prompts originais (VEO/DIGEN)',
+      'Novo: Seletor de "Take Vencedor" por cena e barra de montagem com timeline em tempo real do Corte Final',
+      'Novo: Prévia contínua da sequência montada com reprodução encadeada cena por cena',
+      'Novo: Exportador do Corte Final que copia e renomeia os melhores vídeos em ordem numérica (01_Cena1_Hook.mp4) e gera guia de edição',
+      'Novo: Parecer Criativo Opcional com Gemini 2.0 Flash sob demanda para análise de retenção e realismo visual'
+    ],
+  },
   {
     version: '1.7.2',
     date: '21/09/2026',
@@ -242,6 +259,7 @@ declare global {
   namespace JSX {
     interface IntrinsicElements {
       webview: any;
+      [elem: string]: any;
     }
   }
   interface Window {
@@ -262,11 +280,16 @@ declare global {
       uploadFileToWebview: (payload: { webContentsId: number, projectIndex: number, imageName?: string, sceneIndex?: number, imageIndex?: number, isFinal?: boolean }) => Promise<{ success: boolean; error?: string }>;
       onDownloadEvent: (callback: (data: any) => void) => () => void;
       fetchImageAsBase64: (url: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; error?: string }>;
+      clearViralsSession?: () => Promise<{ success: boolean; error?: string }>;
+      // Estúdio de Curadoria & Melhores Vídeos
+      curatorScanFolder?: (folderPath?: string) => Promise<{ success: boolean; folderPath?: string; files: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }>; error?: string }>;
+      curatorSelectFolder?: () => Promise<{ canceled: boolean; folderPath?: string }>;
+      curatorExportFinalCut?: (payload: any) => Promise<{ success: boolean; destFolder?: string; exportedFilesCount?: number; reportPath?: string; error?: string }>;
     };
   }
 }
 
-type TabMode = 'collection' | 'product' | 'virals';
+type TabMode = 'collection' | 'product' | 'virals' | 'curator';
 
 // --- Types ---
 
@@ -4901,6 +4924,13 @@ Angulos a variar (escolha os mais relevantes para o produto):
               <Flame className="w-4 h-4 text-orange-400" />
               <span>Buscador de Virais</span>
             </button>
+            <button 
+              onClick={() => setActiveTab('curator')}
+              className={`px-6 md:px-8 py-3 rounded-xl transition-all font-bold tracking-widest text-xs uppercase flex items-center gap-2 cursor-pointer ${activeTab === 'curator' ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' : 'text-white/40 hover:text-white/80'}`}
+            >
+              <Film className="w-4 h-4 text-orange-400" />
+              <span>Curador & Melhores Vídeos</span>
+            </button>
           </div>
         </div>
 
@@ -4921,6 +4951,15 @@ Angulos a variar (escolha os mais relevantes para o produto):
                 setObservations(data.description);
               }
             }}
+          />
+        ) : activeTab === 'curator' ? (
+          <VideoCurator
+            themeMode={themeMode}
+            generatedScript={generatedScript}
+            projectImages={productImages}
+            voiceGender={voiceGender}
+            voiceTone={voiceTone}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabMode)}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
