@@ -174,29 +174,112 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
     }
   };
 
-  // Mapeamento inteligente de arquivos (apenas quando houver indicação explícita de cena)
-  const mapAndImportFiles = (files: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }>, baseDir: string) => {
-    const newTakes: VideoTakeItem[] = files.map((f, idx) => {
-      const lower = f.name.toLowerCase();
-      let assignedScene = 0;
+  // Detecção semântica inteligente de cena baseada no nome do arquivo (VEO, DIGEN, etc.)
+  const detectSceneIndexFromName = (filename: string): number => {
+    const lower = filename.toLowerCase();
 
-      // Matching estrito para NÃO misturar vídeos aleatórios com cenas
-      if (/(?:cena|scene|take)[\s_\-]*0?1\b|hook/i.test(lower)) {
-        assignedScene = 1;
-      } else if (/(?:cena|scene|take)[\s_\-]*0?2\b|problema/i.test(lower)) {
-        assignedScene = 2;
-      } else if (/(?:cena|scene|take)[\s_\-]*0?3\b|solucao|oferta/i.test(lower)) {
-        assignedScene = 3;
-      } else if (/(?:cena|scene|take)[\s_\-]*0?4\b|beneficio/i.test(lower)) {
-        assignedScene = 4;
-      } else if (/(?:cena|scene|take)[\s_\-]*0?5\b|cta/i.test(lower)) {
-        assignedScene = 5;
+    // Cena 1: Hook, Gancho, Abertura, Segurando (Holding), Intro, Start, First, Cena 1
+    if (
+      /(?:cena|scene|take|c|s|t)[\s_\-]*0?1\b/i.test(lower) ||
+      /\b(?:hook|gancho|holding|segurando|intro|abertura|start|inicio|first|comeco)\b/i.test(lower) ||
+      /holding/i.test(lower)
+    ) {
+      return 1;
+    }
+
+    // Cena 2: Problema, Demonstração, Showcasing, Mostrando, Detalhes, Features, Unboxing, Cena 2
+    if (
+      /(?:cena|scene|take|c|s|t)[\s_\-]*0?2\b/i.test(lower) ||
+      /\b(?:showcasing|showcase|demonstrating|demonstracao|demo|mostrando|problema|problem|feature|detalhes|unboxing|middle|second)\b/i.test(lower) ||
+      /showcas/i.test(lower)
+    ) {
+      return 2;
+    }
+
+    // Cena 3: Solução, Review, Avaliação, Wearing, Vestindo, Oferta, CTA, Fechamento, Cena 3
+    if (
+      /(?:cena|scene|take|c|s|t)[\s_\-]*0?3\b/i.test(lower) ||
+      /\b(?:reviewing|review|wearing|vestindo|solucao|solution|oferta|offer|cta|action|sacolinha|desconto|final|calltoaction|third)\b/i.test(lower) ||
+      /review/i.test(lower)
+    ) {
+      return 3;
+    }
+
+    // Cena 4: Benefícios, Comparativo
+    if (
+      /(?:cena|scene|take|c|s|t)[\s_\-]*0?4\b/i.test(lower) ||
+      /\b(?:beneficio|benefit|comparativo|comparison|fourth)\b/i.test(lower)
+    ) {
+      return 4;
+    }
+
+    // Cena 5: CTA Extra, Selo de Garantia
+    if (
+      /(?:cena|scene|take|c|s|t)[\s_\-]*0?5\b/i.test(lower) ||
+      /\b(?:cta|garantia|sacola|fifth)\b/i.test(lower)
+    ) {
+      return 5;
+    }
+
+    return 0;
+  };
+
+  // Distribuição sequencial automática para takes não associados
+  const autoDistributeUnassignedTakes = (items: VideoTakeItem[], maxScenes: number): VideoTakeItem[] => {
+    const unassigned = items.filter(t => t.assignedSceneIndex === 0);
+    if (unassigned.length === 0) return items;
+
+    const result = [...items];
+    const scenesWithoutTakes: number[] = [];
+    for (let s = 1; s <= maxScenes; s++) {
+      if (!result.some(t => t.assignedSceneIndex === s)) {
+        scenesWithoutTakes.push(s);
       }
-      // Vídeos sem prefixo claro de cena ficam como "Não Classificados" (0)
+    }
 
-      // URL segura com Range Streaming no protocolo local-video://
-      const cleanPath = f.fullPath.replace(/\\/g, '/');
-      const videoUrl = `local-video://${cleanPath}`;
+    let unassignedIdx = 0;
+    // 1. Preencher cenas vazias primeiro
+    if (scenesWithoutTakes.length > 0) {
+      for (const emptyScene of scenesWithoutTakes) {
+        if (unassignedIdx < unassigned.length) {
+          const target = unassigned[unassignedIdx];
+          const itemInResult = result.find(r => r.id === target.id);
+          if (itemInResult) {
+            itemInResult.assignedSceneIndex = emptyScene;
+          }
+          unassignedIdx++;
+        }
+      }
+    }
+
+    // 2. Se a pasta tiver poucos vídeos restantes (até 3 por cena), distribuir ciclicamente
+    while (unassignedIdx < unassigned.length && unassigned.length <= maxScenes * 3) {
+      const target = unassigned[unassignedIdx];
+      const cyclicScene = (unassignedIdx % maxScenes) + 1;
+      const itemInResult = result.find(r => r.id === target.id);
+      if (itemInResult) {
+        itemInResult.assignedSceneIndex = cyclicScene;
+      }
+      unassignedIdx++;
+    }
+
+    return result;
+  };
+
+  // Mapeamento inteligente de arquivos com suporte a HTTP 206 Streaming e Auto-Organização
+  const mapAndImportFiles = (files: Array<{ name: string; fullPath: string; url?: string; sizeBytes: number; modifiedAt: number }>, baseDir: string) => {
+    let newTakes: VideoTakeItem[] = files.map((f, idx) => {
+      const assignedScene = detectSceneIndexFromName(f.name);
+
+      // Obter URL otimizada de streaming HTTP 206 local
+      let videoUrl = f.url;
+      if (!videoUrl && window.electronAPI && typeof (window.electronAPI as any).curatorGetMediaUrl === 'function') {
+        videoUrl = (window.electronAPI as any).curatorGetMediaUrl(f.fullPath);
+      }
+      if (!videoUrl) {
+        const cleanPath = f.fullPath.replace(/\\/g, '/');
+        videoUrl = `local-video://${cleanPath}`;
+      }
 
       return {
         id: `take_${idx}_${f.name}`,
@@ -211,10 +294,44 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       };
     });
 
+    // Auto-organização inteligente para vídeos sem identificador explícito
+    newTakes = autoDistributeUnassignedTakes(newTakes, scriptScenes.length);
+
+    // Pré-selecionar provisoriamente o primeiro take de cada cena como vencedor
+    for (let s = 1; s <= scriptScenes.length; s++) {
+      const sceneTakes = newTakes.filter(t => t.assignedSceneIndex === s);
+      if (sceneTakes.length > 0 && !sceneTakes.some(t => t.isWinner)) {
+        sceneTakes[0].isWinner = true;
+      }
+    }
+
     setTakes(newTakes);
 
     // Iniciar análise inteligente local em segundo plano (Nitidez, Formato, Voz)
     processBatchAnalysis(newTakes);
+  };
+
+  // Ação manual: Auto-Organizar todos os takes da tela
+  const handleAutoOrganize = () => {
+    setTakes(prev => {
+      let remapped = prev.map(t => ({
+        ...t,
+        assignedSceneIndex: detectSceneIndexFromName(t.name) || t.assignedSceneIndex
+      }));
+      remapped = autoDistributeUnassignedTakes(remapped, scriptScenes.length);
+
+      // Reavaliar vencedores por pontuação de qualidade
+      for (let s = 1; s <= scriptScenes.length; s++) {
+        const sceneTakes = remapped.filter(t => t.assignedSceneIndex === s);
+        if (sceneTakes.length > 0) {
+          sceneTakes.sort((a, b) => (b.quality?.overallScore || 0) - (a.quality?.overallScore || 0));
+          sceneTakes.forEach((t, i) => {
+            t.isWinner = (i === 0);
+          });
+        }
+      }
+      return [...remapped];
+    });
   };
 
   // Análise em lote nativa (100% no cliente sem gastar IA)
@@ -229,8 +346,12 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
         take.quality = qualityRes;
 
         // Análise de áudio e voz (Web Audio API / FFT / Pitch F0)
-        const audioRes = await analyzeAudioFromUrl(take.url);
-        take.audio = audioRes;
+        try {
+          const audioRes = await analyzeAudioFromUrl(take.url);
+          take.audio = audioRes;
+        } catch (audioErr) {
+          console.warn('[VideoCurator] Áudio não pôde ser analisado:', audioErr);
+        }
 
         take.analyzing = false;
         setTakes([...updated]);
@@ -281,12 +402,7 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
 
     const imported: VideoTakeItem[] = Array.from(files).map((file: File, idx: number) => {
       const objectUrl = URL.createObjectURL(file);
-      const lower = file.name.toLowerCase();
-      let assigned = 0;
-
-      if (/(?:cena|scene|take)[\s_\-]*0?1\b|hook/i.test(lower)) assigned = 1;
-      else if (/(?:cena|scene|take)[\s_\-]*0?2\b|problema/i.test(lower)) assigned = 2;
-      else if (/(?:cena|scene|take)[\s_\-]*0?3\b|solucao/i.test(lower)) assigned = 3;
+      const assigned = detectSceneIndexFromName(file.name);
 
       return {
         id: `manual_${Date.now()}_${idx}`,
@@ -301,7 +417,8 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
       };
     });
 
-    const combined = [...takes, ...imported];
+    let combined = [...takes, ...imported];
+    combined = autoDistributeUnassignedTakes(combined, scriptScenes.length);
     setTakes(combined);
     processBatchAnalysis(combined);
   };
@@ -557,6 +674,20 @@ export const VideoCurator: React.FC<VideoCuratorProps> = ({
             >
               <RefreshCw className={`w-4 h-4 text-amber-500 ${isLoadingVideos ? 'animate-spin' : ''}`} />
               <span>Reescanear</span>
+            </button>
+
+            <button
+              onClick={handleAutoOrganize}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border shadow-sm"
+              style={{
+                backgroundColor: isDark ? 'rgba(249, 115, 22, 0.15)' : '#fff7ed',
+                borderColor: 'rgba(249, 115, 22, 0.4)',
+                color: '#ea580c'
+              }}
+              title="Organizar automaticamente os vídeos nas cenas do roteiro e definir vencedores"
+            >
+              <Zap className="w-4 h-4 text-orange-500 fill-orange-500/20" />
+              <span>Auto-Organizar</span>
             </button>
 
             <label className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-md shadow-orange-500/20">
@@ -1179,8 +1310,12 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play().catch(err => console.warn('Play error:', err));
-      setIsPlaying(true);
+      videoRef.current.play().then(() => {
+        setIsPlaying(true);
+      }).catch(err => {
+        console.warn('Play error:', err);
+        setIsPlaying(false);
+      });
     } else {
       videoRef.current.pause();
       setIsPlaying(false);
@@ -1255,15 +1390,16 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
 
       {/* Player de Vídeo com Preview Instantâneo do Frame */}
       <div className="relative aspect-[9/14] bg-black group overflow-hidden">
-        {/* Preview do Frame capturado em canvas (aparece imediatamente) */}
+        {/* Preview do Frame capturado em canvas (visível por padrão até dar play) */}
         {take.quality?.keyframes?.[0] && !isPlaying && (
           <img
             src={take.quality.keyframes[0]}
             alt={take.name}
-            className="absolute inset-0 w-full h-full object-cover z-0"
+            className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none"
           />
         )}
 
+        {/* Elemento de vídeo nativo HTML5 via Range HTTP 206 */}
         <video
           ref={videoRef}
           src={take.url}
@@ -1272,20 +1408,29 @@ const VideoTakeCard: React.FC<VideoTakeCardProps> = ({
           loop
           muted={isMuted}
           playsInline
-          className="relative z-10 w-full h-full object-cover cursor-pointer"
+          className="w-full h-full object-cover cursor-pointer relative z-0"
           onClick={togglePlay}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
         />
+
+        {/* Indicador de processamento enquanto analisa */}
+        {take.analyzing && !take.quality?.keyframes?.[0] && (
+          <div className="absolute inset-0 z-15 bg-zinc-900/90 flex flex-col items-center justify-center gap-2 text-white">
+            <RefreshCw className="w-6 h-6 text-orange-500 animate-spin" />
+            <span className="text-[11px] font-bold tracking-wide">Gerando preview...</span>
+          </div>
+        )}
 
         {/* Overlay com Botão de Play central se pausado */}
         {!isPlaying && (
           <div 
             onClick={togglePlay}
-            className="absolute inset-0 z-20 bg-black/30 flex items-center justify-center cursor-pointer transition-opacity"
+            className="absolute inset-0 z-20 bg-black/25 hover:bg-black/40 flex items-center justify-center cursor-pointer transition-all"
           >
-            <div className="w-13 h-13 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform">
-              <Play className="w-6 h-6 ml-0.5 fill-current" />
+            <div className="w-14 h-14 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform">
+              <Play className="w-7 h-7 ml-0.5 fill-current" />
             </div>
           </div>
         )}

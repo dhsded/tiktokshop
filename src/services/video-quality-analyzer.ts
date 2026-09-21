@@ -47,7 +47,10 @@ export async function analyzeVideoQuality(videoUrl: string): Promise<VideoQualit
       video.load();
     };
 
-    video.onloadedmetadata = async () => {
+    let analyzed = false;
+    const runAnalysis = async () => {
+      if (analyzed) return;
+      analyzed = true;
       try {
         const width = video.videoWidth || 1080;
         const height = video.videoHeight || 1920;
@@ -55,30 +58,45 @@ export async function analyzeVideoQuality(videoUrl: string): Promise<VideoQualit
         const aspectRatio = width / height;
 
         // Proporção ideal TikTok é 9:16 (~0.5625)
-        const isTikTokVertical = aspectRatio >= 0.48 && aspectRatio <= 0.65;
-
-        // Capturar 3 quadros em 20%, 50% e 80% da duração
-        const sampleTimes = [
-          Math.max(0.2, duration * 0.2),
-          Math.max(0.5, duration * 0.5),
-          Math.max(0.8, duration * 0.8)
-        ];
+        const isTikTokVertical = aspectRatio >= 0.45 && aspectRatio <= 0.68;
 
         const capturedCanvases: HTMLCanvasElement[] = [];
         const keyframeDataUrls: string[] = [];
+
+        // 1. Captura imediata do frame inicial (garante thumbnail imediato sem depender de seek)
+        try {
+          const initCanvas = document.createElement('canvas');
+          initCanvas.width = 360;
+          initCanvas.height = 640;
+          const initCtx = initCanvas.getContext('2d', { willReadFrequently: true });
+          if (initCtx) {
+            initCtx.drawImage(video, 0, 0, initCanvas.width, initCanvas.height);
+            capturedCanvases.push(initCanvas);
+            keyframeDataUrls.push(initCanvas.toDataURL('image/jpeg', 0.85));
+          }
+        } catch (initErr) {
+          console.warn('[video-quality] Falha ao capturar frame inicial:', initErr);
+        }
+
+        // 2. Amostragem em 30% e 70% da duração para nitidez profunda e detecção de movimento
+        const sampleTimes = [
+          Math.max(0.3, duration * 0.3),
+          Math.max(0.7, duration * 0.7)
+        ];
 
         for (const t of sampleTimes) {
           try {
             await seekVideo(video, t);
             const canvas = document.createElement('canvas');
-            // Dimensões normalizadas de análise (360x640 para máxima velocidade e acurácia)
             canvas.width = 360;
             canvas.height = 640;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (ctx) {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               capturedCanvases.push(canvas);
-              keyframeDataUrls.push(canvas.toDataURL('image/jpeg', 0.8));
+              if (keyframeDataUrls.length < 3) {
+                keyframeDataUrls.push(canvas.toDataURL('image/jpeg', 0.85));
+              }
             }
           } catch (seekErr) {
             console.warn('[video-quality] Falha ao capturar frame no tempo:', t, seekErr);
@@ -211,21 +229,47 @@ export async function analyzeVideoQuality(videoUrl: string): Promise<VideoQualit
       }
     };
 
+    video.onloadeddata = runAnalysis;
+    video.onloadedmetadata = () => {
+      setTimeout(runAnalysis, 300);
+    };
+
     video.onerror = () => {
       cleanup();
       resolve(createFallbackQualityResult(videoUrl));
     };
+
+    if (video.readyState >= 2) {
+      runAnalysis();
+    }
   });
 }
 
 function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((res) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        res();
+      }
+    }, 1500);
+
     const onSeeked = () => {
-      video.removeEventListener('seeked', onSeeked);
-      res();
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        video.removeEventListener('seeked', onSeeked);
+        res();
+      }
     };
-    video.addEventListener('seeked', onSeeked);
-    video.currentTime = time;
+    video.addEventListener('seeked', onSeeked, { once: true });
+    try {
+      video.currentTime = Math.min(time, Math.max(0, (video.duration || 5) - 0.1));
+    } catch (e) {
+      clearTimeout(timer);
+      res();
+    }
   });
 }
 

@@ -285,6 +285,7 @@ declare global {
       curatorScanFolder?: (folderPath?: string) => Promise<{ success: boolean; folderPath?: string; files: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }>; error?: string }>;
       curatorSelectFolder?: () => Promise<{ canceled: boolean; folderPath?: string }>;
       curatorExportFinalCut?: (payload: any) => Promise<{ success: boolean; destFolder?: string; exportedFilesCount?: number; reportPath?: string; error?: string }>;
+      curatorGetMediaUrl?: (filePath: string) => Promise<string>;
     };
   }
 }

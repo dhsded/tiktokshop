@@ -41,5 +41,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   curatorScanFolder: (folderPath?: string) => ipcRenderer.invoke('curator:scan-folder', folderPath),
   curatorSelectFolder: () => ipcRenderer.invoke('curator:select-folder'),
   curatorExportFinalCut: (payload: any) => ipcRenderer.invoke('curator:export-final-cut', payload),
+  curatorGetMediaUrl: (filePath: string) => ipcRenderer.invoke('curator:get-media-url', filePath),
 });
 

@@ -1,5 +1,8 @@
 import { app, BrowserWindow, shell, ipcMain, globalShortcut, session, protocol, dialog, net } from 'electron';
 import { join } from 'path';
+import path from 'path';
+import fs from 'fs';
+import http from 'http';
 import { pathToFileURL } from 'url';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 
@@ -9,6 +12,103 @@ let spyWindow: BrowserWindow | null = null;
 let pendingPromptsData: any = null;
 let pendingSpyData: any = null;
 let currentDownloadInfo: any = null;
+
+// ============================================================
+// Servidor Local de Streaming de Mídia (HTTP 206 Range Stream)
+// ============================================================
+let localMediaPort = 0;
+
+function startLocalMediaServer(): Promise<number> {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      try {
+        const reqUrl = new URL(req.url || '', `http://127.0.0.1:${localMediaPort || 8000}`);
+        const filePathParam = reqUrl.searchParams.get('path');
+
+        if (!filePathParam) {
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('Missing file path');
+          return;
+        }
+
+        const filePath = decodeURIComponent(filePathParam);
+
+        if (!fs.existsSync(filePath)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('File not found');
+          return;
+        }
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        const ext = path.extname(filePath).toLowerCase();
+        let contentType = 'video/mp4';
+        if (ext === '.webm') contentType = 'video/webm';
+        else if (ext === '.mov') contentType = 'video/quicktime';
+        else if (ext === '.mkv') contentType = 'video/x-matroska';
+        else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+        else if (ext === '.png') contentType = 'image/png';
+
+        if (range) {
+          const parts = range.replace(/bytes=/, '').split('-');
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+          const chunkSize = (end - start) + 1;
+
+          const stream = fs.createReadStream(filePath, { start, end });
+          res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': contentType
+          });
+          stream.pipe(res);
+        } else {
+          res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Content-Type': contentType,
+            'Accept-Ranges': 'bytes'
+          });
+          fs.createReadStream(filePath).pipe(res);
+        }
+      } catch (err: any) {
+        console.error('[Media Server Error]:', err);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+      }
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') {
+        localMediaPort = addr.port;
+        console.log(`[Main] Servidor de mídia local rodando em http://127.0.0.1:${localMediaPort}`);
+        resolve(localMediaPort);
+      } else {
+        resolve(0);
+      }
+    });
+  });
+}
+
+function getLocalMediaUrl(filePath: string): string {
+  if (localMediaPort > 0) {
+    return `http://127.0.0.1:${localMediaPort}/video?path=${encodeURIComponent(filePath)}`;
+  }
+  return pathToFileURL(filePath).toString();
+}
 
 function getAppIconPath(): string {
   const isWindows = process.platform === 'win32';
@@ -569,8 +669,15 @@ if (!gotTheLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     electronApp.setAppUserModelId('com.tiktokshop.gerador');
+
+    // Inicializar servidor de mídia local (HTTP 206 Range Stream nativo)
+    try {
+      await startLocalMediaServer();
+    } catch (e) {
+      console.warn('[Main] Falha ao iniciar media server local:', e);
+    }
 
     // Registrar streaming de vídeos locais seguros para o Estúdio de Curadoria com suporte a Range Requests (HTTP 206)
     try {
@@ -761,7 +868,7 @@ if (!gotTheLock) {
       }
 
       const validVideoExts = ['.mp4', '.webm', '.mov', '.mkv', '.avi'];
-      const allFiles: Array<{ name: string; fullPath: string; sizeBytes: number; modifiedAt: number }> = [];
+      const allFiles: Array<{ name: string; fullPath: string; url: string; sizeBytes: number; modifiedAt: number }> = [];
 
       try {
         const items = fs.readdirSync(targetDir);
@@ -775,6 +882,7 @@ if (!gotTheLock) {
               allFiles.push({
                 name: item,
                 fullPath: full,
+                url: getLocalMediaUrl(full),
                 sizeBytes: stat.size,
                 modifiedAt: stat.mtimeMs
               });
@@ -789,6 +897,10 @@ if (!gotTheLock) {
       allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
 
       return { success: true, folderPath: targetDir, files: allFiles };
+    });
+
+    ipcMain.handle('curator:get-media-url', (_event, filePath: string) => {
+      return getLocalMediaUrl(filePath);
     });
 
     ipcMain.handle('curator:select-folder', async () => {
