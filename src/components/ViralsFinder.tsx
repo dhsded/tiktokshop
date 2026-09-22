@@ -553,13 +553,13 @@ export function validateAndScoreVideo(
   };
 }
 
-// Script de extração profunda de vídeos na busca do TikTok com suporte a DOM atualizado
+// Script de extração profunda de vídeos — Método 1: JSON da página / Método 2: DOM atualizado
 const SEARCH_VIDEOS_SCRAPER_SCRIPT = `
 (() => {
   try {
     const parseViews = (str) => {
       if (!str) return 0;
-      const clean = String(str).replace(/views?/i, '').replace(/visualizações/i, '').replace(/\\s+/g, '').trim();
+      const clean = String(str).replace(/views?/i, '').replace(/visualizações/i, '').replace(/\s+/g, '').trim();
       const mult = clean.slice(-1).toUpperCase();
       const num = parseFloat(clean.replace(',', '.'));
       if (isNaN(num)) return 0;
@@ -577,114 +577,244 @@ const SEARCH_VIDEOS_SCRAPER_SCRIPT = `
       return String(num);
     };
 
-    const links = Array.from(document.querySelectorAll('a[href*="/video/"]'));
     const videos = [];
     const seenIds = new Set();
 
-    for (const a of links) {
-      try {
-        const href = a.href;
-        const m = href.match(/\\/video\\/([0-9]+)/);
-        if (!m) continue;
-        const id = m[1];
-        if (seenIds.has(id)) continue;
-        seenIds.add(id);
+    const addVideo = (v) => {
+      if (!v || !v.id || seenIds.has(String(v.id))) return;
+      seenIds.add(String(v.id));
+      videos.push({
+        id: String(v.id),
+        url: v.url || '',
+        title: String(v.title || '').substring(0, 500),
+        authorName: v.authorName || v.authorHandle || 'criador',
+        authorHandle: v.authorHandle || '@criador',
+        authorAvatar: v.authorAvatar || '',
+        coverUrl: v.coverUrl || '',
+        viewsCount: Number(v.viewsCount) || 0,
+        viewsFormatted: v.viewsFormatted || formatViews(Number(v.viewsCount) || 0),
+        likesCount: Number(v.likesCount) || 0,
+        likesFormatted: v.likesFormatted || formatViews(Number(v.likesCount) || 0),
+        hasShopAnchor: Boolean(v.hasShopAnchor),
+        duration: ''
+      });
+    };
 
-        const card = a.closest('[class*="DivItemContainerV2"]') || 
-                     a.closest('[id^="grid-item-container"]') || 
-                     a.closest('[data-e2e="search_top-item"]')?.parentElement?.parentElement || 
-                     (a.parentElement && a.parentElement.parentElement) ||
-                     a.parentElement;
+    // =========================================================
+    // MÉTODO 1: Extrair do JSON embutido na página (mais robusto)
+    // =========================================================
+    try {
+      const extractFromItemList = (itemList) => {
+        if (!Array.isArray(itemList) || itemList.length === 0) return;
+        for (const item of itemList) {
+          try {
+            const videoId = String(item?.id || item?.aweme_id || item?.video?.id || '');
+            if (!videoId || videoId.length < 5) continue;
+            const author = item?.author || item?.authorInfo || {};
+            const handle = String(author?.uniqueId || author?.unique_id || author?.handle || '');
+            const stats = item?.stats || item?.statistics || item?.video?.stats || {};
+            const playCount = Number(stats?.playCount || stats?.play_count || stats?.viewCount || stats?.view_count || 0);
+            const diggCount = Number(stats?.diggCount || stats?.digg_count || stats?.likeCount || stats?.like_count || 0);
+            const vid = item?.video || {};
+            const cover = vid?.cover || vid?.dynamicCover || vid?.originCover || vid?.coverUrl || vid?.thumbnail || item?.thumbnail || '';
+            const hasShop = Boolean(
+              (item?.anchors && item.anchors.length > 0) ||
+              item?.video?.commerceInfo?.useCase ||
+              item?.adAuthorization ||
+              (String(item?.desc || '')).toLowerCase().includes('#tiktokshop') ||
+              (String(item?.desc || '')).toLowerCase().includes('#shop')
+            );
+            addVideo({
+              id: videoId,
+              url: handle ? 'https://www.tiktok.com/@' + handle + '/video/' + videoId : 'https://www.tiktok.com/video/' + videoId,
+              title: item?.desc || item?.title || item?.caption || '',
+              authorName: author?.nickname || author?.name || handle,
+              authorHandle: handle ? (handle.startsWith('@') ? handle : '@' + handle) : '@criador',
+              authorAvatar: author?.avatarThumb || (Array.isArray(author?.avatar_thumb?.url_list) ? author.avatar_thumb.url_list[0] : '') || author?.avatar || '',
+              coverUrl: cover,
+              viewsCount: playCount,
+              viewsFormatted: formatViews(playCount),
+              likesCount: diggCount,
+              likesFormatted: formatViews(diggCount),
+              hasShopAnchor: hasShop,
+            });
+          } catch(e) {}
+        }
+      };
 
-        let viewsRaw = '';
-        if (card) {
-          const viewsStrong = card.querySelector('strong[data-e2e="video-views"], [class*="video-count"], strong');
-          if (viewsStrong) {
-            viewsRaw = (viewsStrong.innerText || viewsStrong.textContent || '').trim();
+      // Tenta __UNIVERSAL_DATA_FOR_REHYDRATION__ (estrutura mais comum no TikTok Web 2024+)
+      const udr = window.__UNIVERSAL_DATA_FOR_REHYDRATION__;
+      if (udr) {
+        const scope = udr['__DEFAULT_SCOPE__'] || udr;
+        for (const key of Object.keys(scope)) {
+          const kl = key.toLowerCase();
+          if (kl.includes('search') || kl.includes('feed') || kl.includes('list')) {
+            const val = scope[key];
+            const list = val?.itemList || val?.searchItemList || val?.videoList || 
+                        val?.data?.itemList || val?.data?.videoList || val?.data || [];
+            extractFromItemList(Array.isArray(list) ? list : []);
           }
         }
-        if (!viewsRaw && a.innerText) {
-          const lines = a.innerText.split('\\n').map(x => x.trim()).filter(Boolean);
-          if (lines.length > 0 && /^[0-9]/.test(lines[0])) {
-            viewsRaw = lines[0];
+      }
+
+      // Tenta SIGI_STATE (estrutura antiga/alternativa)
+      if (window.SIGI_STATE && videos.length < 5) {
+        const s = window.SIGI_STATE;
+        const itemModule = s?.ItemModule || s?.videoData || {};
+        // Tenta extrair IDs da lista de busca
+        const itemIds = s?.SearchPage?.videoIds || s?.search?.videoIds || s?.search?.itemIds || [];
+        if (Array.isArray(itemIds) && itemIds.length > 0) {
+          extractFromItemList(itemIds.map(id => itemModule[id]).filter(Boolean));
+        } else {
+          // Fallback: todos os itens do módulo
+          extractFromItemList(Object.values(itemModule));
+        }
+      }
+
+      // Tenta __NEXT_DATA__ (Next.js SSR)
+      if (window.__NEXT_DATA__ && videos.length < 5) {
+        const nd = window.__NEXT_DATA__?.props?.pageProps;
+        const list = nd?.itemList || nd?.videoList || nd?.data?.itemList || nd?.searchResults || [];
+        extractFromItemList(Array.isArray(list) ? list : []);
+      }
+
+      // Varredura genérica em scripts da página
+      if (videos.length < 3) {
+        const scripts = Array.from(document.querySelectorAll('script[type="application/json"], script:not([src])'));
+        for (const script of scripts) {
+          try {
+            const text = script.textContent || '';
+            if (!text.includes('playCount') && !text.includes('play_count') && !text.includes('aweme_list')) continue;
+            if (text.length > 2000000) continue; // skip muito grandes
+            const parsed = JSON.parse(text);
+            // Busca recursiva por listas de vídeos no JSON
+            const findVideoLists = (obj, depth) => {
+              if (!obj || depth > 6 || typeof obj !== 'object') return;
+              for (const k of Object.keys(obj)) {
+                const val = obj[k];
+                if (Array.isArray(val) && val.length > 0 && val[0]?.id && (val[0]?.stats || val[0]?.statistics)) {
+                  extractFromItemList(val);
+                } else if (typeof val === 'object') {
+                  findVideoLists(val, depth + 1);
+                }
+              }
+            };
+            findVideoLists(parsed, 0);
+          } catch(e) {}
+        }
+      }
+    } catch(e) {}
+
+    // =========================================================
+    // MÉTODO 2: Extração via DOM — seletores atualizados 2025/2026
+    // =========================================================
+    if (videos.length < 3) {
+      const links = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+      for (const a of links) {
+        try {
+          const href = a.href;
+          const m = href.match(/\/video\/([0-9]+)/);
+          if (!m) continue;
+          const id = m[1];
+          if (seenIds.has(id)) continue;
+
+          // Estratégia de card: múltiplas tentativas de container
+          const card =
+            a.closest('[class*="DivItemContainerV2"]') ||
+            a.closest('[class*="video-feed-item"]') ||
+            a.closest('[class*="tiktok-x6y88p"]') ||
+            a.closest('[class*="css-x6y88p"]') ||
+            a.closest('article') ||
+            a.closest('li[class]') ||
+            a.closest('[data-e2e*="search"]')?.closest('div[class]') ||
+            (a.parentElement?.parentElement?.parentElement) ||
+            a.parentElement;
+
+          let viewsRaw = '';
+          if (card) {
+            const viewsEl = card.querySelector(
+              'strong[data-e2e="video-views"], [class*="video-count"], [class*="VideoCount"], ' +
+              '[class*="view-count"], [class*="StrongVideoCount"], strong, [data-e2e*="view"]'
+            );
+            if (viewsEl) viewsRaw = (viewsEl.innerText || viewsEl.textContent || '').trim();
           }
-        }
-        const viewsCount = parseViews(viewsRaw);
-
-        let title = '';
-        if (card) {
-          const captionEl = card.querySelector('[data-e2e="search-card-video-caption"]') || 
-                           card.querySelector('[data-e2e="search-card-desc"]') || 
-                           card.querySelector('[class*="DivDescriptionContainer"]') ||
-                           card.querySelector('[class*="DivMetaCaptionLine"]') ||
-                           card.querySelector('h3, h2, p');
-          if (captionEl) {
-            title = (captionEl.innerText || captionEl.textContent || '').trim();
+          if (!viewsRaw && a.innerText) {
+            const lines = a.innerText.split('\n').map(x => x.trim()).filter(Boolean);
+            if (lines.length > 0 && /^[0-9]/.test(lines[0])) viewsRaw = lines[0];
           }
-        }
-        if (!title && card) {
-          const allSpans = Array.from(card.querySelectorAll('span, p')).map(s => s.innerText.trim()).filter(s => s.length > 10);
-          if (allSpans.length > 0) title = allSpans[0];
-        }
 
-        let authorHandle = '';
-        if (card) {
-          const authorEl = card.querySelector('[data-e2e="search-card-user-unique-id"], [class*="PUniqueId"], [data-e2e="search-card-user-link"]');
-          if (authorEl) {
-            authorHandle = (authorEl.innerText || authorEl.textContent || '').trim();
+          let title = '';
+          if (card) {
+            const captionEl = card.querySelector(
+              '[data-e2e="search-card-video-caption"], [data-e2e="search-card-desc"], ' +
+              '[class*="DivDescriptionContainer"], [class*="DivMetaCaptionLine"], ' +
+              '[class*="video-caption"], [class*="CardCaption"], [class*="caption"], ' +
+              '[class*="desc-wrapper"], h3, h2'
+            );
+            if (captionEl) title = (captionEl.innerText || captionEl.textContent || '').trim();
           }
-        }
-        if (!authorHandle) {
-          const uMatch = href.match(/@([^\\/]+)/);
-          if (uMatch) authorHandle = uMatch[1];
-        }
-        if (!authorHandle) authorHandle = 'criador';
-        const authorName = authorHandle;
+          if (!title && card) {
+            const spans = Array.from(card.querySelectorAll('span, p')).map(s => (s.innerText || '').trim()).filter(s => s.length > 10);
+            if (spans.length > 0) title = spans[0];
+          }
 
-        let authorAvatar = '';
-        if (card) {
-          const avImg = card.querySelector('[data-e2e="search-card-user-avatar"] img, [class*="Avatar"] img, img[class*="avatar"]');
-          if (avImg && avImg.src) authorAvatar = avImg.src;
-        }
+          let authorHandle = '';
+          if (card) {
+            const authorEl = card.querySelector(
+              '[data-e2e="search-card-user-unique-id"], [class*="PUniqueId"], ' +
+              '[data-e2e="search-card-user-link"], [class*="author-uniqueId"], ' +
+              '[class*="AuthorTitle"], [class*="user-handle"], [class*="uniqueId"]'
+            );
+            if (authorEl) authorHandle = (authorEl.innerText || authorEl.textContent || '').trim();
+          }
+          if (!authorHandle) {
+            const uMatch = href.match(/@([^\/]+)/);
+            if (uMatch) authorHandle = uMatch[1];
+          }
+          if (!authorHandle) authorHandle = 'criador';
 
-        let coverUrl = '';
-        if (card) {
-          const img = card.querySelector('img[src*="tiktokcdn"], img[src*="byteoversea"], img');
-          if (img && img.src) coverUrl = img.src;
-        }
+          let authorAvatar = '';
+          if (card) {
+            const avImg = card.querySelector('[data-e2e="search-card-user-avatar"] img, [class*="Avatar"] img, img[class*="avatar"]');
+            if (avImg?.src) authorAvatar = avImg.src;
+          }
 
-        const cardText = card ? (card.innerText || '').toLowerCase() : '';
-        const hasShopAnchor = Boolean(
-          (card && card.querySelector('[data-e2e="search-card-anchor"], [class*="ShopAnchor"], [class*="shop-anchor"]')) ||
-          cardText.includes('shop') ||
-          cardText.includes('compre') ||
-          cardText.includes('carrinho') ||
-          title.toLowerCase().includes('#tiktokshop') ||
-          title.toLowerCase().includes('#shop')
-        );
+          let coverUrl = '';
+          if (card) {
+            const img = card.querySelector('img[src*="tiktokcdn"], img[src*="byteoversea"], img[src*="p16-sign"], img[src*="p77-sign"], img[src*="muscdn"], img');
+            if (img?.src && !img.src.includes('data:')) coverUrl = img.src;
+          }
 
-        videos.push({
-          id,
-          url: href,
-          title,
-          authorName,
-          authorHandle: authorHandle.startsWith('@') ? authorHandle : '@' + authorHandle,
-          authorAvatar,
-          coverUrl,
-          viewsCount,
-          viewsFormatted: viewsRaw || formatViews(viewsCount),
-          hasShopAnchor,
-          duration: ''
-        });
-      } catch (err) {}
+          const cardText = card ? (card.innerText || '').toLowerCase() : '';
+          const hasShopAnchor = Boolean(
+            (card && card.querySelector('[data-e2e="search-card-anchor"], [class*="ShopAnchor"], [class*="shop-anchor"]')) ||
+            cardText.includes('shop') || cardText.includes('compre') || cardText.includes('carrinho') ||
+            title.toLowerCase().includes('#tiktokshop') || title.toLowerCase().includes('#shop')
+          );
+
+          const viewsCount = parseViews(viewsRaw);
+          seenIds.add(id);
+          videos.push({
+            id,
+            url: href,
+            title,
+            authorName: authorHandle,
+            authorHandle: authorHandle.startsWith('@') ? authorHandle : '@' + authorHandle,
+            authorAvatar,
+            coverUrl,
+            viewsCount,
+            viewsFormatted: viewsRaw || formatViews(viewsCount),
+            likesCount: 0,
+            likesFormatted: '0',
+            hasShopAnchor,
+            duration: ''
+          });
+        } catch(err) {}
+      }
     }
 
-    return {
-      success: true,
-      totalFound: videos.length,
-      videos
-    };
-  } catch (e) {
+    return { success: true, totalFound: videos.length, videos };
+  } catch(e) {
     return { success: false, error: String(e), videos: [] };
   }
 })()
@@ -703,7 +833,9 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
   const [sortBy, setSortBy] = useState<'views' | 'recent' | 'likes'>('views');
   const [onlyExactMatch, setOnlyExactMatch] = useState(false);
   const [customSearchQuery, setCustomSearchQuery] = useState('');
-  
+  const [manualProductName, setManualProductName] = useState('');
+  const [rawVideoCount, setRawVideoCount] = useState<number>(0);
+
   // Modal do Player de Vídeo
   const [selectedVideo, setSelectedVideo] = useState<ViralVideoItem | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
@@ -726,7 +858,9 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
   };
 
   // Executa a busca automatizada dos 30 virais
-  const handleStartSearch = async (overrideTerm?: string) => {
+  const handleStartSearch = async (overrideTerm?: string | React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent) => {
+    // Garante que overrideTerm seja apenas uma string válida (ignora eventos React passados como onClick handler)
+    const safeTerm = typeof overrideTerm === 'string' ? overrideTerm : undefined;
     const rawUrl = productUrl.trim();
     if (!rawUrl) {
       setErrorMessage('Por favor, insira o link do produto no TikTok Shop.');
@@ -742,6 +876,8 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
     setErrorMessage(null);
     setIsSearching(true);
     setResults(null);
+    setOnlyExactMatch(false);   // Resetar filtro entre buscas
+    setRawVideoCount(0);
 
     const webview = webviewRef.current;
     if (!webview) {
@@ -791,15 +927,64 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
       setSearchStep('2/4: Extraindo características e atributos reais do produto...');
       const pdpData = await webview.executeJavaScript(PDP_EXTRACTOR_SCRIPT);
       
-      let productTitle = pdpData?.title || 'Produto TikTok Shop';
+      let productTitle = pdpData?.title || '';
       let mainImage = pdpData?.mainImage || '';
       let price = pdpData?.price || '';
       let shopName = pdpData?.shopName || '';
       let productDesc = pdpData?.description || '';
 
+      // Verifica se o título extraído é genérico/inválido
+      const GENERIC_TITLES = ['produto tiktok shop', 'produto tiktok', 'tiktok shop', ''];
+      const titleIsGeneric = !productTitle || GENERIC_TITLES.includes(productTitle.toLowerCase().trim()) || productTitle.trim().length < 5;
+
+      // Se o título for genérico, tentar URL alternativa (tiktok.com/view/product)
+      if (titleIsGeneric) {
+        try {
+          setSearchStep('2/4: Tentando URL alternativa do produto (tiktok.com/view/product)...');
+          const altUrl = `https://www.tiktok.com/view/product/${productId}`;
+          await new Promise<void>((resolve) => {
+            let t: any;
+            const cb = () => { clearTimeout(t); webview.removeEventListener('dom-ready', cb); resolve(); };
+            webview.addEventListener('dom-ready', cb);
+            webview.loadURL(altUrl);
+            t = setTimeout(() => { webview.removeEventListener('dom-ready', cb); resolve(); }, 10000);
+          });
+          await new Promise(r => setTimeout(r, 2500));
+          const altData = await webview.executeJavaScript(PDP_EXTRACTOR_SCRIPT);
+          if (altData?.title && !GENERIC_TITLES.includes((altData.title || '').toLowerCase().trim()) && altData.title.trim().length >= 5) {
+            productTitle = altData.title;
+            if (!mainImage && altData.mainImage) mainImage = altData.mainImage;
+            if (!price && altData.price) price = altData.price;
+            if (!shopName && altData.shopName) shopName = altData.shopName;
+            if (!productDesc && altData.description) productDesc = altData.description;
+          }
+        } catch (altErr) {
+          // Ignora erros na tentativa alternativa e continua com o que temos
+          console.warn('[BuscadorVirais] URL alternativa falhou, continuando sem título:', altErr);
+        }
+      }
+
+      // Fallback final: usar nome manual ou ID do produto
+      const finalTitleIsGeneric = !productTitle || GENERIC_TITLES.includes(productTitle.toLowerCase().trim()) || productTitle.trim().length < 5;
+      if (finalTitleIsGeneric) {
+        if (manualProductName.trim().length > 2) {
+          productTitle = manualProductName.trim();
+        } else {
+          productTitle = 'Produto TikTok Shop';
+        }
+      }
+
       // Análise Semântica: Extração dos 2-3 atributos mais fortes (Substantivo + Tecido + Estilo)
       const termsAnalysis = extractProductSearchTerms(productTitle, productDesc);
-      const queryToSearch = (overrideTerm || customSearchQuery || termsAnalysis.primaryQuery).trim();
+      // safeTerm > manualProductName > customSearchQuery > termos automáticos
+      const queryToSearch = (
+        safeTerm ||
+        manualProductName.trim() ||
+        customSearchQuery ||
+        termsAnalysis.primaryQuery ||
+        productTitle.split(' ').slice(0, 3).join(' ') ||
+        ''
+      ).trim();
       setCustomSearchQuery(queryToSearch);
 
       // ----------------------------------------------------
@@ -911,20 +1096,30 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
       // ----------------------------------------------------
       setSearchStep('4/4: Validando identidade do produto, eliminando falsos positivos e ranqueando...');
       
+      // Verifica se o título é ainda genérico (extração falhou em ambos os métodos)
+      const productTitleIsGeneric = productTitle === 'Produto TikTok Shop' || !termsAnalysis.coreNoun;
+
+      setRawVideoCount(rawVideos.length);
+
       const validatedVideos: ViralVideoItem[] = rawVideos.map(v => {
         const val = validateAndScoreVideo(v, termsAnalysis, productId, shopName);
+        // Se não temos termos válidos para validar, dar score base para não filtrar tudo
+        const effectiveScore = productTitleIsGeneric ? Math.max(val.matchScore, 10) : val.matchScore;
         return {
           ...v,
-          relevanceScore: val.matchScore,
+          relevanceScore: effectiveScore,
           isExactMatch: val.isExactMatch,
-          matchScore: val.matchScore,
-          matchLabel: val.matchLabel
+          matchScore: effectiveScore,
+          matchLabel: productTitleIsGeneric ? '⚪ Produto Relacionado' : val.matchLabel
         };
       });
 
       // Filtrar apenas vídeos com pontuação positiva (elimina falsos positivos categóricos)
-      let candidateVideos = validatedVideos.filter(v => v.relevanceScore > 0);
-      if (candidateVideos.length < 5) {
+      // Quando o título é genérico, mostrar todos os vídeos encontrados
+      let candidateVideos = productTitleIsGeneric
+        ? validatedVideos
+        : validatedVideos.filter(v => v.relevanceScore > 0);
+      if (!productTitleIsGeneric && candidateVideos.length < 5) {
         candidateVideos = validatedVideos;
       }
 
@@ -1081,14 +1276,42 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
               </code>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsBrowserVisible(!isBrowserVisible)}
-              className="hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
-            >
-              <span>Navegador interno de busca</span>
-              {isBrowserVisible ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
+            <div className="flex items-center gap-3">
+              {rawVideoCount > 0 && (
+                <span className="text-[11px] text-emerald-400/70">
+                  📡 {rawVideoCount} vídeos capturados
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsBrowserVisible(!isBrowserVisible)}
+                className="hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+              >
+                <span>Navegador interno de busca</span>
+                {isBrowserVisible ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Campo de nome manual do produto — aparece quando a extração automática falha */}
+          <div className="px-2 pb-1">
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15">
+              <Package className="w-4 h-4 text-amber-400 shrink-0" />
+              <input
+                type="text"
+                value={manualProductName}
+                onChange={(e) => setManualProductName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !isSearching && handleStartSearch()}
+                placeholder="(Opcional) Nome ou tipo do produto — ex: vestido floral, short duna, tênis branco..."
+                disabled={isSearching}
+                className="flex-1 bg-transparent text-xs text-white placeholder-amber-400/40 focus:outline-none"
+              />
+              {manualProductName && (
+                <button onClick={() => setManualProductName('')} className="text-white/30 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Sugestões de Termos de Busca Extraídos */}
@@ -1228,7 +1451,10 @@ export const ViralsFinder: React.FC<ViralsFinderProps> = ({ themeMode, onUseForS
                     {results.title}
                   </h3>
                   <p className="text-xs text-white/40">
-                    30 vídeos com maior relevância e volume de reproduções catalogados com sucesso.
+                    {results.videos.length} vídeos com maior relevância catalogados
+                    {rawVideoCount > 0 && rawVideoCount !== results.videos.length && (
+                      <span className="text-white/25"> ({rawVideoCount} capturados no total)</span>
+                    )}.
                   </p>
                 </div>
               </div>
